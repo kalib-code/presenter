@@ -1,0 +1,53 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Presenter App - Project Overview
+
+## Project Description
+A modern, open-source presentation application inspired by ProPresenter, built with Electron, React, TypeScript, and LMDB for local storage.
+
+## Tech Stack
+- **Electron**: Multi-window architecture for presentation control
+- **Vite + React**: Frontend framework with TypeScript
+- **Tailwind + shadcn/ui**: UI styling and components
+- **Zustand**: State management
+- **LMDB**: Local, offline NoSQL database
+- **React Router**: Client-side routing
+
+## Key Architecture Files
+
+### Main Process
+- [src/main/index.ts](mdc:src/main/index.ts) - Electron main process with LMDB setup and IPC handlers
+- [src/preload/index.ts](mdc:src/preload/index.ts) - Preload script exposing APIs to renderer
+
+### Renderer Process
+- [src/renderer/src/App.tsx](mdc:src/renderer/src/App.tsx) - Main React application component
+- [src/renderer/src/main.tsx](mdc:src/renderer/src/main.tsx) - React entry point with HashRouter
+- [src/renderer/src/components/Layout.tsx](mdc:src/renderer/src/components/Layout.tsx) - App layout with sidebar
+
+### State Management
+- [src/renderer/src/store/pingpong.ts](mdc:src/renderer/src/store/pingpong.ts) - Example Zustand store
+- [src/renderer/src/store/song.ts](mdc:src/renderer/src/store/song.ts) - Song management store with LMDB integration
+
+### Configuration
+- [electron.vite.config.ts](mdc:electron.vite.config.ts) - Vite configuration for Electron
+- [components.json](mdc:components.json) - shadcn/ui configuration
+- [tailwind.config.js](mdc:tailwind.config.js) - Tailwind CSS configuration
+
+## Database Schema
+The app uses LMDB with 6 separate databases as defined in [schema.md](mdc:schema.md):
+- songs.lmdb - Song data and metadata
+- setlists.lmdb - Setlist collections
+- presentations.lmdb - Presentation data
+- media.lmdb - Media asset metadata
+- templates.lmdb - Template definitions
+- settings.lmdb - Application settings
+
+## Development Guidelines
+- Use TypeScript for all new code
+- Follow the established component structure in [src/renderer/src/components/](mdc:src/renderer/src/components/)
+- Implement IPC communication for main-renderer process communication
+- Use Zustand for state management
+- Follow the editor specifications in [editor_scope.md](mdc:editor_scope.md)

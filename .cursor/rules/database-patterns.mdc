@@ -1,0 +1,145 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Database Patterns & LMDB Usage
+
+## Database Architecture
+
+### LMDB Setup
+The application uses LMDB (Lightning Memory-Mapped Database) for local, offline storage as configured in [src/main/index.ts](mdc:src/main/index.ts):
+
+```typescript
+import { open } from 'lmdb'
+
+const songDb = open<Song>({
+  path: join(app.getPath('userData'), 'songs.lmdb'),
+  compression: true
+})
+```
+
+### Database Schema
+The complete database schema is defined in [schema.md](mdc:schema.md) with 6 separate LMDB databases:
+
+1. **songs.lmdb** - Song data and metadata
+2. **setlists.lmdb** - Setlist collections  
+3. **presentations.lmdb** - Presentation data
+4. **media.lmdb** - Media asset metadata
+5. **templates.lmdb** - Template definitions
+6. **settings.lmdb** - Application settings
+
+### Data Models
+
+#### Song Model
+```typescript
+interface Song {
+  id: string;
+  name: string;
+  artist?: string;
+  album?: string;
+  year?: number;
+  genre?: string;
+  tempo?: number;
+  key?: string;
+  duration?: number;
+  lyrics: string;
+  slides: Slide[];
+  tags: string[];
+  createdAt: number;
+  updatedAt: number;
+  createdBy: string;
+  isPublic: boolean;
+  version: number;
+}
+```
+
+#### Setlist Model
+```typescript
+interface Setlist {
+  id: string;
+  name: string;
+  description?: string;
+  items: SetlistItem[];
+  tags: string[];
+  createdAt: number;
+  updatedAt: number;
+  createdBy: string;
+  isPublic: boolean;
+  version: number;
+  estimatedDuration: number;
+}
+```
+
+### Database Operations
+
+#### Basic CRUD Operations
+```typescript
+// Create
+await db.put(id, data)
+
+// Read
+const data = await db.get(id)
+
+// Update
+await db.put(id, updatedData)
+
+// Delete
+await db.remove(id)
+
+// List all
+for (const { key, value } of db.getRange()) {
+  // Process each item
+}
+```
+
+#### Indexing Strategy
+- Primary indexes: by-id, by-name, by-type, by-date, by-tag
+- Secondary indexes: by-artist, by-category, by-size, by-duration
+- Use hierarchical keys for efficient querying
+
+### IPC Integration
+Database operations are exposed to the renderer process through IPC handlers in [src/main/index.ts](mdc:src/main/index.ts):
+
+```typescript
+ipcMain.handle('list-songs', async () => {
+  return await listSongs()
+})
+
+ipcMain.handle('create-song', async (_event, name: string) => {
+  await createSong(name)
+  return await listSongs()
+})
+```
+
+### State Management Integration
+Database operations are integrated with Zustand stores as shown in [src/renderer/src/store/song.ts](mdc:src/renderer/src/store/song.ts):
+
+```typescript
+export const useSongStore = create<SongStore>((set) => ({
+  songs: [],
+  fetchSongs: async () => {
+    const songs: Song[] = await window.electron.invoke('list-songs')
+    set({ songs })
+  },
+  createSong: async (name: string) => {
+    const songs: Song[] = await window.electron.invoke('create-song', name)
+    set({ songs })
+  }
+}))
+```
+
+### Performance Considerations
+- Enable compression for all databases
+- Use memory-mapped access for fast reads
+- Implement batch operations for bulk updates
+- Use transactions for data consistency
+- Implement proper error handling and rollback
+
+### Development Guidelines
+- Always use TypeScript interfaces for data models
+- Implement proper validation before database operations
+- Use transactions for multi-step operations
+- Handle database errors gracefully
+- Follow the established patterns in existing code
+- Test database operations thoroughly

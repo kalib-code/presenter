@@ -1,0 +1,64 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Component Patterns & UI Structure
+
+## Component Architecture
+
+### Layout Structure
+The app uses a sidebar-based layout defined in [src/renderer/src/components/Layout.tsx](mdc:src/renderer/src/components/Layout.tsx):
+- `SidebarProvider` - Context provider for sidebar state
+- `AppSidebar` - Main sidebar component
+- `SidebarTrigger` - Toggle button for sidebar
+- Main content area
+
+### UI Components
+All UI components are located in [src/renderer/src/components/ui/](mdc:src/renderer/src/components/ui/) and follow shadcn/ui patterns:
+
+#### Core Components
+- [src/renderer/src/components/ui/button.tsx](mdc:src/renderer/src/components/ui/button.tsx) - Button component with variants
+- [src/renderer/src/components/ui/sidebar.tsx](mdc:src/renderer/src/components/ui/sidebar.tsx) - Comprehensive sidebar system
+- [src/renderer/src/components/ui/sheet.tsx](mdc:src/renderer/src/components/ui/sheet.tsx) - Sheet/drawer component
+
+#### Styling
+- Use Tailwind CSS classes for styling
+- Follow the design system defined in [tailwind.config.js](mdc:tailwind.config.js)
+- CSS variables are defined in [src/renderer/src/assets/main.css](mdc:src/renderer/src/assets/main.css)
+
+### Component Patterns
+
+#### State Management
+- Use Zustand stores for global state
+- Store files should be in [src/renderer/src/store/](mdc:src/renderer/src/store/)
+- Follow the pattern established in [src/renderer/src/store/song.ts](mdc:src/renderer/src/store/song.ts)
+
+#### IPC Communication
+- Use `window.electron.invoke()` for main process communication
+- Define handlers in [src/main/index.ts](mdc:src/main/index.ts)
+- Expose APIs through [src/preload/index.ts](mdc:src/preload/index.ts)
+
+#### TypeScript Patterns
+- Define interfaces for all data structures
+- Use strict TypeScript configuration
+- Follow the patterns in existing components
+
+### File Organization
+```
+src/renderer/src/
+├── components/
+│   ├── ui/           # shadcn/ui components
+│   └── *.tsx         # Custom components
+├── store/            # Zustand stores
+├── hooks/            # Custom React hooks
+├── lib/              # Utility functions
+└── assets/           # Static assets
+```
+
+### Development Guidelines
+- Always use TypeScript for new components
+- Follow the established naming conventions
+- Use the utility functions from [src/renderer/src/lib/utils.ts](mdc:src/renderer/src/lib/utils.ts)
+- Implement proper error handling and loading states
+- Use the mobile hook from [src/renderer/src/hooks/use-mobile.tsx](mdc:src/renderer/src/hooks/use-mobile.tsx) for responsive design

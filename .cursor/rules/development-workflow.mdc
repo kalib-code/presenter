@@ -1,0 +1,301 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Development Workflow & Best Practices
+
+## Project Setup
+
+### Prerequisites
+- Node.js (LTS version recommended)
+- npm or pnpm package manager
+- Git for version control
+
+### Installation
+```bash
+# Install dependencies
+npm install
+# or
+pnpm install
+```
+
+### Development Commands
+```bash
+# Start development server
+npm run dev
+# or
+pnpm dev
+
+# Build for production
+npm run build
+# or
+pnpm build
+```
+
+## Code Organization
+
+### File Structure
+Follow the established structure in the project:
+```
+presenter/
+├── src/
+│   ├── main/           # Electron main process
+│   ├── renderer/       # React frontend
+│   │   └── src/
+│   │       ├── components/  # UI components
+│   │       ├── store/      # Zustand stores
+│   │       ├── hooks/      # Custom React hooks
+│   │       └── lib/        # Utilities
+│   └── preload/       # Electron preload scripts
+├── resources/         # Application resources
+└── build/            # Build configuration
+```
+
+### Naming Conventions
+- **Files**: Use kebab-case for file names (e.g., `app-sidebar.tsx`)
+- **Components**: Use PascalCase for component names (e.g., `AppSidebar`)
+- **Functions**: Use camelCase for function names (e.g., `createSong`)
+- **Constants**: Use UPPER_SNAKE_CASE for constants (e.g., `SIDEBAR_WIDTH`)
+- **Interfaces**: Use PascalCase with descriptive names (e.g., `SongInterface`)
+
+## TypeScript Guidelines
+
+### Type Definitions
+- Always define interfaces for data structures
+- Use strict TypeScript configuration
+- Avoid `any` type - use proper typing
+- Use union types for variant data (e.g., `"text" | "image" | "video"`)
+
+### Example Patterns
+```typescript
+// Good: Proper interface definition
+interface Song {
+  id: string;
+  name: string;
+  artist?: string;
+  createdAt: number;
+}
+
+// Good: Union types for variants
+type ElementType = "text" | "image" | "video" | "audio" | "shape";
+
+// Good: Generic types
+interface ApiResponse<T> {
+  data: T;
+  success: boolean;
+  message?: string;
+}
+```
+
+## State Management
+
+### Zustand Store Pattern
+Follow the pattern established in [src/renderer/src/store/song.ts](mdc:src/renderer/src/store/song.ts):
+
+```typescript
+interface StoreState {
+  // State properties
+  data: DataType[];
+  loading: boolean;
+  error: string | null;
+  
+  // Actions
+  fetchData: () => Promise<void>;
+  addItem: (item: DataType) => Promise<void>;
+  updateItem: (id: string, updates: Partial<DataType>) => Promise<void>;
+  removeItem: (id: string) => Promise<void>;
+}
+
+export const useStore = create<StoreState>((set, get) => ({
+  // Initial state
+  data: [],
+  loading: false,
+  error: null,
+  
+  // Actions
+  fetchData: async () => {
+    set({ loading: true, error: null });
+    try {
+      const data = await window.electron.invoke('fetch-data');
+      set({ data, loading: false });
+    } catch (error) {
+      set({ error: error.message, loading: false });
+    }
+  },
+  
+  addItem: async (item) => {
+    try {
+      const updatedData = await window.electron.invoke('add-item', item);
+      set({ data: updatedData });
+    } catch (error) {
+      set({ error: error.message });
+    }
+  }
+}));
+```
+
+## IPC Communication
+
+### Main Process Handlers
+Define handlers in [src/main/index.ts](mdc:src/main/index.ts):
+
+```typescript
+// Database operations
+ipcMain.handle('list-songs', async () => {
+  return await listSongs();
+});
+
+ipcMain.handle('create-song', async (_event, name: string) => {
+  await createSong(name);
+  return await listSongs();
+});
+
+// File operations
+ipcMain.handle('open-file', async (_event, filePath: string) => {
+  return await openFile(filePath);
+});
+```
+
+### Renderer Process Usage
+Use in components and stores:
+
+```typescript
+// In Zustand store
+const fetchSongs = async () => {
+  const songs = await window.electron.invoke('list-songs');
+  set({ songs });
+};
+
+// In component
+const handleCreateSong = async (name: string) => {
+  await createSong(name);
+};
+```
+
+## Component Development
+
+### Component Structure
+Follow the pattern in [src/renderer/src/components/Layout.tsx](mdc:src/renderer/src/components/Layout.tsx):
+
+```typescript
+import React from 'react';
+import { cn } from '@renderer/lib/utils';
+
+interface ComponentProps {
+  className?: string;
+  children?: React.ReactNode;
+}
+
+const Component: React.FC<ComponentProps> = ({ className, children }) => {
+  return (
+    <div className={cn('base-classes', className)}>
+      {children}
+    </div>
+  );
+};
+
+export default Component;
+```
+
+### Styling Guidelines
+- Use Tailwind CSS classes for styling
+- Use the `cn` utility from [src/renderer/src/lib/utils.ts](mdc:src/renderer/src/lib/utils.ts) for conditional classes
+- Follow the design system in [tailwind.config.js](mdc:tailwind.config.js)
+- Use CSS variables defined in [src/renderer/src/assets/main.css](mdc:src/renderer/src/assets/main.css)
+
+## Database Operations
+
+### LMDB Patterns
+Follow the patterns in [src/main/index.ts](mdc:src/main/index.ts):
+
+```typescript
+// Database setup
+const db = open<DataType>({
+  path: join(app.getPath('userData'), 'database.lmdb'),
+  compression: true
+});
+
+// CRUD operations
+async function createItem(data: DataType): Promise<void> {
+  const id = generateId();
+  await db.put(id, { ...data, id, createdAt: Date.now() });
+}
+
+async function getItem(id: string): Promise<DataType | null> {
+  return await db.get(id);
+}
+
+async function listItems(): Promise<DataType[]> {
+  const items: DataType[] = [];
+  for (const { value } of db.getRange()) {
+    items.push(value);
+  }
+  return items;
+}
+```
+
+## Error Handling
+
+### Try-Catch Patterns
+```typescript
+// In async functions
+try {
+  const result = await someAsyncOperation();
+  return result;
+} catch (error) {
+  console.error('Operation failed:', error);
+  throw new Error(`Failed to perform operation: ${error.message}`);
+}
+
+// In components
+const handleOperation = async () => {
+  try {
+    setLoading(true);
+    await performOperation();
+  } catch (error) {
+    setError(error.message);
+  } finally {
+    setLoading(false);
+  }
+};
+```
+
+## Testing Guidelines
+
+### Unit Tests
+- Test individual functions and components
+- Mock external dependencies
+- Test error conditions
+- Use descriptive test names
+
+### Integration Tests
+- Test IPC communication
+- Test database operations
+- Test component interactions
+- Test user workflows
+
+### Performance Testing
+- Test with large datasets
+- Monitor memory usage
+- Test real-time operations
+- Profile critical paths
+
+## Code Quality
+
+### Linting
+- Use ESLint configuration from [eslint.config.mjs](mdc:eslint.config.mjs)
+- Fix all linting errors before committing
+- Use Prettier for code formatting
+
+### Git Workflow
+- Use descriptive commit messages
+- Create feature branches for new development
+- Review code before merging
+- Keep commits atomic and focused
+
+### Documentation
+- Document complex functions and components
+- Update documentation when changing APIs
+- Include examples in documentation
+- Keep README files up to date
