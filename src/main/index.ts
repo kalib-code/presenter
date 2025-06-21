@@ -626,11 +626,11 @@ async function clearAllDatabases(): Promise<void> {
   }
   console.log('Presentations database cleared')
 
-  // Clear presentations
-  for (const { key } of presentationDb.getRange()) {
-    await presentationDb.remove(key)
+  // Clear setlists
+  for (const { key } of setlistDb.getRange()) {
+    await setlistDb.remove(key)
   }
-  console.log('Presentations database cleared')
+  console.log('Setlists database cleared')
 
   // Clear slides
   for (const { key } of slideDb.getRange()) {
