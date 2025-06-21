@@ -2,6 +2,7 @@ import { app, shell, BrowserWindow, ipcMain, screen } from 'electron'
 import { join } from 'path'
 import { promises as fs } from 'fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
+import { autoUpdater } from 'electron-updater'
 import icon from '../../resources/icon.png?asset'
 import { open } from 'lmdb'
 import { basename, extname } from 'path'
@@ -673,6 +674,41 @@ async function initializeDatabases(): Promise<void> {
   ])
 }
 
+// Auto-updater configuration
+function setupAutoUpdater(): void {
+  // Configure auto-updater
+  autoUpdater.checkForUpdatesAndNotify()
+  
+  // Auto-updater events
+  autoUpdater.on('checking-for-update', () => {
+    console.log('Checking for update...')
+  })
+  
+  autoUpdater.on('update-available', (info) => {
+    console.log('Update available:', info)
+  })
+  
+  autoUpdater.on('update-not-available', (info) => {
+    console.log('Update not available:', info)
+  })
+  
+  autoUpdater.on('error', (err) => {
+    console.log('Error in auto-updater:', err)
+  })
+  
+  autoUpdater.on('download-progress', (progressObj) => {
+    let log_message = "Download speed: " + progressObj.bytesPerSecond
+    log_message = log_message + ' - Downloaded ' + progressObj.percent + '%'
+    log_message = log_message + ' (' + progressObj.transferred + "/" + progressObj.total + ')'
+    console.log(log_message)
+  })
+  
+  autoUpdater.on('update-downloaded', (info) => {
+    console.log('Update downloaded:', info)
+    autoUpdater.quitAndInstall()
+  })
+}
+
 function createWindow(): void {
   // Create the browser window.
   const mainWindow = new BrowserWindow({
@@ -856,9 +892,21 @@ app.whenReady().then(() => {
 
   // Initialize databases
   initializeDatabases()
+  
+  // Setup auto-updater
+  setupAutoUpdater()
 
   // IPC test
   ipcMain.handle('ping', () => 'pong')
+  
+  // Auto-updater IPC handlers
+  ipcMain.handle('check-for-updates', async () => {
+    return await autoUpdater.checkForUpdatesAndNotify()
+  })
+  
+  ipcMain.handle('quit-and-install', () => {
+    autoUpdater.quitAndInstall()
+  })
 
   // IPC handlers - Songs
   ipcMain.handle('list-songs', async () => {
