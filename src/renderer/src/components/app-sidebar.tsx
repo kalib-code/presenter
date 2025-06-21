@@ -9,7 +9,8 @@ import {
   FileImage,
   Video,
   Headphones,
-  FileText
+  FileText,
+  Monitor
 } from 'lucide-react'
 import { NavUser } from '@renderer/components/nav-user'
 import { Link, useLocation } from 'react-router-dom'
@@ -109,7 +110,14 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>): 
   const isCollectionActive = activeItem?.title === 'Collection'
 
   // Hide second sidebar on Collection page since it has its own tab navigation
-  const shouldHideSecondSidebar = location.pathname === '/collection'
+  // Also hide on Home page since it has its own presenter layout
+  const shouldHideSecondSidebar =
+    location.pathname === '/collection' ||
+    location.pathname === '/' ||
+    location.pathname === '/home'
+
+  // Show all menu items - no need to hide any
+  const filteredNavMain = data.navMain
 
   return (
     <Sidebar
@@ -142,7 +150,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>): 
           <SidebarGroup>
             <SidebarGroupContent className="px-1.5 md:px-0">
               <SidebarMenu>
-                {data.navMain.map((item) => (
+                {filteredNavMain.map((item) => (
                   <SidebarMenuItem key={item.title}>
                     <SidebarMenuButton
                       tooltip={{

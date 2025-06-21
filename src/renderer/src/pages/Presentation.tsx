@@ -1,0 +1,523 @@
+import React, { useEffect, useState } from 'react'
+
+// Direct IPC access (nodeIntegration enabled for presentation window)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let ipcRenderer: any = null
+
+// Try to get ipcRenderer, but handle cases where it's not available (like during HMR)
+try {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  if (typeof window !== 'undefined' && (window as any).require) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ipcRenderer = (window as any).require('electron').ipcRenderer
+  }
+} catch (error) {
+  console.warn('IPC renderer not available:', error)
+}
+
+interface ProjectionData {
+  title: string
+  content: string
+  type: 'verse' | 'chorus' | 'bridge' | 'slide' | 'announcement' | 'countdown'
+  slideData?: {
+    elements: Array<{
+      type: 'text'
+      content: string
+      position: { x: number; y: number }
+      size: { width: number; height: number }
+      style: {
+        fontSize?: number
+        color?: string
+        fontFamily?: string
+        fontWeight?: string
+        fontStyle?: string
+        textAlign?: string
+        textShadow?: string
+        lineHeight?: number
+        opacity?: number
+      }
+    }>
+    globalBackground?: {
+      type: string
+      value: string
+      opacity?: number
+      playbackRate?: number
+      size?: 'cover' | 'contain' | 'fill' | 'none'
+      position?: 'center' | 'top' | 'bottom' | 'left' | 'right'
+    }
+    slideBackground?: {
+      type: string
+      value: string
+      opacity?: number
+      playbackRate?: number
+      size?: 'cover' | 'contain' | 'fill' | 'none'
+      position?: 'center' | 'top' | 'bottom' | 'left' | 'right'
+    }
+  }
+}
+
+interface PresentationState {
+  isBlank: boolean
+  showLogo: boolean
+  currentData: ProjectionData | null
+}
+
+export default function Presentation(): JSX.Element {
+  const [presentationState, setPresentationState] = useState<PresentationState>({
+    isBlank: false,
+    showLogo: false,
+    currentData: null
+  })
+
+  // Listen for projection updates from main process
+  useEffect(() => {
+    const handleProjectionUpdate = (_event: unknown, data: ProjectionData): void => {
+      console.log('📺 [PRESENTATION] Received projection data:', {
+        title: data.title,
+        type: data.type,
+        hasSlideData: !!data.slideData,
+        hasGlobalBackground: !!data.slideData?.globalBackground,
+        globalBackground: data.slideData?.globalBackground,
+        hasSlideBackground: !!data.slideData?.slideBackground,
+        slideBackground: data.slideData?.slideBackground
+      })
+      setPresentationState((prev) => ({
+        ...prev,
+        currentData: data,
+        isBlank: false,
+        showLogo: false
+      }))
+    }
+
+    const handleBlankToggle = (_event: unknown, isBlank: boolean): void => {
+      console.log('📺 [PRESENTATION] Toggle blank:', isBlank)
+      setPresentationState((prev) => {
+        const newState = {
+          ...prev,
+          isBlank
+        }
+        console.log('📺 [PRESENTATION] Updated presentation state:', newState)
+        return newState
+      })
+    }
+
+    const handleLogoToggle = (_event: unknown, showLogo: boolean): void => {
+      console.log('📺 [PRESENTATION] Toggle logo:', showLogo)
+      setPresentationState((prev) => ({
+        ...prev,
+        showLogo
+      }))
+    }
+
+    const handleStopProjection = (): void => {
+      console.log('📺 [PRESENTATION] Stop projection')
+      setPresentationState({
+        isBlank: false,
+        showLogo: false,
+        currentData: null
+      })
+    }
+
+    // Register IPC listeners only if ipcRenderer is available
+    if (ipcRenderer) {
+      ipcRenderer.on('projection-update', handleProjectionUpdate)
+      ipcRenderer.on('projection-blank', handleBlankToggle)
+      ipcRenderer.on('projection-logo', handleLogoToggle)
+      ipcRenderer.on('projection-stop', handleStopProjection)
+    }
+
+    return () => {
+      // Cleanup listeners only if ipcRenderer is available
+      if (ipcRenderer) {
+        ipcRenderer.removeAllListeners('projection-update')
+        ipcRenderer.removeAllListeners('projection-blank')
+        ipcRenderer.removeAllListeners('projection-logo')
+        ipcRenderer.removeAllListeners('projection-stop')
+      }
+    }
+  }, [])
+
+  // Render blank screen (background only, no text)
+  if (presentationState.isBlank && presentationState.currentData) {
+    console.log('📺 [PRESENTATION] Rendering BLANK screen (background only)')
+    const { currentData } = presentationState
+
+    // Determine background (same logic as normal rendering)
+    const background =
+      currentData.slideData?.slideBackground || currentData.slideData?.globalBackground
+
+    let backgroundStyles: React.CSSProperties = {
+      background: '#000'
+    }
+
+    let backgroundElement: JSX.Element | null = null
+
+    if (background) {
+      if (background.type === 'video' && background.value) {
+        const objectFit =
+          background.size === 'cover'
+            ? 'cover'
+            : background.size === 'contain'
+              ? 'contain'
+              : background.size === 'fill'
+                ? 'fill'
+                : background.size === 'none'
+                  ? 'none'
+                  : 'cover'
+
+        const objectPosition = background.position || 'center'
+
+        backgroundElement = (
+          <video
+            key={background.value}
+            autoPlay
+            loop
+            muted
+            playsInline
+            className="absolute inset-0 w-full h-full"
+            style={{
+              objectFit: objectFit,
+              objectPosition: objectPosition,
+              opacity: background.opacity || 1,
+              zIndex: 1
+            }}
+          >
+            <source src={background.value} type="video/mp4" />
+          </video>
+        )
+      } else if (background.type === 'image' && background.value) {
+        const backgroundSize = background.size === 'none' ? 'auto' : background.size || 'cover'
+        const backgroundPosition = background.position || 'center'
+
+        backgroundElement = (
+          <img
+            key={background.value}
+            src={background.value}
+            alt="Background"
+            className="absolute inset-0 w-full h-full object-cover"
+            style={{
+              objectFit:
+                backgroundSize === 'auto'
+                  ? 'none'
+                  : (backgroundSize as 'cover' | 'contain' | 'fill') || 'cover',
+              objectPosition: backgroundPosition,
+              opacity: background.opacity || 1,
+              zIndex: 1
+            }}
+          />
+        )
+      } else if (background.type === 'color' && background.value) {
+        backgroundStyles = {
+          background: background.value
+        }
+      }
+    }
+
+    return (
+      <div className="w-full h-screen relative overflow-hidden" style={backgroundStyles}>
+        {backgroundElement}
+        {/* No text elements - just background */}
+      </div>
+    )
+  }
+
+  // Render blank screen (completely black) if no current data
+  if (presentationState.isBlank) {
+    console.log('📺 [PRESENTATION] Rendering BLANK screen (no data)')
+    return (
+      <div className="w-full h-screen bg-black flex items-center justify-center">
+        {/* Completely blank - no text or background */}
+      </div>
+    )
+  }
+
+  // Render logo
+  if (presentationState.showLogo) {
+    return (
+      <div className="w-full h-screen bg-black flex items-center justify-center">
+        <div className="text-white text-8xl font-bold">LOGO</div>
+      </div>
+    )
+  }
+
+  // Render projection content
+  if (presentationState.currentData) {
+    console.log('📺 [PRESENTATION] Rendering projection content, state:', {
+      isBlank: presentationState.isBlank,
+      showLogo: presentationState.showLogo,
+      hasCurrentData: !!presentationState.currentData
+    })
+    const { currentData } = presentationState
+
+    // Determine background
+    const background =
+      currentData.slideData?.slideBackground || currentData.slideData?.globalBackground
+
+    console.log('📺 [PRESENTATION] Determined background:', {
+      hasSlideBackground: !!currentData.slideData?.slideBackground,
+      slideBackground: currentData.slideData?.slideBackground,
+      hasGlobalBackground: !!currentData.slideData?.globalBackground,
+      globalBackground: currentData.slideData?.globalBackground,
+      finalBackground: background
+    })
+
+    let backgroundStyles: React.CSSProperties = {
+      background: '#000'
+    }
+
+    let backgroundElement: JSX.Element | null = null
+
+    if (background) {
+      console.log('📺 [PRESENTATION] Creating background element:', {
+        type: background.type,
+        hasValue: !!background.value,
+        valueLength: background.value?.length || 0,
+        opacity: background.opacity,
+        size: background.size,
+        position: background.position
+      })
+
+      if (background.type === 'video' && background.value) {
+        // Convert background size to object-fit CSS property
+        const objectFit =
+          background.size === 'cover'
+            ? 'cover'
+            : background.size === 'contain'
+              ? 'contain'
+              : background.size === 'fill'
+                ? 'fill'
+                : background.size === 'none'
+                  ? 'none'
+                  : 'cover'
+
+        // Convert background position to object-position CSS property
+        const objectPosition = background.position || 'center'
+
+        console.log('📺 [PRESENTATION] Creating video element with:', {
+          objectFit,
+          objectPosition,
+          opacity: background.opacity || 1,
+          valuePreview: background.value.substring(0, 50) + '...'
+        })
+
+        backgroundElement = (
+          <video
+            key={background.value} // Force re-render when video source changes
+            autoPlay
+            loop
+            muted
+            playsInline
+            className="absolute inset-0 w-full h-full"
+            style={{
+              objectFit: objectFit,
+              objectPosition: objectPosition,
+              opacity: background.opacity || 1,
+              zIndex: 1,
+              // Add a border for debugging - remove this later
+              border: '2px solid red'
+            }}
+            onLoadStart={() => console.log('📺 [PRESENTATION] Video load started')}
+            onCanPlay={(e) => {
+              const video = e.target as HTMLVideoElement
+              console.log('📺 [PRESENTATION] Video can play:', {
+                videoWidth: video.videoWidth,
+                videoHeight: video.videoHeight,
+                windowWidth: window.innerWidth,
+                windowHeight: window.innerHeight,
+                objectFit,
+                objectPosition,
+                videoElement: video,
+                computedStyle: window.getComputedStyle(video)
+              })
+            }}
+            onError={(e) => console.error('📺 [PRESENTATION] Video error:', e)}
+          >
+            <source src={background.value} type="video/mp4" />
+          </video>
+        )
+      } else if (background.type === 'image' && background.value) {
+        // Convert background size and position from editor to CSS values
+        const backgroundSize = background.size === 'none' ? 'auto' : background.size || 'cover'
+        const backgroundPosition = background.position || 'center'
+
+        // For image backgrounds, we'll create an img element instead of using backgroundImage
+        // to ensure proper re-rendering when the image changes
+        backgroundElement = (
+          <img
+            key={background.value} // Force re-render when image source changes
+            src={background.value}
+            alt="Background"
+            className="absolute inset-0 w-full h-full object-cover"
+            style={{
+              objectFit:
+                backgroundSize === 'auto'
+                  ? 'none'
+                  : (backgroundSize as 'cover' | 'contain' | 'fill') || 'cover',
+              objectPosition: backgroundPosition,
+              opacity: background.opacity || 1,
+              zIndex: 1,
+              // Add a border for debugging - remove this later
+              border: '2px solid blue'
+            }}
+            onLoad={() => console.log('📺 [PRESENTATION] Image loaded')}
+            onError={(e) => console.error('📺 [PRESENTATION] Image error:', e)}
+          />
+        )
+      } else if (background.type === 'color' && background.value) {
+        backgroundStyles = {
+          background: background.value
+        }
+      }
+    }
+
+    // Render rich slide content if available
+    if (currentData.slideData?.elements && currentData.slideData.elements.length > 0) {
+      // Calculate scaling factors to adapt from editor canvas (960x540) to presentation window
+      const canvasWidth = 960
+      const canvasHeight = 540
+      const windowWidth = window.innerWidth
+      const windowHeight = window.innerHeight
+
+      // Calculate scale to fit the canvas aspect ratio within the window while maintaining aspect ratio
+      const scaleX = windowWidth / canvasWidth
+      const scaleY = windowHeight / canvasHeight
+      const scale = Math.min(scaleX, scaleY) // Use smaller scale to maintain aspect ratio
+
+      // Calculate offsets to center the scaled canvas
+      const scaledCanvasWidth = canvasWidth * scale
+      const scaledCanvasHeight = canvasHeight * scale
+      const offsetX = (windowWidth - scaledCanvasWidth) / 2
+      const offsetY = (windowHeight - scaledCanvasHeight) / 2
+
+      return (
+        <div className="w-full h-screen relative overflow-hidden" style={backgroundStyles}>
+          {backgroundElement}
+
+          {/* Only render text elements if not in blank mode */}
+          {!presentationState.isBlank &&
+            currentData.slideData.elements.map((element, index) => {
+              if (element.type === 'text') {
+                const style = element.style || {}
+
+                // Scale position and size from canvas coordinates to window coordinates
+                const scaledLeft = element.position.x * scale + offsetX
+                const scaledTop = element.position.y * scale + offsetY
+                const scaledWidth = element.size.width * scale
+                const scaledHeight = element.size.height * scale
+                const scaledFontSize = (style.fontSize || 48) * scale
+
+                return (
+                  <div
+                    key={index}
+                    className="absolute flex items-center"
+                    style={{
+                      left: scaledLeft,
+                      top: scaledTop,
+                      width: scaledWidth,
+                      height: scaledHeight,
+                      color: style.color || '#FFFFFF',
+                      fontFamily: style.fontFamily || 'Arial, sans-serif',
+                      fontSize: `${scaledFontSize}px`,
+                      fontWeight: style.fontWeight || 'bold',
+                      fontStyle: style.fontStyle || 'normal',
+                      textAlign: (style.textAlign as 'left' | 'center' | 'right') || 'center',
+                      lineHeight: style.lineHeight || 1.2,
+                      textShadow: style.textShadow || '2px 2px 4px rgba(0,0,0,0.8)',
+                      opacity: style.opacity || 1,
+                      zIndex: 10,
+                      justifyContent:
+                        style.textAlign === 'left'
+                          ? 'flex-start'
+                          : style.textAlign === 'right'
+                            ? 'flex-end'
+                            : 'center',
+                      whiteSpace: 'pre-line'
+                    }}
+                  >
+                    {element.content}
+                  </div>
+                )
+              }
+              return null
+            })}
+        </div>
+      )
+    }
+
+    // Fallback to simple text rendering
+    return (
+      <div className="w-full h-screen flex items-center justify-center" style={backgroundStyles}>
+        {backgroundElement}
+
+        {/* Only render text content if not in blank mode */}
+        {!presentationState.isBlank && (
+          <div className="relative z-10 text-center max-w-4xl mx-auto px-8">
+            {currentData.type === 'announcement' ? (
+              <div className="bg-black bg-opacity-30 rounded-2xl p-16">
+                <h1 className="text-6xl font-bold mb-8 text-white text-shadow-lg">Announcement</h1>
+                <div className="text-4xl leading-relaxed text-white text-shadow-md">
+                  {currentData.content}
+                </div>
+              </div>
+            ) : currentData.type === 'countdown' ? (
+              <CountdownDisplay content={currentData.content} />
+            ) : (
+              <div className="text-5xl leading-relaxed text-white text-shadow-lg font-bold whitespace-pre-line">
+                {currentData.content}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // Default state - waiting for content
+  return (
+    <div className="w-full h-screen bg-black flex items-center justify-center">
+      <div className="text-center text-white">
+        <h1 className="text-6xl font-bold mb-8 opacity-80">Projection Ready</h1>
+        <p className="text-2xl opacity-60">Waiting for content...</p>
+      </div>
+    </div>
+  )
+}
+
+// Countdown component
+function CountdownDisplay({ content }: { content: string }): JSX.Element {
+  const [durationStr, message] = content.split(' - ')
+  const initialDuration = parseInt(durationStr) || 300
+  const [timeLeft, setTimeLeft] = useState(initialDuration)
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setTimeLeft((prev) => {
+        if (prev <= 0) {
+          clearInterval(timer)
+          return 0
+        }
+        return prev - 1
+      })
+    }, 1000)
+
+    return () => clearInterval(timer)
+  }, [])
+
+  const minutes = Math.floor(timeLeft / 60)
+  const seconds = timeLeft % 60
+
+  return (
+    <div className="bg-gradient-to-br from-red-600 to-orange-600 w-full h-screen flex items-center justify-center">
+      <div className="text-center text-white">
+        <h1 className="text-5xl font-bold mb-12 text-shadow-lg">{message || 'Countdown'}</h1>
+        <div
+          className={`text-9xl font-bold text-shadow-lg font-mono ${
+            timeLeft <= 0 ? 'text-red-300 animate-pulse' : ''
+          }`}
+        >
+          {timeLeft <= 0 ? 'TIME!' : `${minutes}:${seconds.toString().padStart(2, '0')}`}
+        </div>
+      </div>
+    </div>
+  )
+}

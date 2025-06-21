@@ -1,8 +1,9 @@
-import { useEffect, useCallback } from 'react'
+import React, { useEffect, useCallback, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
 import { Separator } from '@renderer/components/ui/separator'
+import { TagsInput } from '@renderer/components/ui/tags-input'
 import { useToast } from '@renderer/hooks/use-toast'
 import { Toaster } from '@renderer/components/ui/toaster'
 import {
@@ -14,11 +15,12 @@ import {
   Redo,
   SkipBack,
   SkipForward,
-  Image
+  Image,
+  GripVertical
 } from 'lucide-react'
 
 // New store-based imports
-import { useEditorMetaStore } from '@renderer/store/editor-meta'
+import { useEditorMetaStore, useEditorLabels } from '@renderer/store/editor-meta'
 import { useSlidesStore } from '@renderer/store/editor-slides'
 import { useCanvasStore } from '@renderer/store/editor-canvas'
 import { useHistoryStore } from '@renderer/store/editor-history'
@@ -30,7 +32,7 @@ import { Canvas } from '@renderer/components/editor/Canvas'
 import { ElementToolbar } from '@renderer/components/editor/ElementToolbar'
 import { BackgroundPanel } from '@renderer/components/editor/BackgroundPanel'
 import { SlideTitle } from '@renderer/components/editor/SlideTitle'
-// import { SlideTitle } from '@renderer/components/editor/SlideTitle'
+import { PropertiesPanel } from '@renderer/components/editor/PropertiesPanel'
 
 type EditorMode = 'song' | 'slide'
 type EditorAction = 'create' | 'edit'
@@ -46,17 +48,37 @@ export default function EditorV2(): JSX.Element {
   const action = (searchParams.get('action') as EditorAction) || 'create'
   const itemId = searchParams.get('id') || undefined
 
-  // Store hooks
-  const { title, artist, setTitle, setArtist, hasUnsavedChanges } = useEditorMetaStore()
+  // Store hooks - using specific selectors to prevent unnecessary re-renders
+  const title = useEditorMetaStore((state) => state.title)
+  const artist = useEditorMetaStore((state) => state.artist)
+  const tags = useEditorMetaStore((state) => state.tags)
+  const hasUnsavedChanges = useEditorMetaStore((state) => state.hasUnsavedChanges)
+  const setTitle = useEditorMetaStore((state) => state.setTitle)
+  const setArtist = useEditorMetaStore((state) => state.setArtist)
+  const setTags = useEditorMetaStore((state) => state.setTags)
 
-  const { slides, currentSlideIndex, addSlide, deleteSlide, setCurrentSlide, duplicateSlide } =
-    useSlidesStore()
+  const { titleLabel, artistLabel, titlePlaceholder, artistPlaceholder } = useEditorLabels()
 
-  const { elements } = useCanvasStore()
+  const slides = useSlidesStore((state) => state.slides)
+  const currentSlideIndex = useSlidesStore((state) => state.currentSlideIndex)
+  const addSlide = useSlidesStore((state) => state.addSlide)
+  const deleteSlide = useSlidesStore((state) => state.deleteSlide)
+  const setCurrentSlide = useSlidesStore((state) => state.setCurrentSlide)
+  const duplicateSlide = useSlidesStore((state) => state.duplicateSlide)
+  const moveSlide = useSlidesStore((state) => state.moveSlide)
 
-  const { canUndo, canRedo, undo, redo } = useHistoryStore()
+  const elements = useCanvasStore((state) => state.elements)
+
+  const canUndo = useHistoryStore((state) => state.canUndo)
+  const canRedo = useHistoryStore((state) => state.canRedo)
+  const undo = useHistoryStore((state) => state.undo)
+  const redo = useHistoryStore((state) => state.redo)
 
   const { autoSaveEnabled } = useSaveStatus()
+
+  // Drag and drop state
+  const [draggedSlideIndex, setDraggedSlideIndex] = useState<number | null>(null)
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
 
   // Background store - using direct access to avoid selector issues
   const toggleBackgroundPanel = useBackgroundStore((state) => state.toggleBackgroundPanel)
@@ -64,6 +86,8 @@ export default function EditorV2(): JSX.Element {
 
   // Initialize editor
   useEffect(() => {
+    console.log('🎛️ [EDITOR] Initializing editor with:', { mode, action, itemId })
+
     // Initialize stores
     useEditorMetaStore.getState().initialize({
       mode,
@@ -71,31 +95,36 @@ export default function EditorV2(): JSX.Element {
       itemId
     })
 
+    // Clear all stores when creating new content or switching between items
+    console.log('🎛️ [EDITOR] Clearing all stores...')
     useCanvasStore.getState().initialize([])
     useBackgroundStore.getState().initialize()
+    useSlidesStore.getState().reset() // Clear slides completely
+    useHistoryStore.getState().clear() // Clear undo/redo history
     usePersistenceStore.getState().initialize() // Initialize change detection
 
-    // Load existing song if editing
+    // Load existing item if editing
     if (action === 'edit' && itemId) {
+      console.log('🎛️ [EDITOR] Loading existing item:', itemId)
       usePersistenceStore
         .getState()
         .loadEditor(itemId)
         .catch((error) => {
-          console.error('Failed to load song:', error)
+          console.error(`Failed to load ${mode}:`, error)
           toast({
             title: 'Error',
-            description: 'Failed to load song',
+            description: `Failed to load ${mode === 'song' ? 'song' : 'presentation'}`,
             variant: 'destructive'
           })
+          // Navigate back to collection on load failure
+          navigate('/collection')
         })
     } else {
-      // Create initial slide for new content
-      const currentSlides = useSlidesStore.getState().slides
-      if (currentSlides.length === 0) {
-        useSlidesStore.getState().addSlide()
-      }
+      // Create new content - initialize with empty slides store and add first slide
+      console.log('🎛️ [EDITOR] Creating new content, adding initial slide...')
+      useSlidesStore.getState().initialize([]) // This will create an initial slide
     }
-  }, [mode, action, itemId, toast])
+  }, [mode, action, itemId, toast, navigate])
 
   // Cleanup on unmount
   useEffect(() => {
@@ -110,18 +139,18 @@ export default function EditorV2(): JSX.Element {
       await usePersistenceStore.getState().saveEditor()
       toast({
         title: 'Success',
-        description: 'Song saved successfully',
+        description: `${mode === 'song' ? 'Song' : 'Presentation'} saved successfully`,
         variant: 'default'
       })
     } catch (error) {
       console.error('Save failed:', error)
       toast({
         title: 'Error',
-        description: 'Failed to save song',
+        description: `Failed to save ${mode === 'song' ? 'song' : 'presentation'}`,
         variant: 'destructive'
       })
     }
-  }, [toast])
+  }, [toast, mode])
 
   // Handle back navigation
   const handleBack = useCallback(() => {
@@ -161,74 +190,153 @@ export default function EditorV2(): JSX.Element {
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [handleSave, undo, redo, addSlide])
 
+  // Drag and drop handlers - optimized to prevent infinite loops
+  const handleDragStart = useCallback((e: React.DragEvent, index: number) => {
+    setDraggedSlideIndex(index)
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', index.toString())
+  }, [])
+
+  const handleDragOver = useCallback(
+    (e: React.DragEvent, index: number) => {
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'move'
+      if (dragOverIndex !== index) {
+        setDragOverIndex(index)
+      }
+    },
+    [dragOverIndex]
+  )
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    // Only clear drag over if we're actually leaving the slide area
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      setDragOverIndex(null)
+    }
+  }, [])
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent, dropIndex: number) => {
+      e.preventDefault()
+      e.stopPropagation()
+
+      if (draggedSlideIndex !== null && draggedSlideIndex !== dropIndex) {
+        moveSlide(draggedSlideIndex, dropIndex)
+
+        // Update current slide index if needed
+        if (currentSlideIndex === draggedSlideIndex) {
+          setCurrentSlide(dropIndex)
+        } else if (currentSlideIndex > draggedSlideIndex && currentSlideIndex <= dropIndex) {
+          setCurrentSlide(currentSlideIndex - 1)
+        } else if (currentSlideIndex < draggedSlideIndex && currentSlideIndex >= dropIndex) {
+          setCurrentSlide(currentSlideIndex + 1)
+        }
+      }
+      setDraggedSlideIndex(null)
+      setDragOverIndex(null)
+    },
+    [draggedSlideIndex, currentSlideIndex, moveSlide, setCurrentSlide]
+  )
+
+  const handleDragEnd = useCallback(() => {
+    setDraggedSlideIndex(null)
+    setDragOverIndex(null)
+  }, [])
+
   const currentSlide = slides[currentSlideIndex]
 
   return (
     <div className="h-screen flex flex-col bg-background text-foreground">
       {/* Header */}
-      <div className="flex items-center justify-between p-4 bg-card border-b border-border shadow-sm">
-        <div className="flex items-center gap-4">
-          <Button onClick={handleBack} variant="ghost" size="sm">
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Back
-          </Button>
-
-          <Separator orientation="vertical" className="h-6" />
+      <div className="bg-card border-b border-border shadow-sm">
+        {/* Top row - Navigation and controls */}
+        <div className="flex items-center justify-between p-4">
+          <div className="flex items-center gap-4">
+            <Button onClick={handleBack} variant="ghost" size="sm">
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              Back
+            </Button>
+          </div>
 
           <div className="flex items-center gap-2">
-            <Input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Song Title"
-              className="w-64"
-            />
-            <Input
-              value={artist}
-              onChange={(e) => setArtist(e.target.value)}
-              placeholder="Artist"
-              className="w-48"
-            />
+            {/* Undo/Redo */}
+            <Button onClick={undo} disabled={!canUndo} variant="ghost" size="sm">
+              <Undo className="w-4 h-4" />
+            </Button>
+            <Button onClick={redo} disabled={!canRedo} variant="ghost" size="sm">
+              <Redo className="w-4 h-4" />
+            </Button>
+
+            <Separator orientation="vertical" className="h-6" />
+
+            {/* Save status */}
+            <div className="text-sm text-muted-foreground">
+              {autoSaveEnabled ? (
+                hasUnsavedChanges ? (
+                  <span className="text-destructive">Unsaved changes</span>
+                ) : (
+                  <span className="text-green-600">Saved</span>
+                )
+              ) : (
+                'Auto-save off'
+              )}
+            </div>
+
+            <Button
+              onClick={toggleBackgroundPanel}
+              variant={isPanelOpen ? 'default' : 'outline'}
+              size="sm"
+              className="mr-2"
+            >
+              <Image className="w-4 h-4 mr-2" />
+              Backgrounds
+            </Button>
+
+            <Button onClick={handleSave} variant="default" size="sm">
+              <Save className="w-4 h-4 mr-2" />
+              Save
+            </Button>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          {/* Undo/Redo */}
-          <Button onClick={undo} disabled={!canUndo} variant="ghost" size="sm">
-            <Undo className="w-4 h-4" />
-          </Button>
-          <Button onClick={redo} disabled={!canRedo} variant="ghost" size="sm">
-            <Redo className="w-4 h-4" />
-          </Button>
-
-          <Separator orientation="vertical" className="h-6" />
-
-          {/* Save status */}
-          <div className="text-sm text-muted-foreground">
-            {autoSaveEnabled ? (
-              hasUnsavedChanges ? (
-                <span className="text-destructive">Unsaved changes</span>
-              ) : (
-                <span className="text-green-600">Saved</span>
-              )
-            ) : (
-              'Auto-save off'
-            )}
+        {/* Content metadata section */}
+        <div className="px-4 pb-4 space-y-3">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                {titleLabel}
+              </label>
+              <Input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder={titlePlaceholder}
+                className="h-9"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                {artistLabel}
+              </label>
+              <Input
+                value={artist}
+                onChange={(e) => setArtist(e.target.value)}
+                placeholder={artistPlaceholder}
+                className="h-9"
+              />
+            </div>
           </div>
 
-          <Button
-            onClick={toggleBackgroundPanel}
-            variant={isPanelOpen ? 'default' : 'outline'}
-            size="sm"
-            className="mr-2"
-          >
-            <Image className="w-4 h-4 mr-2" />
-            Backgrounds
-          </Button>
-
-          <Button onClick={handleSave} variant="default" size="sm">
-            <Save className="w-4 h-4 mr-2" />
-            Save
-          </Button>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Tags
+            </label>
+            <TagsInput
+              tags={tags}
+              onTagsChange={setTags}
+              placeholder="Add tags (press Enter to add)"
+              className="min-h-[36px]"
+            />
+          </div>
         </div>
       </div>
 
@@ -274,53 +382,74 @@ export default function EditorV2(): JSX.Element {
           {/* Slide List */}
           <div className="flex-1 overflow-y-auto p-2">
             {slides.map((slide, index) => (
-              <div
-                key={slide.id}
-                className={`p-3 mb-2 rounded cursor-pointer transition-colors ${
-                  index === currentSlideIndex
-                    ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-                    : 'bg-sidebar-primary/10 hover:bg-sidebar-accent/50 text-sidebar-foreground'
-                }`}
-                onClick={() => setCurrentSlide(index)}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex-1">
-                    <SlideTitle slideIndex={index} className="font-medium text-sm" />
-                    <div className="text-xs opacity-75 mt-1">
-                      {slide.elements?.length || 0} element
-                      {(slide.elements?.length || 0) !== 1 ? 's' : ''}
+              <React.Fragment key={slide.id}>
+                {/* Drop zone indicator */}
+                {dragOverIndex === index &&
+                  draggedSlideIndex !== null &&
+                  draggedSlideIndex !== index && (
+                    <div className="h-1 bg-primary rounded-full mb-2 animate-pulse" />
+                  )}
+
+                <div
+                  draggable
+                  onDragStart={(e) => handleDragStart(e, index)}
+                  onDragOver={(e) => handleDragOver(e, index)}
+                  onDragLeave={handleDragLeave}
+                  onDrop={(e) => handleDrop(e, index)}
+                  onDragEnd={handleDragEnd}
+                  className={`p-3 mb-2 rounded cursor-pointer transition-all duration-200 ${
+                    index === currentSlideIndex
+                      ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+                      : 'bg-sidebar-primary/10 hover:bg-sidebar-accent/50 text-sidebar-foreground'
+                  } ${draggedSlideIndex === index ? 'opacity-50 scale-95' : ''} ${
+                    dragOverIndex === index && draggedSlideIndex !== index
+                      ? 'border-2 border-primary border-dashed'
+                      : 'border-2 border-transparent'
+                  }`}
+                  onClick={() => setCurrentSlide(index)}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <GripVertical className="w-3 h-3 text-muted-foreground/50 cursor-grab active:cursor-grabbing flex-shrink-0" />
+                        <SlideTitle slideIndex={index} className="font-medium text-sm" />
+                      </div>
+                      <div className="text-xs opacity-75 mt-1 ml-5">
+                        {slide.elements?.length || 0} element
+                        {(slide.elements?.length || 0) !== 1 ? 's' : ''}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1">
+                      <Button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          duplicateSlide(index)
+                        }}
+                        variant="ghost"
+                        size="sm"
+                        className="w-6 h-6 p-0"
+                      >
+                        📋
+                      </Button>
+                      <Button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          if (slides.length > 1) {
+                            deleteSlide(index)
+                          }
+                        }}
+                        disabled={slides.length <= 1}
+                        variant="ghost"
+                        size="sm"
+                        className="w-6 h-6 p-0 hover:text-destructive"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </Button>
                     </div>
                   </div>
-
-                  <div className="flex items-center gap-1">
-                    <Button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        duplicateSlide(index)
-                      }}
-                      variant="ghost"
-                      size="sm"
-                      className="w-6 h-6 p-0"
-                    >
-                      📋
-                    </Button>
-                    <Button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        if (slides.length > 1) {
-                          deleteSlide(index)
-                        }
-                      }}
-                      disabled={slides.length <= 1}
-                      variant="ghost"
-                      size="sm"
-                      className="w-6 h-6 p-0 hover:text-destructive"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </Button>
-                  </div>
                 </div>
-              </div>
+              </React.Fragment>
             ))}
           </div>
         </div>
@@ -358,6 +487,9 @@ export default function EditorV2(): JSX.Element {
 
         {/* Background Panel */}
         {isPanelOpen && <BackgroundPanel />}
+
+        {/* Properties Panel */}
+        <PropertiesPanel />
       </div>
 
       <Toaster />

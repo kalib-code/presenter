@@ -1,13 +1,15 @@
-import { app, shell, BrowserWindow, ipcMain } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, screen } from 'electron'
 import { join } from 'path'
+import { promises as fs } from 'fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { open } from 'lmdb'
+import { basename, extname } from 'path'
 
 // Import types from the shared types file
-import type { Song, Media } from './types/database'
+import type { Song, Media, Presentation, Setlist } from './types/database'
 // TODO: Import these when implementing their IPC handlers
-// import type { Setlist, Presentation, Template, Settings } from './types/database'
+// import type { Template, Settings } from './types/database'
 
 // Legacy types for backward compatibility (will be removed)
 export type LegacySong = { id: string; name: string }
@@ -36,16 +38,15 @@ const songDb = open<Song>({
   compression: true
 })
 
-// TODO: Initialize these databases when implementing their IPC handlers
-// const setlistDb = open<Setlist>({
-//   path: join(app.getPath('userData'), 'setlists.lmdb'),
-//   compression: true
-// })
+const setlistDb = open<Setlist>({
+  path: join(app.getPath('userData'), 'setlists.lmdb'),
+  compression: true
+})
 
-// const presentationDb = open<Presentation>({
-//   path: join(app.getPath('userData'), 'presentations.lmdb'),
-//   compression: true
-// })
+const presentationDb = open<Presentation>({
+  path: join(app.getPath('userData'), 'presentations.lmdb'),
+  compression: true
+})
 
 const mediaDb = open<Media>({
   path: join(app.getPath('userData'), 'media.lmdb'),
@@ -88,6 +89,33 @@ function generateId(): string {
   return Date.now().toString() + Math.random().toString(36).slice(2)
 }
 
+// Media directory utilities
+function getMediaDirectory(): string {
+  return join(app.getPath('userData'), 'media')
+}
+
+async function ensureMediaDirectory(): Promise<void> {
+  const mediaDir = getMediaDirectory()
+  try {
+    await fs.access(mediaDir)
+  } catch {
+    await fs.mkdir(mediaDir, { recursive: true })
+    console.log('Created media directory:', mediaDir)
+  }
+}
+
+async function deleteMediaFile(filePath: string): Promise<void> {
+  try {
+    await fs.unlink(filePath)
+  } catch (error) {
+    console.warn('Failed to delete media file:', filePath, error)
+  }
+}
+
+function getMediaUrl(filename: string): string {
+  return `file://${join(getMediaDirectory(), filename)}`
+}
+
 // Song CRUD operations
 async function seedSongs(): Promise<void> {
   const keys = Array.from(songDb.getKeys({ limit: 1 }))
@@ -123,10 +151,23 @@ async function seedSongs(): Promise<void> {
 }
 
 async function listSongs(): Promise<Song[]> {
+  console.log('🎵 [BACKEND] Listing all songs...')
   const songs: Song[] = []
   for (const { value } of songDb.getRange()) {
-    if (value) songs.push(value)
+    if (value) {
+      console.log('🎵 [BACKEND] Found song:', {
+        id: value.id,
+        name: value.name,
+        artist: value.artist,
+        lyricsLength: value.lyrics?.length || 0,
+        slidesCount: value.slides?.length || 0,
+        tags: value.tags,
+        createdAt: new Date(value.createdAt).toISOString()
+      })
+      songs.push(value)
+    }
   }
+  console.log('🎵 [BACKEND] Total songs found:', songs.length)
   return songs
 }
 
@@ -150,12 +191,38 @@ async function createSong(name: string): Promise<Song[]> {
 }
 
 async function getSong(id: string): Promise<Song | null> {
-  return (await songDb.get(id)) || null
+  console.log('🎵 [BACKEND] Getting song by ID:', id)
+  const song = (await songDb.get(id)) || null
+  if (song) {
+    console.log('🎵 [BACKEND] Song found:', {
+      id: song.id,
+      name: song.name,
+      artist: song.artist,
+      lyricsLength: song.lyrics?.length || 0,
+      lyricsPreview: song.lyrics?.substring(0, 100) + (song.lyrics?.length > 100 ? '...' : ''),
+      slidesCount: song.slides?.length || 0,
+      tags: song.tags
+    })
+  } else {
+    console.log('🎵 [BACKEND] Song not found for ID:', id)
+  }
+  return song
 }
 
 async function updateSong(id: string, data: Partial<Song>): Promise<Song[]> {
+  console.log('🎵 [BACKEND] Updating song:', id, 'with data:', {
+    name: data.name,
+    artist: data.artist,
+    lyricsLength: data.lyrics?.length || 0,
+    slidesCount: data.slides?.length || 0,
+    tags: data.tags
+  })
+
   const existing = await songDb.get(id)
-  if (!existing) throw new Error('Song not found')
+  if (!existing) {
+    console.error('🎵 [BACKEND] Song not found for update:', id)
+    throw new Error('Song not found')
+  }
 
   const updated: Song = {
     ...existing,
@@ -164,6 +231,14 @@ async function updateSong(id: string, data: Partial<Song>): Promise<Song[]> {
     updatedAt: Date.now(),
     version: existing.version + 1
   }
+
+  console.log('🎵 [BACKEND] Updated song data:', {
+    id: updated.id,
+    name: updated.name,
+    artist: updated.artist,
+    lyricsLength: updated.lyrics?.length || 0,
+    version: updated.version
+  })
 
   await songDb.put(id, updated)
   return await listSongs()
@@ -224,8 +299,172 @@ async function updateMedia(id: string, data: Partial<Media>): Promise<Media[]> {
 }
 
 async function deleteMedia(id: string): Promise<Media[]> {
+  if (!id || id.trim() === '') {
+    throw new Error('Cannot delete media: ID is empty or undefined')
+  }
+
+  // Get the media entry to find the file path
+  const media = await mediaDb.get(id)
+  if (media && media.path) {
+    // Delete the physical file
+    await deleteMediaFile(media.path)
+  }
+
   await mediaDb.remove(id)
   return await listMedia()
+}
+
+// Presentation CRUD operations
+async function listPresentations(): Promise<Presentation[]> {
+  const presentations: Presentation[] = []
+  for (const { value } of presentationDb.getRange()) {
+    if (value) presentations.push(value)
+  }
+  return presentations
+}
+
+async function createPresentation(
+  data: Omit<Presentation, 'id' | 'createdAt' | 'updatedAt' | 'version'>
+): Promise<Presentation[]> {
+  const id = generateId()
+  const now = Date.now()
+  const presentation: Presentation = {
+    ...data,
+    id,
+    createdAt: now,
+    updatedAt: now,
+    version: 1
+  }
+  await presentationDb.put(id, presentation)
+  return await listPresentations()
+}
+
+async function getPresentation(id: string): Promise<Presentation | null> {
+  return (await presentationDb.get(id)) || null
+}
+
+async function updatePresentation(
+  id: string,
+  data: Partial<Presentation>
+): Promise<Presentation[]> {
+  const existing = await presentationDb.get(id)
+  if (!existing) throw new Error('Presentation not found')
+
+  const updated: Presentation = {
+    ...existing,
+    ...data,
+    id, // Ensure ID doesn't change
+    updatedAt: Date.now(),
+    version: existing.version + 1
+  }
+
+  await presentationDb.put(id, updated)
+  return await listPresentations()
+}
+
+async function deletePresentation(id: string): Promise<Presentation[]> {
+  if (!id || id.trim() === '') {
+    throw new Error('Cannot delete presentation: ID is empty or undefined')
+  }
+
+  await presentationDb.remove(id)
+  return await listPresentations()
+}
+
+// Setlist CRUD operations
+async function listSetlists(): Promise<Setlist[]> {
+  console.log('📋 [BACKEND] Listing all setlists...')
+  const setlists: Setlist[] = []
+  for (const { value } of setlistDb.getRange()) {
+    if (value) {
+      console.log('📋 [BACKEND] Found setlist:', {
+        id: value.id,
+        name: value.name,
+        description: value.description,
+        itemsCount: value.items?.length || 0,
+        items:
+          value.items?.map((item) => ({
+            id: item.id,
+            title: item.title,
+            type: item.type,
+            referenceId: item.referenceId
+          })) || []
+      })
+      setlists.push(value)
+    }
+  }
+  console.log('📋 [BACKEND] Total setlists found:', setlists.length)
+  return setlists
+}
+
+async function createSetlist(
+  data: Omit<Setlist, 'id' | 'createdAt' | 'updatedAt' | 'version'>
+): Promise<Setlist[]> {
+  const id = generateId()
+  const now = Date.now()
+  const setlist: Setlist = {
+    ...data,
+    id,
+    items: data.items || [], // Ensure items is always an array
+    createdAt: now,
+    updatedAt: now,
+    version: 1
+  }
+  await setlistDb.put(id, setlist)
+  return await listSetlists()
+}
+
+async function getSetlist(id: string): Promise<Setlist | null> {
+  return (await setlistDb.get(id)) || null
+}
+
+async function updateSetlist(id: string, data: Partial<Setlist>): Promise<Setlist[]> {
+  console.log('🔧 Backend updateSetlist called:', { id, dataKeys: Object.keys(data) })
+
+  const existing = await setlistDb.get(id)
+  if (!existing) {
+    console.error('❌ Setlist not found in database:', id)
+    throw new Error('Setlist not found')
+  }
+
+  // Ensure existing setlist has items array initialized
+  if (!existing.items) {
+    console.log('⚠️ Existing setlist missing items array, initializing as empty array')
+    existing.items = []
+  }
+
+  console.log('📋 Existing setlist items:', existing.items?.length || 0, existing.items)
+  console.log('📝 Update data items:', data.items?.length || 0, data.items)
+
+  const updated: Setlist = {
+    ...existing,
+    ...data,
+    id, // Ensure ID doesn't change
+    updatedAt: Date.now(),
+    version: existing.version + 1
+  }
+
+  console.log('✨ Final updated setlist items:', updated.items?.length || 0, updated.items)
+
+  await setlistDb.put(id, updated)
+
+  // Verify the save
+  const saved = await setlistDb.get(id)
+  console.log('💾 Saved setlist items:', saved?.items?.length || 0, saved?.items)
+
+  const allSetlists = await listSetlists()
+  console.log('📊 Returning setlists count:', allSetlists.length)
+
+  return allSetlists
+}
+
+async function deleteSetlist(id: string): Promise<Setlist[]> {
+  if (!id || id.trim() === '') {
+    throw new Error('Cannot delete setlist: ID is empty or undefined')
+  }
+
+  await setlistDb.remove(id)
+  return await listSetlists()
 }
 
 // Legacy functions (keeping for backward compatibility)
@@ -381,6 +620,18 @@ async function clearAllDatabases(): Promise<void> {
   }
   console.log('Media database cleared')
 
+  // Clear presentations
+  for (const { key } of presentationDb.getRange()) {
+    await presentationDb.remove(key)
+  }
+  console.log('Presentations database cleared')
+
+  // Clear presentations
+  for (const { key } of presentationDb.getRange()) {
+    await presentationDb.remove(key)
+  }
+  console.log('Presentations database cleared')
+
   // Clear slides
   for (const { key } of slideDb.getRange()) {
     await slideDb.remove(key)
@@ -410,6 +661,9 @@ async function clearAllDatabases(): Promise<void> {
 
 // Initialize databases
 async function initializeDatabases(): Promise<void> {
+  // Ensure media directory exists
+  await ensureMediaDirectory()
+
   await Promise.all([
     seedSongs(),
     seedSlides(),
@@ -481,30 +735,130 @@ function createWindow(): void {
   }
 }
 
-// This method will be called when Electron has finished initialization
-app.whenReady().then(async () => {
-  // Set app user model id for windows
-  electronApp.setAppUserModelId('com.electron')
+// Projection window management
+let projectionWindow: BrowserWindow | null = null
 
-  // Enable verbose logging in development
-  if (is.dev) {
-    console.log('Electron app ready - Development mode enabled')
-    console.log('User data path:', app.getPath('userData'))
-    console.log('App path:', app.getAppPath())
-  }
+function createProjectionWindow(): BrowserWindow {
+  console.log('Creating projection window...')
 
-  // Default open or close DevTools by F12 in development
-  app.on('browser-window-created', (_, window) => {
-    optimizer.watchWindowShortcuts(window)
-    if (is.dev) {
-      console.log('Browser window created')
+  // Get primary display
+  const primaryDisplay = screen.getPrimaryDisplay()
+  console.log('Using primary display:', {
+    id: primaryDisplay.id,
+    bounds: primaryDisplay.bounds
+  })
+
+  // Create window on primary display, offset from main window
+  const { width, height } = primaryDisplay.workAreaSize
+  const windowWidth = Math.min(1200, width - 100)
+  const windowHeight = Math.min(800, height - 100)
+
+  projectionWindow = new BrowserWindow({
+    x: 100,
+    y: 100,
+    width: windowWidth,
+    height: windowHeight,
+    fullscreen: false,
+    frame: true,
+    show: false,
+    title: 'Projection Window',
+    backgroundColor: '#000000',
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: false
+      // Enable nodeIntegration for direct IPC access in presentation window
     }
   })
 
+  // Set up event handlers
+  projectionWindow.on('closed', () => {
+    projectionWindow = null
+  })
+
+  projectionWindow.on('ready-to-show', () => {
+    console.log('Projection window ready to show')
+    projectionWindow?.show()
+  })
+
+  // Load the presentation route
+  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+    projectionWindow.loadURL(`${process.env['ELECTRON_RENDERER_URL']}#/presentation`)
+  } else {
+    projectionWindow.loadFile(join(__dirname, '../renderer/index.html'), { hash: 'presentation' })
+  }
+
+  console.log('Projection window created successfully')
+  return projectionWindow
+}
+
+function getOrCreateProjectionWindow(): BrowserWindow {
+  if (!projectionWindow || projectionWindow.isDestroyed()) {
+    return createProjectionWindow()
+  }
+  return projectionWindow
+}
+
+function projectContent(title: string, content: string, type: string, slideData?: unknown): void {
+  console.log('🎯 [MAIN] Received projection request:', {
+    title,
+    type,
+    contentLength: content.length,
+    hasSlideData: !!slideData
+  })
+
+  const window = getOrCreateProjectionWindow()
+
+  // Send projection data to the presentation window via IPC
+  const projectionData = {
+    title,
+    content,
+    type,
+    slideData
+  }
+
+  console.log('🎯 [MAIN] Sending projection data to presentation window')
+  window.webContents.send('projection-update', projectionData)
+}
+
+function blankProjection(): void {
+  if (projectionWindow && !projectionWindow.isDestroyed()) {
+    console.log('🎯 [MAIN] Blanking projection')
+    projectionWindow.webContents.send('projection-blank', true)
+  }
+}
+
+function showLogo(): void {
+  if (projectionWindow && !projectionWindow.isDestroyed()) {
+    console.log('🎯 [MAIN] Showing logo')
+    projectionWindow.webContents.send('projection-logo', true)
+  }
+}
+
+function stopProjection(): void {
+  if (projectionWindow && !projectionWindow.isDestroyed()) {
+    console.log('🎯 [MAIN] Stopping projection')
+    projectionWindow.webContents.send('projection-stop')
+    projectionWindow.close()
+  }
+}
+
+// This method will be called when Electron has finished initialization
+app.whenReady().then(() => {
+  // Set app user model id for windows
+  electronApp.setAppUserModelId('com.electron')
+
+  // Default open or close DevTools by F12 in development
+  // and ignore CommandOrControl + R in production.
+  // see https://github.com/alex8088/electron-toolkit/tree/master/packages/utils
+  app.on('browser-window-created', (_, window) => {
+    optimizer.watchWindowShortcuts(window)
+  })
+
   // Initialize databases
-  console.log('Initializing databases...')
-  await initializeDatabases()
-  console.log('Databases initialized')
+  initializeDatabases()
+
+  // IPC test
+  ipcMain.handle('ping', () => 'pong')
 
   // IPC handlers - Songs
   ipcMain.handle('list-songs', async () => {
@@ -525,12 +879,6 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('delete-song', async (_event, id: string) => {
     return await deleteSong(id)
-  })
-
-  // Clear database handler
-  ipcMain.handle('clear-database', async () => {
-    await clearAllDatabases()
-    return 'Database cleared successfully'
   })
 
   // IPC handlers - Media
@@ -555,6 +903,276 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('delete-media', async (_event, id: string) => {
     return await deleteMedia(id)
+  })
+
+  // Clear database handler
+  ipcMain.handle('clear-database', async () => {
+    await clearAllDatabases()
+    return 'Database cleared successfully'
+  })
+
+  // Media IPC handlers
+  ipcMain.handle('upload-media', async (_event, filePath: string) => {
+    try {
+      await ensureMediaDirectory()
+      const filename = basename(filePath)
+      const targetPath = join(getMediaDirectory(), filename)
+
+      // Copy file to media directory
+      await fs.copyFile(filePath, targetPath)
+
+      // Get file stats
+      const stats = await fs.stat(targetPath)
+
+      return {
+        filename,
+        path: targetPath,
+        url: getMediaUrl(filename),
+        size: stats.size
+      }
+    } catch (error) {
+      console.error('Failed to upload media:', error)
+      throw error
+    }
+  })
+
+  ipcMain.handle('list-media-files', async () => {
+    try {
+      await ensureMediaDirectory()
+      const mediaDir = getMediaDirectory()
+      const files = await fs.readdir(mediaDir)
+
+      const mediaFiles = await Promise.all(
+        files
+          .filter((file) => {
+            const ext = extname(file).toLowerCase()
+            return [
+              '.jpg',
+              '.jpeg',
+              '.png',
+              '.gif',
+              '.mp4',
+              '.mov',
+              '.avi',
+              '.mp3',
+              '.wav'
+            ].includes(ext)
+          })
+          .map(async (file) => {
+            const filePath = join(mediaDir, file)
+            const stats = await fs.stat(filePath)
+            const ext = extname(file).toLowerCase()
+
+            return {
+              filename: file,
+              path: filePath,
+              url: getMediaUrl(file),
+              size: stats.size,
+              type: ['.jpg', '.jpeg', '.png', '.gif'].includes(ext)
+                ? 'image'
+                : ['.mp4', '.mov', '.avi'].includes(ext)
+                  ? 'video'
+                  : 'audio',
+              createdAt: stats.birthtimeMs
+            }
+          })
+      )
+
+      // Sort by creation time (newest first)
+      return mediaFiles.sort((a, b) => b.createdAt - a.createdAt)
+    } catch (error) {
+      console.error('Failed to list media files:', error)
+      return []
+    }
+  })
+
+  // Delete media file
+  ipcMain.handle('delete-media-file', async (_event, filename: string) => {
+    try {
+      const filePath = join(getMediaDirectory(), filename)
+      await fs.unlink(filePath)
+      console.log('Media file deleted:', filename)
+      return true
+    } catch (error) {
+      console.error('Failed to delete media file:', filename, error)
+      return false
+    }
+  })
+
+  // Get media file as data URL for display in browser
+  ipcMain.handle('get-media-data-url', async (_event, filename: string) => {
+    try {
+      const filePath = join(getMediaDirectory(), filename)
+
+      // Check if file exists
+      try {
+        await fs.access(filePath)
+      } catch {
+        console.error('Media file not found:', filePath)
+        return null
+      }
+
+      // Read file and convert to data URL
+      const fileBuffer = await fs.readFile(filePath)
+
+      // Determine MIME type based on file extension
+      const ext = filename.toLowerCase().split('.').pop()
+      let mimeType = 'application/octet-stream'
+
+      if (ext) {
+        switch (ext) {
+          case 'jpg':
+          case 'jpeg':
+            mimeType = 'image/jpeg'
+            break
+          case 'png':
+            mimeType = 'image/png'
+            break
+          case 'gif':
+            mimeType = 'image/gif'
+            break
+          case 'webp':
+            mimeType = 'image/webp'
+            break
+          case 'mp4':
+            mimeType = 'video/mp4'
+            break
+          case 'webm':
+            mimeType = 'video/webm'
+            break
+          case 'mov':
+            mimeType = 'video/quicktime'
+            break
+          case 'avi':
+            mimeType = 'video/x-msvideo'
+            break
+        }
+      }
+
+      // Convert to base64 and create data URL
+      const base64Data = fileBuffer.toString('base64')
+      const dataUrl = `data:${mimeType};base64,${base64Data}`
+
+      console.log('Generated data URL for:', filename, 'size:', dataUrl.length, 'MIME:', mimeType)
+      return dataUrl
+    } catch (error) {
+      console.error('Failed to get media data URL for:', filename, error)
+      return null
+    }
+  })
+
+  // IPC handlers - Presentations
+  ipcMain.handle('list-presentations', async () => {
+    return await listPresentations()
+  })
+
+  ipcMain.handle(
+    'create-presentation',
+    async (_event, data: Omit<Presentation, 'id' | 'createdAt' | 'updatedAt' | 'version'>) => {
+      return await createPresentation(data)
+    }
+  )
+
+  ipcMain.handle('get-presentation', async (_event, id: string) => {
+    return await getPresentation(id)
+  })
+
+  ipcMain.handle('update-presentation', async (_event, id: string, data: Partial<Presentation>) => {
+    return await updatePresentation(id, data)
+  })
+
+  ipcMain.handle('delete-presentation', async (_event, id: string) => {
+    return await deletePresentation(id)
+  })
+
+  // IPC handlers - Setlists
+  ipcMain.handle('list-setlists', async () => {
+    console.log('📋 [IPC] Received list-setlists request')
+    const result = await listSetlists()
+    console.log('📋 [IPC] Returning', result.length, 'setlists with items:')
+    result.forEach((setlist) => {
+      console.log('📋 [IPC] Setlist:', setlist.name, 'has', setlist.items?.length || 0, 'items')
+      setlist.items?.forEach((item) => {
+        console.log(
+          '📋 [IPC]   - Item:',
+          item.title,
+          'type:',
+          item.type,
+          'refId:',
+          item.referenceId
+        )
+      })
+    })
+    return result
+  })
+
+  ipcMain.handle(
+    'create-setlist',
+    async (_event, data: Omit<Setlist, 'id' | 'createdAt' | 'updatedAt' | 'version'>) => {
+      console.log('📋 [IPC] Received create-setlist request for:', data.name)
+      const result = await createSetlist(data)
+      console.log('📋 [IPC] Setlist created, returning', result.length, 'total setlists')
+      return result
+    }
+  )
+
+  ipcMain.handle('get-setlist', async (_event, id: string) => {
+    console.log('📋 [IPC] Received get-setlist request for ID:', id)
+    const result = await getSetlist(id)
+    if (result) {
+      console.log(
+        '📋 [IPC] Returning setlist:',
+        result.name,
+        'with',
+        result.items?.length || 0,
+        'items'
+      )
+      result.items?.forEach((item) => {
+        console.log(
+          '📋 [IPC]   - Item:',
+          item.title,
+          'type:',
+          item.type,
+          'refId:',
+          item.referenceId
+        )
+      })
+    } else {
+      console.log('📋 [IPC] Setlist not found for ID:', id)
+    }
+    return result
+  })
+
+  ipcMain.handle('update-setlist', async (_event, id: string, data: Partial<Setlist>) => {
+    console.log(
+      '📋 [IPC] Received update-setlist request for ID:',
+      id,
+      'with keys:',
+      Object.keys(data)
+    )
+    if (data.items) {
+      console.log('📋 [IPC] Updating setlist items:', data.items.length, 'items')
+      data.items.forEach((item) => {
+        console.log(
+          '📋 [IPC]   - Item:',
+          item.title,
+          'type:',
+          item.type,
+          'refId:',
+          item.referenceId
+        )
+      })
+    }
+    const result = await updateSetlist(id, data)
+    console.log('📋 [IPC] Setlist updated, returning', result.length, 'total setlists')
+    return result
+  })
+
+  ipcMain.handle('delete-setlist', async (_event, id: string) => {
+    console.log('📋 [IPC] Received delete-setlist request for ID:', id)
+    const result = await deleteSetlist(id)
+    console.log('📋 [IPC] Setlist deleted, returning', result.length, 'remaining setlists')
+    return result
   })
 
   // Legacy IPC handlers (keeping for backward compatibility)
@@ -621,7 +1239,46 @@ app.whenReady().then(async () => {
     return await listAudio()
   })
 
+  // Projection IPC handlers
+  ipcMain.on(
+    'project-content',
+    (_event, data: { title: string; content: string; type: string; slideData?: unknown }) => {
+      projectContent(data.title, data.content, data.type, data.slideData)
+    }
+  )
+
+  ipcMain.on('toggle-blank', (_event, isBlank: boolean) => {
+    if (isBlank) {
+      blankProjection()
+    } else {
+      // Unblanking - send false to turn off blank mode
+      if (projectionWindow && !projectionWindow.isDestroyed()) {
+        projectionWindow.webContents.send('projection-blank', false)
+      }
+    }
+  })
+
+  ipcMain.on('toggle-logo', (_event, showLogoFlag: boolean) => {
+    if (showLogoFlag) {
+      showLogo()
+    } else {
+      // Hide logo - send false to turn off logo mode
+      if (projectionWindow && !projectionWindow.isDestroyed()) {
+        projectionWindow.webContents.send('projection-logo', false)
+      }
+    }
+  })
+
+  ipcMain.on('stop-projection', () => {
+    stopProjection()
+  })
+
+  // Create main window
   createWindow()
+
+  // Create presentation window automatically on startup
+  console.log('🎯 [STARTUP] Creating presentation window on app startup')
+  createProjectionWindow()
 
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

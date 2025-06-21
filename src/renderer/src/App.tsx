@@ -5,19 +5,27 @@ import Editor from '@renderer/pages/Editor'
 import EditorV2 from '@renderer/pages/EditorV2'
 import Home from '@renderer/pages/Home'
 import Presenter from '@renderer/pages/Presenter'
+import Presentation from '@renderer/pages/Presentation'
 import Setlist from '@renderer/pages/Setlist'
+import SetlistPresenter from '@renderer/pages/SetlistPresenter'
 import Settings from '@renderer/pages/Settings'
 import { EditorCanvas } from '@renderer/components/editor/EditorCanvas'
 import { HashRouter, Route, Routes } from 'react-router-dom'
 
 function App(): JSX.Element {
   const isPresenter = window.location.hash.includes('presenter')
+  const isPresentation = window.location.hash.includes('presentation')
 
   return (
     <HashRouter>
       <Routes>
-        {isPresenter ? (
-          <Route path="/presenter" element={<Presenter />} />
+        {isPresentation ? (
+          <Route path="/presentation" element={<Presentation />} />
+        ) : isPresenter ? (
+          <>
+            <Route path="/presenter" element={<Presenter />} />
+            <Route path="/setlist-presenter" element={<SetlistPresenter />} />
+          </>
         ) : (
           <>
             <Route path="/editor" element={<Editor />} />

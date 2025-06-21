@@ -1,9 +1,11 @@
-import React, { useRef } from 'react'
+import React, { useRef, useState } from 'react'
 import { Button } from '@renderer/components/ui/button'
 import { Switch } from '@renderer/components/ui/switch'
 import { Slider } from '@renderer/components/ui/slider'
-import { Image, Video, Trash2, Globe, Monitor, X, Settings } from 'lucide-react'
+import { Image, Video, Trash2, Globe, Monitor, X, Settings, FolderOpen } from 'lucide-react'
 import { useBackgroundStore } from '@renderer/store/editor-background'
+import { MediaBrowser } from './MediaBrowser'
+import type { Media } from '@renderer/types/database'
 
 interface BackgroundPanelProps {
   className?: string
@@ -14,6 +16,11 @@ export const BackgroundPanel: React.FC<BackgroundPanelProps> = ({ className = ''
   const videoInputRef = useRef<HTMLInputElement>(null)
   const globalImageInputRef = useRef<HTMLInputElement>(null)
   const globalVideoInputRef = useRef<HTMLInputElement>(null)
+
+  // Media browser state
+  const [mediaBrowserOpen, setMediaBrowserOpen] = useState(false)
+  const [mediaBrowserType, setMediaBrowserType] = useState<'image' | 'video'>('image')
+  const [mediaBrowserIsGlobal, setMediaBrowserIsGlobal] = useState(false)
 
   const {
     setSlideBackground,
@@ -48,6 +55,49 @@ export const BackgroundPanel: React.FC<BackgroundPanelProps> = ({ className = ''
 
   const backgroundSize = useBackgroundStore((state) => state.backgroundSize)
   const backgroundPosition = useBackgroundStore((state) => state.backgroundPosition)
+
+  // Handle media selection from browser
+  const handleMediaSelect = async (file: Media) => {
+    try {
+      console.log('🎯 Media selected:', file.name, file.type, file.filename)
+      const mediaUrl = await window.electron.ipcRenderer.invoke('get-media-data-url', file.filename)
+      console.log('📸 Media URL generated, length:', mediaUrl ? mediaUrl.length : 0)
+
+      // Only handle image and video types for backgrounds
+      if (file.type === 'image' || file.type === 'video') {
+        console.log(`🖼️ Setting ${file.type} background, isGlobal:`, mediaBrowserIsGlobal)
+
+        if (mediaBrowserIsGlobal) {
+          console.log('🌍 Setting global background')
+          if (file.type === 'image') {
+            setGlobalBackground(file.type, mediaUrl) // No blob for images
+          } else {
+            setGlobalBackground(file.type, mediaUrl, mediaUrl) // Blob for videos
+          }
+        } else {
+          console.log('📄 Setting slide background')
+          if (file.type === 'image') {
+            setSlideBackground(file.type, mediaUrl) // No blob for images
+          } else {
+            setSlideBackground(file.type, mediaUrl, mediaUrl) // Blob for videos
+          }
+        }
+
+        console.log('✅ Background set successfully')
+      } else {
+        console.warn('⚠️ Unsupported file type for background:', file.type)
+      }
+    } catch (error) {
+      console.error('❌ Failed to load media file:', error)
+    }
+  }
+
+  // Open media browser
+  const openMediaBrowser = (type: 'image' | 'video', isGlobal: boolean) => {
+    setMediaBrowserType(type)
+    setMediaBrowserIsGlobal(isGlobal)
+    setMediaBrowserOpen(true)
+  }
 
   const handleImageUpload = (
     event: React.ChangeEvent<HTMLInputElement>,
@@ -109,8 +159,8 @@ export const BackgroundPanel: React.FC<BackgroundPanelProps> = ({ className = ''
             <h4 className="font-medium text-card-foreground">Current Slide</h4>
           </div>
 
-          {/* Background Type Buttons */}
-          <div className="grid grid-cols-2 gap-2 mb-3">
+          {/* Upload Buttons */}
+          <div className="grid grid-cols-2 gap-2 mb-2">
             <Button
               onClick={() => imageInputRef.current?.click()}
               variant="outline"
@@ -118,7 +168,7 @@ export const BackgroundPanel: React.FC<BackgroundPanelProps> = ({ className = ''
               className="flex items-center gap-2"
             >
               <Image className="w-4 h-4" />
-              Image
+              Upload Image
             </Button>
             <Button
               onClick={() => videoInputRef.current?.click()}
@@ -127,7 +177,29 @@ export const BackgroundPanel: React.FC<BackgroundPanelProps> = ({ className = ''
               className="flex items-center gap-2"
             >
               <Video className="w-4 h-4" />
-              Video
+              Upload Video
+            </Button>
+          </div>
+
+          {/* Media Library Buttons */}
+          <div className="grid grid-cols-2 gap-2 mb-3">
+            <Button
+              onClick={() => openMediaBrowser('image', false)}
+              variant="outline"
+              size="sm"
+              className="flex items-center gap-2 text-xs"
+            >
+              <FolderOpen className="w-3 h-3" />
+              Browse Images
+            </Button>
+            <Button
+              onClick={() => openMediaBrowser('video', false)}
+              variant="outline"
+              size="sm"
+              className="flex items-center gap-2 text-xs"
+            >
+              <FolderOpen className="w-3 h-3" />
+              Browse Videos
             </Button>
           </div>
 
@@ -216,8 +288,8 @@ export const BackgroundPanel: React.FC<BackgroundPanelProps> = ({ className = ''
             <h4 className="font-medium text-card-foreground">All Slides</h4>
           </div>
 
-          {/* Background Type Buttons */}
-          <div className="grid grid-cols-2 gap-2 mb-3">
+          {/* Upload Buttons */}
+          <div className="grid grid-cols-2 gap-2 mb-2">
             <Button
               onClick={() => globalImageInputRef.current?.click()}
               variant="outline"
@@ -225,7 +297,7 @@ export const BackgroundPanel: React.FC<BackgroundPanelProps> = ({ className = ''
               className="flex items-center gap-2"
             >
               <Image className="w-4 h-4" />
-              Image
+              Upload Image
             </Button>
             <Button
               onClick={() => globalVideoInputRef.current?.click()}
@@ -234,7 +306,29 @@ export const BackgroundPanel: React.FC<BackgroundPanelProps> = ({ className = ''
               className="flex items-center gap-2"
             >
               <Video className="w-4 h-4" />
-              Video
+              Upload Video
+            </Button>
+          </div>
+
+          {/* Media Library Buttons */}
+          <div className="grid grid-cols-2 gap-2 mb-3">
+            <Button
+              onClick={() => openMediaBrowser('image', true)}
+              variant="outline"
+              size="sm"
+              className="flex items-center gap-2 text-xs"
+            >
+              <FolderOpen className="w-3 h-3" />
+              Browse Images
+            </Button>
+            <Button
+              onClick={() => openMediaBrowser('video', true)}
+              variant="outline"
+              size="sm"
+              className="flex items-center gap-2 text-xs"
+            >
+              <FolderOpen className="w-3 h-3" />
+              Browse Videos
             </Button>
           </div>
 
@@ -373,6 +467,15 @@ export const BackgroundPanel: React.FC<BackgroundPanelProps> = ({ className = ''
           </div>
         </div>
       </div>
+
+      {/* Media Browser Modal */}
+      <MediaBrowser
+        isOpen={mediaBrowserOpen}
+        onClose={() => setMediaBrowserOpen(false)}
+        onSelect={handleMediaSelect}
+        mediaType={mediaBrowserType}
+        title={`Select ${mediaBrowserType === 'image' ? 'Image' : 'Video'} ${mediaBrowserIsGlobal ? 'for All Slides' : 'for Current Slide'}`}
+      />
     </div>
   )
 }

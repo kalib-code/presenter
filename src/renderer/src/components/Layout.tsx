@@ -18,12 +18,15 @@ function LayoutContent(): JSX.Element {
   const location = useLocation()
   const { setOpenMobile, setOpen } = useSidebar()
 
-  // Check if we're on the Collection page
+  // Check if we're on the Collection, Setlist, or Home (Presenter) page
   const isCollectionPage = location.pathname === '/collection'
+  const isSetlistPage = location.pathname === '/setlist'
+  const isHomePage = location.pathname === '/' || location.pathname === '/home'
+  const shouldCloseSidebar = isCollectionPage || isSetlistPage || isHomePage
 
-  // Collapse sidebar and disable shortcuts when on Collection page
+  // Collapse sidebar and disable shortcuts when on Collection or Setlist page
   useEffect(() => {
-    if (isCollectionPage) {
+    if (shouldCloseSidebar) {
       // Collapse the sidebar
       setOpen(false)
       setOpenMobile(false)
@@ -43,15 +46,15 @@ function LayoutContent(): JSX.Element {
       }
     }
 
-    // Return undefined for non-collection pages (no cleanup needed)
+    // Return undefined for pages that don't close sidebar (no cleanup needed)
     return undefined
-  }, [isCollectionPage, setOpen, setOpenMobile])
+  }, [shouldCloseSidebar, setOpen, setOpenMobile])
 
   return (
     <SidebarInset>
       <header className="sticky top-0 flex shrink-0 items-center gap-2 border-b bg-background p-4">
-        {/* Hide sidebar trigger on Collection page */}
-        {!isCollectionPage && (
+        {/* Hide sidebar trigger on Collection, Setlist, and Home (Presenter) pages */}
+        {!shouldCloseSidebar && (
           <>
             <SidebarTrigger className="-ml-1" />
             <Separator orientation="vertical" className="mr-2 h-4" />
@@ -69,7 +72,7 @@ function LayoutContent(): JSX.Element {
           </BreadcrumbList>
         </Breadcrumb> */}
       </header>
-      <div className="flex flex-1 flex-col gap-4 p-4">
+      <div className={`flex flex-1 flex-col ${isHomePage ? '' : 'gap-4 p-4'}`}>
         <Outlet />
       </div>
     </SidebarInset>
@@ -80,6 +83,9 @@ export default function Layout(): JSX.Element {
   // const { activeItem } = useServiceStore()
   const location = useLocation()
   const isCollectionPage = location.pathname === '/collection'
+  const isSetlistPage = location.pathname === '/setlist'
+  const isHomePage = location.pathname === '/' || location.pathname === '/home'
+  const shouldCloseSidebar = isCollectionPage || isSetlistPage || isHomePage
 
   return (
     <SidebarProvider
@@ -88,7 +94,7 @@ export default function Layout(): JSX.Element {
           '--sidebar-width': '350px'
         } as React.CSSProperties
       }
-      defaultOpen={!isCollectionPage}
+      defaultOpen={!shouldCloseSidebar}
     >
       <AppSidebar />
       <LayoutContent />

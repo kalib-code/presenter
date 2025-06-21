@@ -3,6 +3,8 @@ import { subscribeWithSelector } from 'zustand/middleware'
 import { useHistoryStore, createHistoryAction } from './editor-history'
 import type { Slide } from '@renderer/types/database'
 import { useCanvasStore } from './editor-canvas'
+import { useEditorMetaStore } from './editor-meta'
+import { useBackgroundStore } from './editor-background'
 
 interface SlidesState {
   slides: Slide[]
@@ -28,6 +30,15 @@ interface SlidesActions {
   updateSlideTitle: (index: number, title: string) => void
   updateSlideContent: (index: number, content: string) => void
   updateSlideNotes: (index: number, notes: string) => void
+  updateSlideBackground: (
+    index: number,
+    background?: {
+      type: 'color' | 'image' | 'video' | 'gradient'
+      value: string
+      opacity?: number
+      playbackRate?: number
+    }
+  ) => void
 
   // Title editing UI state
   startEditingTitle: (index: number) => void
@@ -74,10 +85,11 @@ export const useSlidesStore = create<SlidesStore>()(
     addSlide: () => {
       const state = get()
       const newSlideIndex = state.slides.length
+      const currentMode = useEditorMetaStore.getState().mode
       const newSlide: Slide = {
         id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         type: 'custom',
-        title: generateSlideTitle(newSlideIndex + 1),
+        title: generateSlideTitle(newSlideIndex + 1, currentMode),
         content: '',
         elements: [],
         order: newSlideIndex,
@@ -244,14 +256,35 @@ export const useSlidesStore = create<SlidesStore>()(
     setCurrentSlide: (index) => {
       const state = get()
       if (index >= 0 && index < state.slides.length && index !== state.currentSlideIndex) {
-        // Save current canvas elements to the current slide before switching
-        const canvasState = useCanvasStore.getState()
+        // Save current background to the current slide before switching
+        const backgroundState = useBackgroundStore.getState()
         let updatedSlides = state.slides
 
+        // Save current slide's background
+        const currentSlide = state.slides[state.currentSlideIndex]
+        if (currentSlide) {
+          const slideBackground =
+            backgroundState.backgroundType !== 'none'
+              ? {
+                  type: backgroundState.backgroundType as 'color' | 'image' | 'video' | 'gradient',
+                  value: backgroundState.backgroundImage || backgroundState.backgroundVideo || '',
+                  opacity: backgroundState.backgroundOpacity,
+                  playbackRate: backgroundState.videoPlaybackRate
+                }
+              : undefined
+
+          updatedSlides = state.slides.map((slide, i) =>
+            i === state.currentSlideIndex ? { ...slide, background: slideBackground } : slide
+          )
+        }
+
+        // Save current canvas elements to the current slide before switching
+        const canvasState = useCanvasStore.getState()
+
         if (canvasState.elements.length > 0) {
-          const currentSlide = state.slides[state.currentSlideIndex]
+          const currentSlide = updatedSlides[state.currentSlideIndex]
           if (currentSlide) {
-            updatedSlides = state.slides.map((slide, i) =>
+            updatedSlides = updatedSlides.map((slide, i) =>
               i === state.currentSlideIndex
                 ? {
                     ...slide,
@@ -287,8 +320,27 @@ export const useSlidesStore = create<SlidesStore>()(
           currentSlideIndex: index
         })
 
-        // Load canvas elements for the new slide (use updated slides)
+        // Load background for the new slide
         const newSlide = updatedSlides[index]
+        if (newSlide?.background) {
+          const { type, value, opacity, playbackRate } = newSlide.background
+          if (type === 'image') {
+            backgroundState.setSlideBackground('image', value)
+          } else if (type === 'video') {
+            backgroundState.setSlideBackground('video', value, value)
+          }
+          if (opacity !== undefined) {
+            backgroundState.setBackgroundOpacity(opacity)
+          }
+          if (playbackRate !== undefined) {
+            backgroundState.setVideoPlaybackRate(playbackRate)
+          }
+        } else {
+          // Clear slide background if new slide has no background
+          backgroundState.removeSlideBackground()
+        }
+
+        // Load canvas elements for the new slide (use updated slides)
         if (newSlide?.elements) {
           const canvasElements = newSlide.elements
             .filter((el) => el.type === 'text' || el.type === 'image' || el.type === 'video')
@@ -408,6 +460,36 @@ export const useSlidesStore = create<SlidesStore>()(
       // Note: Not adding to history for notes as they're often temporary
     },
 
+    updateSlideBackground: (index, background) => {
+      const state = get()
+      if (index < 0 || index >= state.slides.length) return
+
+      const oldBackground = state.slides[index].background
+      const newSlides = state.slides.map((slide, i) =>
+        i === index ? { ...slide, background } : slide
+      )
+
+      // Create history action
+      const historyAction = createHistoryAction(
+        'update-slide-background',
+        `Update slide background`,
+        () => {
+          // Undo: restore old background
+          const currentSlides = get().slides.map((slide, i) =>
+            i === index ? { ...slide, background: oldBackground } : slide
+          )
+          set({ slides: currentSlides })
+        },
+        () => {
+          // Redo: apply new background
+          set({ slides: newSlides })
+        }
+      )
+
+      set({ slides: newSlides })
+      useHistoryStore.getState().pushAction(historyAction)
+    },
+
     startEditingTitle: (index) => {
       const state = get()
       if (index >= 0 && index < state.slides.length) {
@@ -442,10 +524,11 @@ export const useSlidesStore = create<SlidesStore>()(
 
     autoNumberSlides: () => {
       const state = get()
+      const currentMode = useEditorMetaStore.getState().mode
       const oldSlides = [...state.slides]
       const newSlides = state.slides.map((slide, index) => ({
         ...slide,
-        title: generateSlideTitle(index + 1)
+        title: generateSlideTitle(index + 1, currentMode)
       }))
 
       // Create history action
@@ -491,10 +574,11 @@ export const useSlidesStore = create<SlidesStore>()(
     initialize: (slides = []) => {
       if (slides.length === 0) {
         // Create initial slide
+        const currentMode = useEditorMetaStore.getState().mode
         const initialSlide: Slide = {
           id: Date.now().toString(),
           type: 'custom',
-          title: generateSlideTitle(1),
+          title: generateSlideTitle(1, currentMode),
           content: '',
           elements: [],
           order: 0,

@@ -33,12 +33,15 @@ export const useSongStore = create<SongStore>((set, get) => ({
   fetchSongs: async () => {
     try {
       set({ loading: true, error: null })
+      console.log('🎵 Fetching songs...')
       const result = await db.songs.list()
+      console.log('🎵 Songs fetched:', result.data.length, 'songs')
+      console.log('🎵 Song data:', result.data)
       set({ songs: result.data, loading: false })
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to fetch songs'
       set({ error: errorMessage, loading: false })
-      console.error('Error fetching songs:', error)
+      console.error('❌ Error fetching songs:', error)
     }
   },
 

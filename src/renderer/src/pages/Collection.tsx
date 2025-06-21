@@ -1,23 +1,13 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useSongStore } from '@renderer/store/song'
-import { useMediaStore, useSlideStore } from '@renderer/store/media'
+import { usePresentationStore } from '@renderer/store/presentation'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
-import {
-  Trash2,
-  Plus,
-  Search,
-  Music,
-  FileText,
-  FileImage,
-  Video,
-  Headphones,
-  Edit
-} from 'lucide-react'
-import type { Media, Song } from '@renderer/types/database'
+import { Trash2, Plus, Search, Music, FileText, FileImage, Edit, Upload } from 'lucide-react'
+import type { Media, Song, Presentation } from '@renderer/types/database'
 
-type CollectionType = 'songs' | 'slides' | 'images' | 'video' | 'audio'
+type CollectionType = 'songs' | 'slides' | 'media'
 
 // Type for slide data from legacy store
 type SlideData = {
@@ -27,15 +17,24 @@ type SlideData = {
   createdAt: string
 }
 
+// Simple media file type for file-based storage
+type MediaFile = {
+  id: string
+  name: string
+  filename: string
+  type: 'image' | 'video' | 'audio'
+  size: number
+  createdAt: number
+  path: string
+}
+
 // Union type for all possible data types in the collection
-type CollectionData = Song | Media | SlideData
+type CollectionData = Song | Media | SlideData | Presentation | MediaFile
 
 const collectionTabs = [
   { key: 'songs', label: 'Songs', icon: Music },
-  { key: 'slides', label: 'Slides', icon: FileText },
-  { key: 'images', label: 'Images', icon: FileImage },
-  { key: 'video', label: 'Video', icon: Video },
-  { key: 'audio', label: 'Audio', icon: Headphones }
+  { key: 'slides', label: 'Presentations', icon: FileText },
+  { key: 'media', label: 'Media', icon: FileImage }
 ] as const
 
 export default function Collection(): JSX.Element {
@@ -46,23 +45,67 @@ export default function Collection(): JSX.Element {
   // New database stores
   const { songs, loading: songsLoading, error: songsError, fetchSongs, deleteSong } = useSongStore()
 
-  const {
-    media,
-    loading: mediaLoading,
-    error: mediaError,
-    fetchMedia,
-    createMedia,
-    deleteMedia
-  } = useMediaStore()
+  // Media state (file-based, not using media store)
+  const [media, setMedia] = useState<
+    Array<{
+      id: string
+      name: string
+      filename: string
+      type: 'image' | 'video' | 'audio'
+      size: number
+      createdAt: number
+      path: string
+    }>
+  >([])
+  const [mediaLoading, setMediaLoading] = useState(false)
+  const [mediaError, setMediaError] = useState<string | null>(null)
 
-  // Legacy slide store (will be migrated later)
+  // Media functions
+  const fetchMedia = useCallback(async (): Promise<void> => {
+    try {
+      setMediaLoading(true)
+      setMediaError(null)
+      const files = await window.electron.ipcRenderer.invoke('list-media-files')
+      setMedia(files)
+    } catch (error) {
+      console.error('Failed to fetch media files:', error)
+      setMediaError('Failed to load media files')
+    } finally {
+      setMediaLoading(false)
+    }
+  }, [])
+
+  const deleteMedia = useCallback(
+    async (filename: string): Promise<void> => {
+      try {
+        const success = await window.electron.ipcRenderer.invoke('delete-media-file', filename)
+        if (success) {
+          await fetchMedia() // Refresh the list
+        }
+      } catch (error) {
+        console.error('Failed to delete media file:', error)
+      }
+    },
+    [fetchMedia]
+  )
+
+  // Legacy slide store (keeping for potential future use)
+  // const {
+  //   slides,
+  //   loading: slidesLoading,
+  //   error: slidesError,
+  //   fetchSlides,
+  //   deleteSlide
+  // } = useSlideStore()
+
+  // New presentation store
   const {
-    slides,
-    loading: slidesLoading,
-    error: slidesError,
-    fetchSlides,
-    deleteSlide
-  } = useSlideStore()
+    presentations,
+    isLoading: presentationsLoading,
+    error: presentationsError,
+    loadPresentations,
+    deletePresentation
+  } = usePresentationStore()
 
   // Fetch data when tab changes
   useEffect(() => {
@@ -75,12 +118,10 @@ export default function Collection(): JSX.Element {
             console.log('Songs fetched:', songs.length)
             break
           case 'slides':
-            await fetchSlides()
-            console.log('Slides fetched:', slides.length)
+            await loadPresentations()
+            console.log('Presentations fetched:', presentations.length)
             break
-          case 'images':
-          case 'video':
-          case 'audio':
+          case 'media':
             await fetchMedia()
             console.log('Media fetched:', media.length)
             break
@@ -91,7 +132,7 @@ export default function Collection(): JSX.Element {
     }
 
     fetchData()
-  }, [activeTab, fetchSongs, fetchSlides, fetchMedia])
+  }, [activeTab, fetchSongs, loadPresentations, fetchMedia])
 
   // Get filtered data based on active tab and search
   const getFilteredData = (): CollectionData[] => {
@@ -107,41 +148,28 @@ export default function Collection(): JSX.Element {
           : songs
       case 'slides':
         return searchQuery
-          ? slides.filter(
-              (slide) =>
-                slide.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                slide.content.toLowerCase().includes(searchQuery.toLowerCase())
+          ? presentations.filter(
+              (presentation) =>
+                presentation.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                presentation.slides.some(
+                  (slide) =>
+                    slide.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                    slide.content.toLowerCase().includes(searchQuery.toLowerCase())
+                )
             )
-          : slides
-      case 'images':
+          : presentations
+      case 'media':
         return searchQuery
-          ? media.filter(
-              (item) =>
-                item.type === 'image' && item.name.toLowerCase().includes(searchQuery.toLowerCase())
-            )
-          : media.filter((item) => item.type === 'image')
-      case 'video':
-        return searchQuery
-          ? media.filter(
-              (item) =>
-                item.type === 'video' && item.name.toLowerCase().includes(searchQuery.toLowerCase())
-            )
-          : media.filter((item) => item.type === 'video')
-      case 'audio':
-        return searchQuery
-          ? media.filter(
-              (item) =>
-                item.type === 'audio' && item.name.toLowerCase().includes(searchQuery.toLowerCase())
-            )
-          : media.filter((item) => item.type === 'audio')
+          ? media.filter((item) => item.name.toLowerCase().includes(searchQuery.toLowerCase()))
+          : media
       default:
         return []
     }
   }
 
   const filteredData = getFilteredData()
-  const loading = songsLoading || mediaLoading || slidesLoading
-  const error = songsError || mediaError || slidesError
+  const loading = songsLoading || mediaLoading || presentationsLoading
+  const error = songsError || mediaError || presentationsError
 
   // Helper functions
   const formatFileSize = (bytes: number): string => {
@@ -152,49 +180,21 @@ export default function Collection(): JSX.Element {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
   }
 
-  const formatDuration = (seconds: number): string => {
-    const mins = Math.floor(seconds / 60)
-    const secs = seconds % 60
-    return `${mins}:${secs.toString().padStart(2, '0')}`
-  }
-
   // Action handlers
   const handleCreateSong = (): void => {
-    navigate('/editor?mode=song&action=create')
+    navigate('/editor-v2?mode=song&action=create')
   }
 
   const handleEditSong = (songId: string): void => {
-    navigate(`/editor?mode=song&action=edit&id=${songId}`)
+    navigate(`/editor-v2?mode=song&action=edit&id=${songId}`)
   }
 
   const handleCreateSlide = (): void => {
-    navigate('/editor?mode=slide&action=create')
+    navigate('/editor-v2?mode=slide&action=create')
   }
 
-  const handleEditSlide = (slideId: string): void => {
-    navigate(`/editor?mode=slide&action=edit&id=${slideId}`)
-  }
-
-  const handleAddMedia = async (type: Media['type']): Promise<void> => {
-    const name = prompt(`Enter ${type} name:`)
-    if (name) {
-      try {
-        await createMedia({
-          name,
-          filename: `${name.toLowerCase().replace(/\s+/g, '-')}.${type === 'image' ? 'jpg' : type === 'video' ? 'mp4' : 'mp3'}`,
-          path: `/media/${name}`,
-          type,
-          mimeType: type === 'image' ? 'image/jpeg' : type === 'video' ? 'video/mp4' : 'audio/mpeg',
-          size: 0,
-          tags: [],
-          isPublic: true,
-          checksum: 'placeholder',
-          createdBy: 'user'
-        })
-      } catch (error) {
-        console.error(`Failed to create ${type}:`, error)
-      }
-    }
+  const handleEditPresentation = (presentationId: string): void => {
+    navigate(`/editor-v2?mode=slide&action=edit&id=${presentationId}`)
   }
 
   const handleDelete = async (id: string): Promise<void> => {
@@ -211,11 +211,9 @@ export default function Collection(): JSX.Element {
           await deleteSong(id)
           break
         case 'slides':
-          await deleteSlide(id)
+          await deletePresentation(id)
           break
-        case 'images':
-        case 'video':
-        case 'audio':
+        case 'media':
           await deleteMedia(id)
           break
       }
@@ -229,17 +227,54 @@ export default function Collection(): JSX.Element {
       case 'songs':
         return 'Add Song'
       case 'slides':
-        return 'Add Slide'
-      case 'images':
-        return 'Add Image'
-      case 'video':
-        return 'Add Video'
-      case 'audio':
-        return 'Add Audio'
+        return 'Add Presentation'
+      case 'media':
+        return 'Add Media'
       default:
         return 'Add Item'
     }
   }
+
+  const handleAddMedia = useCallback((): void => {
+    // Create a file input element to allow users to select files
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = 'image/*,video/*,audio/*'
+    input.multiple = true
+
+    input.onchange = async (event) => {
+      const files = (event.target as HTMLInputElement).files
+      if (!files) return
+
+      try {
+        const fileData: { name: string; path: string; data: Uint8Array }[] = []
+
+        for (const file of Array.from(files)) {
+          // Read file as array buffer
+          const arrayBuffer = await file.arrayBuffer()
+          const data = new Uint8Array(arrayBuffer)
+
+          fileData.push({
+            name: file.name,
+            path: file.name, // Not used in the simplified version
+            data
+          })
+        }
+
+        // Upload all files at once
+        const results = await window.electron.ipcRenderer.invoke('upload-media-files', fileData)
+
+        console.log(`✅ Successfully uploaded ${results.length} files`)
+
+        // Refresh the media list
+        await fetchMedia()
+      } catch (error) {
+        console.error('❌ Failed to upload files:', error)
+      }
+    }
+
+    input.click()
+  }, [fetchMedia])
 
   const handleAdd = (): void => {
     switch (activeTab) {
@@ -249,14 +284,8 @@ export default function Collection(): JSX.Element {
       case 'slides':
         handleCreateSlide()
         break
-      case 'images':
-        handleAddMedia('image')
-        break
-      case 'video':
-        handleAddMedia('video')
-        break
-      case 'audio':
-        handleAddMedia('audio')
+      case 'media':
+        handleAddMedia()
         break
     }
   }
@@ -283,7 +312,11 @@ export default function Collection(): JSX.Element {
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">Collection</h1>
         <Button onClick={handleAdd} size="sm">
-          <Plus className="h-4 w-4 mr-2" />
+          {activeTab === 'media' ? (
+            <Upload className="h-4 w-4 mr-2" />
+          ) : (
+            <Plus className="h-4 w-4 mr-2" />
+          )}
           {getAddButtonText()}
         </Button>
       </div>
@@ -407,7 +440,9 @@ export default function Collection(): JSX.Element {
               <thead>
                 <tr className="bg-muted text-foreground">
                   <th className="px-4 py-3 text-left">Title</th>
-                  <th className="px-4 py-3 text-left">Content</th>
+                  <th className="px-4 py-3 text-left">Speaker</th>
+                  <th className="px-4 py-3 text-left">Type</th>
+                  <th className="px-4 py-3 text-left">Slides</th>
                   <th className="px-4 py-3 text-left">Created</th>
                   <th className="px-4 py-3 text-left">Actions</th>
                 </tr>
@@ -415,26 +450,34 @@ export default function Collection(): JSX.Element {
               <tbody>
                 {filteredData.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="px-4 py-8 text-center text-muted-foreground">
-                      No slides found. Click &quot;Add Slide&quot; to create one.
+                    <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
+                      No presentations found. Click &quot;Add Presentation&quot; to create one.
                     </td>
                   </tr>
                 ) : (
-                  filteredData.map((slide) => (
-                    <tr key={slide.id} className="border-t hover:bg-accent/20">
-                      <td className="px-4 py-3 font-medium">{(slide as SlideData).title}</td>
-                      <td className="px-4 py-3 max-w-xs truncate">
-                        {(slide as SlideData).content}
+                  filteredData.map((presentation) => (
+                    <tr key={presentation.id} className="border-t hover:bg-accent/20">
+                      <td className="px-4 py-3 font-medium">
+                        {(presentation as Presentation).name}
                       </td>
                       <td className="px-4 py-3 text-muted-foreground">
-                        {new Date((slide as SlideData).createdAt).toLocaleDateString()}
+                        {(presentation as Presentation).speaker || '—'}
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground capitalize">
+                        {(presentation as Presentation).type}
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground">
+                        {(presentation as Presentation).slides.length} slides
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground">
+                        {new Date((presentation as Presentation).createdAt).toLocaleDateString()}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => handleEditSlide(slide.id)}
+                            onClick={() => handleEditPresentation(presentation.id)}
                             className="text-blue-600 hover:text-blue-700"
                           >
                             <Edit className="h-4 w-4" />
@@ -442,7 +485,7 @@ export default function Collection(): JSX.Element {
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => handleDelete(slide.id)}
+                            onClick={() => handleDelete(presentation.id)}
                             className="text-destructive hover:text-destructive"
                           >
                             <Trash2 className="h-4 w-4" />
@@ -457,17 +500,16 @@ export default function Collection(): JSX.Element {
           </div>
         )}
 
-        {(activeTab === 'images' || activeTab === 'video' || activeTab === 'audio') && (
+        {activeTab === 'media' && (
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
               <thead>
                 <tr className="bg-muted text-foreground">
                   <th className="px-4 py-3 text-left">Name</th>
+                  <th className="px-4 py-3 text-left">Type</th>
                   <th className="px-4 py-3 text-left">File</th>
                   <th className="px-4 py-3 text-left">Size</th>
-                  {activeTab === 'video' || activeTab === 'audio' ? (
-                    <th className="px-4 py-3 text-left">Duration</th>
-                  ) : null}
+                  <th className="px-4 py-3 text-left">Duration</th>
                   <th className="px-4 py-3 text-left">Created</th>
                   <th className="px-4 py-3 text-left">Actions</th>
                 </tr>
@@ -475,38 +517,34 @@ export default function Collection(): JSX.Element {
               <tbody>
                 {filteredData.length === 0 ? (
                   <tr>
-                    <td
-                      colSpan={activeTab === 'images' ? 5 : 6}
-                      className="px-4 py-8 text-center text-muted-foreground"
-                    >
-                      No {activeTab} found. Click &quot;Add{' '}
-                      {activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}&quot; to create one.
+                    <td colSpan={7} className="px-4 py-8 text-center text-muted-foreground">
+                      No media found. Click &quot;Add Media&quot; to upload files.
                     </td>
                   </tr>
                 ) : (
                   filteredData.map((item) => (
                     <tr key={item.id} className="border-t hover:bg-accent/20">
-                      <td className="px-4 py-3 font-medium">{(item as Media).name}</td>
+                      <td className="px-4 py-3 font-medium">{(item as MediaFile).name}</td>
+                      <td className="px-4 py-3">
+                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-secondary text-secondary-foreground capitalize">
+                          {(item as MediaFile).type}
+                        </span>
+                      </td>
                       <td className="px-4 py-3 text-muted-foreground font-mono text-xs">
-                        {(item as Media).filename}
+                        {(item as MediaFile).filename}
                       </td>
                       <td className="px-4 py-3 text-muted-foreground">
-                        {formatFileSize((item as Media).size)}
+                        {formatFileSize((item as MediaFile).size)}
                       </td>
-                      {(activeTab === 'video' || activeTab === 'audio') &&
-                        (item as Media).duration && (
-                          <td className="px-4 py-3 text-muted-foreground">
-                            {formatDuration((item as Media).duration!)}
-                          </td>
-                        )}
+                      <td className="px-4 py-3 text-muted-foreground">—</td>
                       <td className="px-4 py-3 text-muted-foreground">
-                        {new Date((item as Media).createdAt).toLocaleDateString()}
+                        {new Date((item as MediaFile).createdAt).toLocaleDateString()}
                       </td>
                       <td className="px-4 py-3">
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => handleDelete(item.id)}
+                          onClick={() => deleteMedia((item as MediaFile).filename)}
                           className="text-destructive hover:text-destructive"
                         >
                           <Trash2 className="h-4 w-4" />

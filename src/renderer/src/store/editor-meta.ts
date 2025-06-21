@@ -10,7 +10,8 @@ interface EditorMetaState {
   action: EditorAction
   itemId?: string
   title: string
-  artist: string
+  artist: string // Used as "artist" for songs, "speaker" for slides
+  tags: string[]
 
   // Loading states
   isLoading: boolean
@@ -26,6 +27,9 @@ interface EditorMetaActions {
   setItemId: (itemId: string | undefined) => void
   setTitle: (title: string) => void
   setArtist: (artist: string) => void
+  setTags: (tags: string[]) => void
+  addTag: (tag: string) => void
+  removeTag: (tag: string) => void
 
   // State management
   setLoading: (loading: boolean) => void
@@ -46,6 +50,7 @@ const initialState: EditorMetaState = {
   itemId: undefined,
   title: '',
   artist: '',
+  tags: [],
   isLoading: false,
   isSaving: false,
   lastSaved: undefined,
@@ -79,6 +84,25 @@ export const useEditorMetaStore = create<EditorMetaStore>()(
       get().markUnsaved()
     },
 
+    setTags: (tags) => {
+      set({ tags })
+      get().markUnsaved()
+    },
+
+    addTag: (tag) => {
+      const state = get()
+      if (!state.tags.includes(tag) && tag.trim()) {
+        set({ tags: [...state.tags, tag.trim()] })
+        get().markUnsaved()
+      }
+    },
+
+    removeTag: (tag) => {
+      const state = get()
+      set({ tags: state.tags.filter((t) => t !== tag) })
+      get().markUnsaved()
+    },
+
     setLoading: (isLoading) => {
       set({ isLoading })
     },
@@ -106,6 +130,7 @@ export const useEditorMetaStore = create<EditorMetaStore>()(
         itemId,
         title: '',
         artist: '',
+        tags: [],
         isLoading: false,
         isSaving: false,
         hasUnsavedChanges: false,
@@ -126,7 +151,8 @@ export const useEditorMeta = () =>
     action: state.action,
     itemId: state.itemId,
     title: state.title,
-    artist: state.artist
+    artist: state.artist,
+    tags: state.tags
   }))
 
 export const useEditorStatus = () =>
@@ -136,3 +162,32 @@ export const useEditorStatus = () =>
     hasUnsavedChanges: state.hasUnsavedChanges,
     lastSaved: state.lastSaved
   }))
+
+// Helper selectors for UI labels - cached to prevent infinite loops
+const labelsCache = new Map<
+  EditorMode,
+  {
+    titleLabel: string
+    artistLabel: string
+    titlePlaceholder: string
+    artistPlaceholder: string
+  }
+>()
+
+export const useEditorLabels = () => {
+  return useEditorMetaStore((state) => {
+    const cacheKey = state.mode
+
+    if (!labelsCache.has(cacheKey)) {
+      labelsCache.set(cacheKey, {
+        titleLabel: state.mode === 'song' ? 'Song Title' : 'Presentation Title',
+        artistLabel: state.mode === 'song' ? 'Artist' : 'Speaker',
+        titlePlaceholder:
+          state.mode === 'song' ? 'Enter song title...' : 'Enter presentation title...',
+        artistPlaceholder: state.mode === 'song' ? 'Enter artist name...' : 'Enter speaker name...'
+      })
+    }
+
+    return labelsCache.get(cacheKey)!
+  })
+}

@@ -242,69 +242,85 @@ export const Canvas: React.FC<CanvasProps> = ({ className = '' }) => {
         onClick={handleCanvasClick}
         onMouseDown={(e) => e.preventDefault()}
       >
-        {/* Global Background */}
-        {globalBackgroundType === 'image' && globalBackgroundImage && (
-          <div
-            className="absolute inset-0 bg-cover bg-center pointer-events-none"
-            style={{
-              backgroundImage: `url(${globalBackgroundImage})`,
-              backgroundSize: backgroundSize,
-              backgroundPosition: backgroundPosition,
-              opacity: globalBackgroundOpacity
-            }}
-          />
-        )}
-        {globalBackgroundType === 'video' &&
-          (globalBackgroundVideoBlob || globalBackgroundVideo) && (
-            <video
-              className="absolute inset-0 w-full h-full object-cover pointer-events-none"
-              style={{
-                objectFit:
-                  backgroundSize === 'cover'
-                    ? 'cover'
-                    : backgroundSize === 'contain'
-                      ? 'contain'
-                      : 'fill',
-                opacity: globalBackgroundOpacity
-              }}
-              src={globalBackgroundVideoBlob || globalBackgroundVideo || ''}
-              autoPlay
-              loop={globalVideoLoop}
-              muted={globalVideoMuted}
-              playsInline
-            />
-          )}
-
-        {/* Slide Background */}
-        {slideBackgroundType === 'image' && slideBackgroundImage && (
-          <div
-            className="absolute inset-0 bg-cover bg-center pointer-events-none"
-            style={{
-              backgroundImage: `url(${slideBackgroundImage})`,
-              backgroundSize: backgroundSize,
-              backgroundPosition: backgroundPosition,
-              opacity: slideBackgroundOpacity
-            }}
-          />
-        )}
-        {slideBackgroundType === 'video' && (slideBackgroundVideoBlob || slideBackgroundVideo) && (
-          <video
-            className="absolute inset-0 w-full h-full object-cover pointer-events-none"
-            style={{
-              objectFit:
-                backgroundSize === 'cover'
-                  ? 'cover'
-                  : backgroundSize === 'contain'
-                    ? 'contain'
-                    : 'fill',
-              opacity: slideBackgroundOpacity
-            }}
-            src={slideBackgroundVideoBlob || slideBackgroundVideo || ''}
-            autoPlay
-            loop={slideVideoLoop}
-            muted={slideVideoMuted}
-            playsInline
-          />
+        {/* Background Logic: Slide background takes precedence over global background */}
+        {slideBackgroundType !== 'none' ? (
+          <>
+            {/* Slide Background */}
+            {slideBackgroundType === 'image' && slideBackgroundImage && (
+              <div
+                className="absolute inset-0 pointer-events-none"
+                style={{
+                  backgroundImage: `url(${slideBackgroundImage})`,
+                  backgroundSize: backgroundSize === 'none' ? 'auto' : backgroundSize,
+                  backgroundPosition: backgroundPosition,
+                  backgroundRepeat: backgroundSize === 'none' ? 'no-repeat' : 'no-repeat',
+                  opacity: slideBackgroundOpacity
+                }}
+              />
+            )}
+            {slideBackgroundType === 'video' &&
+              (slideBackgroundVideoBlob || slideBackgroundVideo) && (
+                <video
+                  className="absolute inset-0 w-full h-full pointer-events-none"
+                  style={{
+                    objectFit:
+                      backgroundSize === 'cover'
+                        ? 'cover'
+                        : backgroundSize === 'contain'
+                          ? 'contain'
+                          : backgroundSize === 'fill'
+                            ? 'fill'
+                            : 'none',
+                    objectPosition: backgroundPosition,
+                    opacity: slideBackgroundOpacity
+                  }}
+                  src={slideBackgroundVideoBlob || slideBackgroundVideo || ''}
+                  autoPlay
+                  loop={slideVideoLoop}
+                  muted={slideVideoMuted}
+                  playsInline
+                />
+              )}
+          </>
+        ) : (
+          <>
+            {/* Global Background (only when no slide background) */}
+            {globalBackgroundType === 'image' && globalBackgroundImage && (
+              <div
+                className="absolute inset-0 pointer-events-none"
+                style={{
+                  backgroundImage: `url(${globalBackgroundImage})`,
+                  backgroundSize: backgroundSize === 'none' ? 'auto' : backgroundSize,
+                  backgroundPosition: backgroundPosition,
+                  backgroundRepeat: backgroundSize === 'none' ? 'no-repeat' : 'no-repeat',
+                  opacity: globalBackgroundOpacity
+                }}
+              />
+            )}
+            {globalBackgroundType === 'video' &&
+              (globalBackgroundVideoBlob || globalBackgroundVideo) && (
+                <video
+                  className="absolute inset-0 w-full h-full pointer-events-none"
+                  style={{
+                    objectFit:
+                      backgroundSize === 'cover'
+                        ? 'cover'
+                        : backgroundSize === 'contain'
+                          ? 'contain'
+                          : backgroundSize === 'fill'
+                            ? 'fill'
+                            : 'none',
+                    objectPosition: backgroundPosition,
+                    opacity: globalBackgroundOpacity
+                  }}
+                  src={globalBackgroundVideoBlob || globalBackgroundVideo || ''}
+                  autoPlay
+                  loop={globalVideoLoop}
+                  muted={globalVideoMuted}
+                  playsInline
+                />
+              )}
+          </>
         )}
 
         {/* Safe area guides */}

@@ -99,6 +99,8 @@ export interface Background {
   blur?: number
   overlay?: string
   playbackRate?: number
+  size?: 'cover' | 'contain' | 'fill' | 'none'
+  position?: 'center' | 'top' | 'bottom' | 'left' | 'right'
 }
 
 export interface Transition {
@@ -120,13 +122,16 @@ export interface Setlist extends BaseEntity {
 
 export interface SetlistItem {
   id: string
-  type: 'song' | 'presentation' | 'media' | 'announcement'
+  type: 'song' | 'presentation' | 'media' | 'announcement' | 'countdown'
   referenceId: string
   title: string
   duration?: number
   notes?: string
   order: number
   isActive: boolean
+  // Countdown-specific properties
+  countdownDuration?: number // Duration in seconds for countdown timers
+  countdownMessage?: string // Message to display during countdown
 }
 
 // Presentation types
@@ -136,6 +141,8 @@ export interface Presentation extends BaseEntity {
   slides: PresentationSlide[]
   background?: Background
   theme?: Theme
+  speaker?: string
+  tags: string[]
   isPublic: boolean
 }
 

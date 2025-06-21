@@ -114,6 +114,22 @@ export const useBackgroundStore = create<BackgroundStore>()(
         backgroundVideoBlob: type === 'video' ? blob || null : null
       }
 
+      // Update the current slide's background data
+      // Import is done dynamically to avoid circular dependency
+      import('./editor-slides')
+        .then(({ useSlidesStore }) => {
+          const slidesState = useSlidesStore.getState()
+          const currentIndex = slidesState.currentSlideIndex
+          const backgroundData = {
+            type: type as 'color' | 'image' | 'video' | 'gradient',
+            value: source,
+            opacity: state.backgroundOpacity,
+            playbackRate: state.videoPlaybackRate
+          }
+          slidesState.updateSlideBackground(currentIndex, backgroundData)
+        })
+        .catch(console.error)
+
       // Create history action
       const historyAction = createHistoryAction(
         'set-slide-background',
@@ -150,6 +166,16 @@ export const useBackgroundStore = create<BackgroundStore>()(
       if (state.backgroundVideoBlob) {
         URL.revokeObjectURL(state.backgroundVideoBlob)
       }
+
+      // Update the current slide's background data
+      // Import is done dynamically to avoid circular dependency
+      import('./editor-slides')
+        .then(({ useSlidesStore }) => {
+          const slidesState = useSlidesStore.getState()
+          const currentIndex = slidesState.currentSlideIndex
+          slidesState.updateSlideBackground(currentIndex, undefined)
+        })
+        .catch(console.error)
 
       // Create history action
       const historyAction = createHistoryAction(
