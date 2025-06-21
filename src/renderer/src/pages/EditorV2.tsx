@@ -16,7 +16,9 @@ import {
   SkipBack,
   SkipForward,
   Image,
-  GripVertical
+  GripVertical,
+  Eye,
+  Edit
 } from 'lucide-react'
 
 // New store-based imports
@@ -29,6 +31,7 @@ import { useBackgroundStore } from '@renderer/store/editor-background'
 
 // New components
 import { Canvas } from '@renderer/components/editor/Canvas'
+import { PreviewCanvas } from '@renderer/components/editor/PreviewCanvas'
 import { ElementToolbar } from '@renderer/components/editor/ElementToolbar'
 import { BackgroundPanel } from '@renderer/components/editor/BackgroundPanel'
 import { SlideTitle } from '@renderer/components/editor/SlideTitle'
@@ -79,6 +82,9 @@ export default function EditorV2(): JSX.Element {
   // Drag and drop state
   const [draggedSlideIndex, setDraggedSlideIndex] = useState<number | null>(null)
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
+
+  // Preview mode state
+  const [isPreviewMode, setIsPreviewMode] = useState(false)
 
   // Background store - using direct access to avoid selector issues
   const toggleBackgroundPanel = useBackgroundStore((state) => state.toggleBackgroundPanel)
@@ -182,6 +188,10 @@ export default function EditorV2(): JSX.Element {
             e.preventDefault()
             addSlide()
             break
+          case 'p':
+            e.preventDefault()
+            setIsPreviewMode(!isPreviewMode)
+            break
         }
       }
     }
@@ -281,6 +291,25 @@ export default function EditorV2(): JSX.Element {
                 'Auto-save off'
               )}
             </div>
+
+            <Button
+              onClick={() => setIsPreviewMode(!isPreviewMode)}
+              variant={isPreviewMode ? 'default' : 'outline'}
+              size="sm"
+              className="mr-2"
+            >
+              {isPreviewMode ? (
+                <>
+                  <Edit className="w-4 h-4 mr-2" />
+                  Edit Mode
+                </>
+              ) : (
+                <>
+                  <Eye className="w-4 h-4 mr-2" />
+                  Preview
+                </>
+              )}
+            </Button>
 
             <Button
               onClick={toggleBackgroundPanel}
@@ -456,8 +485,8 @@ export default function EditorV2(): JSX.Element {
 
         {/* Main Editor Area */}
         <div className="flex-1 flex flex-col">
-          {/* Element Toolbar */}
-          <ElementToolbar />
+          {/* Element Toolbar - Only show in edit mode */}
+          {!isPreviewMode && <ElementToolbar />}
 
           {/* Canvas Area */}
           <div className="flex-1 p-6 overflow-auto bg-muted/30">
@@ -466,9 +495,18 @@ export default function EditorV2(): JSX.Element {
                 {currentSlide && (
                   <div className="mb-4 text-center">
                     <h2 className="text-xl font-semibold text-foreground">{currentSlide.title}</h2>
+                    {isPreviewMode && (
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Live Preview - This is exactly how it will appear on the presentation screen
+                      </p>
+                    )}
                   </div>
                 )}
-                <Canvas className="shadow-2xl" />
+                {isPreviewMode ? (
+                  <PreviewCanvas className="shadow-2xl" />
+                ) : (
+                  <Canvas className="shadow-2xl" />
+                )}
               </div>
             </div>
           </div>
@@ -477,10 +515,22 @@ export default function EditorV2(): JSX.Element {
           <div className="p-3 bg-card border-t border-border text-sm text-muted-foreground">
             <div className="flex justify-between items-center">
               <span>
-                {elements.length} element{elements.length !== 1 ? 's' : ''} on slide{' '}
-                {currentSlideIndex + 1}
+                {isPreviewMode ? (
+                  <>
+                    Preview Mode - Slide {currentSlideIndex + 1} of {slides.length}
+                  </>
+                ) : (
+                  <>
+                    {elements.length} element{elements.length !== 1 ? 's' : ''} on slide{' '}
+                    {currentSlideIndex + 1}
+                  </>
+                )}
               </span>
-              <span>Ctrl+S: Save • Ctrl+Z/Y: Undo/Redo • Ctrl+N: New Slide</span>
+              <span>
+                {isPreviewMode
+                  ? 'Click "Edit Mode" to make changes'
+                  : 'Ctrl+S: Save • Ctrl+Z/Y: Undo/Redo • Ctrl+N: New Slide • Ctrl+P: Preview'}
+              </span>
             </div>
           </div>
         </div>

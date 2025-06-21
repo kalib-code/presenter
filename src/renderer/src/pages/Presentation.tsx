@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { SlideRenderer } from '@renderer/components/editor/SlideRenderer'
 
 // Direct IPC access (nodeIntegration enabled for presentation window)
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -372,75 +373,17 @@ export default function Presentation(): JSX.Element {
 
     // Render rich slide content if available
     if (currentData.slideData?.elements && currentData.slideData.elements.length > 0) {
-      // Calculate scaling factors to adapt from editor canvas (960x540) to presentation window
-      const canvasWidth = 960
-      const canvasHeight = 540
-      const windowWidth = window.innerWidth
-      const windowHeight = window.innerHeight
-
-      // Calculate scale to fit the canvas aspect ratio within the window while maintaining aspect ratio
-      const scaleX = windowWidth / canvasWidth
-      const scaleY = windowHeight / canvasHeight
-      const scale = Math.min(scaleX, scaleY) // Use smaller scale to maintain aspect ratio
-
-      // Calculate offsets to center the scaled canvas
-      const scaledCanvasWidth = canvasWidth * scale
-      const scaledCanvasHeight = canvasHeight * scale
-      const offsetX = (windowWidth - scaledCanvasWidth) / 2
-      const offsetY = (windowHeight - scaledCanvasHeight) / 2
-
       return (
-        <div className="w-full h-screen relative overflow-hidden" style={backgroundStyles}>
-          {backgroundElement}
-
-          {/* Only render text elements if not in blank mode */}
-          {!presentationState.isBlank &&
-            currentData.slideData.elements.map((element, index) => {
-              if (element.type === 'text') {
-                const style = element.style || {}
-
-                // Scale position and size from canvas coordinates to window coordinates
-                const scaledLeft = element.position.x * scale + offsetX
-                const scaledTop = element.position.y * scale + offsetY
-                const scaledWidth = element.size.width * scale
-                const scaledHeight = element.size.height * scale
-                const scaledFontSize = (style.fontSize || 48) * scale
-
-                return (
-                  <div
-                    key={index}
-                    className="absolute flex items-center"
-                    style={{
-                      left: scaledLeft,
-                      top: scaledTop,
-                      width: scaledWidth,
-                      height: scaledHeight,
-                      color: style.color || '#FFFFFF',
-                      fontFamily: style.fontFamily || 'Arial, sans-serif',
-                      fontSize: `${scaledFontSize}px`,
-                      fontWeight: style.fontWeight || 'bold',
-                      fontStyle: style.fontStyle || 'normal',
-                      textAlign: (style.textAlign as 'left' | 'center' | 'right') || 'center',
-                      lineHeight: style.lineHeight || 1.2,
-                      textShadow: style.textShadow || '2px 2px 4px rgba(0,0,0,0.8)',
-                      opacity: style.opacity || 1,
-                      zIndex: 10,
-                      justifyContent:
-                        style.textAlign === 'left'
-                          ? 'flex-start'
-                          : style.textAlign === 'right'
-                            ? 'flex-end'
-                            : 'center',
-                      whiteSpace: 'pre-line'
-                    }}
-                  >
-                    {element.content}
-                  </div>
-                )
-              }
-              return null
-            })}
-        </div>
+        <SlideRenderer
+          elements={currentData.slideData.elements}
+          slideBackground={currentData.slideData.slideBackground}
+          globalBackground={currentData.slideData.globalBackground}
+          containerWidth={window.innerWidth}
+          containerHeight={window.innerHeight}
+          isPreview={false}
+          showBlank={presentationState.isBlank}
+          className="w-full h-screen"
+        />
       )
     }
 
