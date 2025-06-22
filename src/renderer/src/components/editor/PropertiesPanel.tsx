@@ -23,7 +23,10 @@ import {
   Trash2,
   Copy,
   Eye,
-  EyeOff
+  EyeOff,
+  Palette,
+  Underline,
+  Type
 } from 'lucide-react'
 
 interface PropertiesPanelProps {
@@ -282,21 +285,34 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ className = ''
                 />
               </div>
 
-              {/* Font Weight & Style */}
-              <div className="flex gap-2">
-                <Button
-                  onClick={() =>
-                    handleStyleUpdate({
-                      fontWeight: selectedElement.style.fontWeight === 'bold' ? 'normal' : 'bold'
-                    })
-                  }
-                  variant={selectedElement.style.fontWeight === 'bold' ? 'default' : 'outline'}
-                  size="sm"
-                  className="flex-1"
+              {/* Font Weight */}
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">Font Weight</Label>
+                <Select
+                  value={selectedElement.style.fontWeight}
+                  onValueChange={(value) => handleStyleUpdate({ fontWeight: value as any })}
                 >
-                  <Bold className="w-4 h-4 mr-1" />
-                  Bold
-                </Button>
+                  <SelectTrigger className="h-8">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="100">100 - Thin</SelectItem>
+                    <SelectItem value="200">200 - Extra Light</SelectItem>
+                    <SelectItem value="300">300 - Light</SelectItem>
+                    <SelectItem value="400">400 - Normal</SelectItem>
+                    <SelectItem value="500">500 - Medium</SelectItem>
+                    <SelectItem value="600">600 - Semi Bold</SelectItem>
+                    <SelectItem value="700">700 - Bold</SelectItem>
+                    <SelectItem value="800">800 - Extra Bold</SelectItem>
+                    <SelectItem value="900">900 - Black</SelectItem>
+                    <SelectItem value="normal">Normal</SelectItem>
+                    <SelectItem value="bold">Bold</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Font Style */}
+              <div className="flex gap-2">
                 <Button
                   onClick={() =>
                     handleStyleUpdate({
@@ -415,7 +431,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ className = ''
               </div>
 
               {/* Text Shadow */}
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <Label className="text-xs text-muted-foreground">Text Shadow</Label>
                 <Input
                   type="text"
@@ -424,12 +440,11 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ className = ''
                   placeholder="2px 2px 4px rgba(0,0,0,0.8)"
                   className="h-8"
                 />
-                <div className="flex gap-1">
+                <div className="grid grid-cols-2 gap-1">
                   <Button
                     onClick={() => handleStyleUpdate({ textShadow: 'none' })}
                     variant="outline"
                     size="sm"
-                    className="flex-1"
                   >
                     None
                   </Button>
@@ -437,10 +452,95 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ className = ''
                     onClick={() => handleStyleUpdate({ textShadow: '2px 2px 4px rgba(0,0,0,0.8)' })}
                     variant="outline"
                     size="sm"
-                    className="flex-1"
                   >
-                    Default
+                    Soft
                   </Button>
+                  <Button
+                    onClick={() => handleStyleUpdate({ textShadow: '3px 3px 6px rgba(0,0,0,0.9)' })}
+                    variant="outline"
+                    size="sm"
+                  >
+                    Medium
+                  </Button>
+                  <Button
+                    onClick={() => handleStyleUpdate({ textShadow: '4px 4px 8px rgba(0,0,0,1)' })}
+                    variant="outline"
+                    size="sm"
+                  >
+                    Strong
+                  </Button>
+                  <Button
+                    onClick={() => handleStyleUpdate({ textShadow: '1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000' })}
+                    variant="outline"
+                    size="sm"
+                  >
+                    Outline
+                  </Button>
+                  <Button
+                    onClick={() => handleStyleUpdate({ textShadow: '0 0 10px rgba(255,255,255,0.8)' })}
+                    variant="outline"
+                    size="sm"
+                  >
+                    Glow
+                  </Button>
+                </div>
+              </div>
+
+              {/* Text Effects */}
+              <div className="space-y-3">
+                <Label className="text-xs text-muted-foreground">Text Effects</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    onClick={() => {
+                      const currentColor = selectedElement.style.color
+                      const gradientText = `linear-gradient(45deg, ${currentColor}, #FFD700)`
+                      handleStyleUpdate({ 
+                        background: gradientText,
+                        WebkitBackgroundClip: 'text',
+                        WebkitTextFillColor: 'transparent',
+                        backgroundClip: 'text'
+                      } as any)
+                    }}
+                    variant="outline"
+                    size="sm"
+                  >
+                    <Palette className="w-4 h-4 mr-1" />
+                    Gradient
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      handleStyleUpdate({ 
+                        background: 'none',
+                        WebkitBackgroundClip: 'unset',
+                        WebkitTextFillColor: selectedElement.style.color,
+                        backgroundClip: 'unset'
+                      } as any)
+                    }}
+                    variant="outline"
+                    size="sm"
+                  >
+                    <Type className="w-4 h-4 mr-1" />
+                    Reset
+                  </Button>
+                </div>
+              </div>
+
+              {/* Quick Color Presets */}
+              <div className="space-y-3">
+                <Label className="text-xs text-muted-foreground">Quick Colors</Label>
+                <div className="grid grid-cols-6 gap-1">
+                  {[
+                    '#FFFFFF', '#000000', '#FF0000', '#00FF00', '#0000FF', '#FFFF00',
+                    '#FF00FF', '#00FFFF', '#FFA500', '#800080', '#FFC0CB', '#A52A2A'
+                  ].map((color) => (
+                    <button
+                      key={color}
+                      onClick={() => handleStyleUpdate({ color })}
+                      className="w-8 h-8 rounded border-2 border-gray-300 hover:border-gray-500 transition-colors"
+                      style={{ backgroundColor: color }}
+                      title={color}
+                    />
+                  ))}
                 </div>
               </div>
             </div>

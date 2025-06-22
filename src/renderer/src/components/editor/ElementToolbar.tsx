@@ -2,8 +2,12 @@ import React, { useCallback, useState } from 'react'
 import { useCanvasStore } from '@renderer/store/editor-canvas'
 import { Button } from '@renderer/components/ui/button'
 import { MediaBrowser } from './MediaBrowser'
+import { TemplateSelector } from './TemplateSelector'
+import { AlignmentSettings } from './AlignmentSettings'
+import { BackgroundSettings } from './BackgroundSettings'
 import { createMediaReference } from '@renderer/utils/mediaUtils'
 import type { Media } from '@renderer/types/database'
+import { Layout, Type, Image, Video, Trash2 } from 'lucide-react'
 
 interface ElementToolbarProps {
   className?: string
@@ -12,9 +16,10 @@ interface ElementToolbarProps {
 export const ElementToolbar: React.FC<ElementToolbarProps> = ({ className = '' }) => {
   const { addElement, clearElements, elements } = useCanvasStore()
 
-  // Media browser state
+  // Modal states
   const [mediaBrowserOpen, setMediaBrowserOpen] = useState(false)
   const [mediaBrowserType, setMediaBrowserType] = useState<'image' | 'video'>('image')
+  const [templateSelectorOpen, setTemplateSelectorOpen] = useState(false)
 
   const handleAddText = useCallback(() => {
     addElement('text', {
@@ -70,17 +75,36 @@ export const ElementToolbar: React.FC<ElementToolbarProps> = ({ className = '' }
     }
   }, [clearElements, elements.length])
 
+  const handleOpenTemplateSelector = useCallback(() => {
+    setTemplateSelectorOpen(true)
+  }, [])
+
   return (
     <>
-      <div className={`flex flex-wrap gap-2 p-4 bg-gray-800 border-b border-gray-700 ${className}`}>
+      <div className={`flex flex-wrap gap-2 p-4 bg-card border-b border-border ${className}`}>
         <div className="flex gap-2">
+          <Button
+            onClick={handleOpenTemplateSelector}
+            variant="outline"
+            size="sm"
+            className="bg-indigo-600 hover:bg-indigo-700 text-white border-indigo-600"
+          >
+            <Layout className="w-4 h-4 mr-2" />
+            Templates
+          </Button>
+
+          <AlignmentSettings />
+
+          <BackgroundSettings />
+
           <Button
             onClick={handleAddText}
             variant="outline"
             size="sm"
             className="bg-blue-600 hover:bg-blue-700 text-white border-blue-600"
           >
-            📝 Add Text
+            <Type className="w-4 h-4 mr-2" />
+            Text
           </Button>
 
           <Button
@@ -89,7 +113,8 @@ export const ElementToolbar: React.FC<ElementToolbarProps> = ({ className = '' }
             size="sm"
             className="bg-green-600 hover:bg-green-700 text-white border-green-600"
           >
-            🖼️ Add Image
+            <Image className="w-4 h-4 mr-2" />
+            Image
           </Button>
 
           <Button
@@ -98,14 +123,15 @@ export const ElementToolbar: React.FC<ElementToolbarProps> = ({ className = '' }
             size="sm"
             className="bg-purple-600 hover:bg-purple-700 text-white border-purple-600"
           >
-            🎥 Add Video
+            <Video className="w-4 h-4 mr-2" />
+            Video
           </Button>
         </div>
 
         <div className="flex-1" />
 
         <div className="flex gap-2 items-center">
-          <span className="text-sm text-gray-400">
+          <span className="text-sm text-muted-foreground">
             {elements.length} element{elements.length !== 1 ? 's' : ''}
           </span>
 
@@ -116,11 +142,18 @@ export const ElementToolbar: React.FC<ElementToolbarProps> = ({ className = '' }
               size="sm"
               className="bg-red-600 hover:bg-red-700 text-white border-red-600"
             >
-              🗑️ Clear All
+              <Trash2 className="w-4 h-4 mr-2" />
+              Clear All
             </Button>
           )}
         </div>
       </div>
+
+      {/* Template Selector Modal */}
+      <TemplateSelector
+        isOpen={templateSelectorOpen}
+        onClose={() => setTemplateSelectorOpen(false)}
+      />
 
       {/* Media Browser Modal */}
       <MediaBrowser
