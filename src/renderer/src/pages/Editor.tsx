@@ -4,7 +4,7 @@ import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
 import { Separator } from '@renderer/components/ui/separator'
 import { useToast } from '@renderer/hooks/use-toast'
-import { Toaster } from '@renderer/components/ui/toaster'
+
 import {
   Save,
   ArrowLeft,
@@ -1931,13 +1931,26 @@ export default function Editor(): JSX.Element {
                               }}
                               className="w-full mt-1 p-2 border rounded"
                             >
-                              <option value="Arial">Arial</option>
-                              <option value="Helvetica">Helvetica</option>
-                              <option value="Times New Roman">Times New Roman</option>
-                              <option value="Georgia">Georgia</option>
-                              <option value="Verdana">Verdana</option>
-                              <option value="Impact">Impact</option>
-                              <option value="Comic Sans MS">Comic Sans MS</option>
+                              <optgroup label="System Fonts">
+                                <option value="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen-Sans, Ubuntu, Cantarell, 'Helvetica Neue', sans-serif">
+                                  System Default (Sans-serif)
+                                </option>
+                                <option value="'New York', 'Times New Roman', Times, 'Droid Serif', 'Source Serif Pro', serif">
+                                  System Serif
+                                </option>
+                                <option value="'SF Mono', Monaco, Menlo, Consolas, 'Liberation Mono', 'Courier New', monospace">
+                                  System Monospace
+                                </option>
+                              </optgroup>
+                              <optgroup label="Web Safe Fonts">
+                                <option value="Arial">Arial</option>
+                                <option value="Helvetica">Helvetica</option>
+                                <option value="Times New Roman">Times New Roman</option>
+                                <option value="Georgia">Georgia</option>
+                                <option value="Verdana">Verdana</option>
+                                <option value="Impact">Impact</option>
+                                <option value="Comic Sans MS">Comic Sans MS</option>
+                              </optgroup>
                             </select>
                           </div>
 
@@ -2424,7 +2437,6 @@ export default function Editor(): JSX.Element {
           </div>
         )}
       </div>
-      <Toaster />
     </div>
   )
 }

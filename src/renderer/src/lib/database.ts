@@ -431,12 +431,12 @@ export class SettingsService extends BaseService<Settings> {
     } else {
       // For Settings, we use the key as the id since settings are identified by their key
       const settingData = {
+        id: key,
         value,
         type: typeof value as Settings['type'],
         category,
         createdBy: 'system'
       }
-      // We'll need to handle the id assignment in the main process
       await this.invokeCreate(settingData)
     }
   }

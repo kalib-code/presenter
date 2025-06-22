@@ -1,16 +1,18 @@
-import { app, shell, BrowserWindow, ipcMain, screen } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, screen, dialog } from 'electron'
 import { join } from 'path'
 import { promises as fs } from 'fs'
+import * as fsSync from 'fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { autoUpdater } from 'electron-updater'
 import icon from '../../resources/icon.png?asset'
 import { open } from 'lmdb'
 import { basename, extname } from 'path'
+import path from 'path'
 
 // Import types from the shared types file
-import type { Song, Media, Presentation, Setlist } from './types/database'
+import type { Song, Media, Presentation, Setlist, Settings } from './types/database'
 // TODO: Import these when implementing their IPC handlers
-// import type { Template, Settings } from './types/database'
+// import type { Template } from './types/database'
 
 // Legacy types for backward compatibility (will be removed)
 export type LegacySong = { id: string; name: string }
@@ -59,10 +61,10 @@ const mediaDb = open<Media>({
 //   compression: true
 // })
 
-// const settingsDb = open<Settings>({
-//   path: join(app.getPath('userData'), 'settings.lmdb'),
-//   compression: true
-// })
+const settingsDb = open<Settings>({
+  path: join(app.getPath('userData'), 'settings.lmdb'),
+  compression: true
+})
 
 // Legacy databases (will be migrated)
 const slideDb = open<Slide>({
@@ -372,6 +374,61 @@ async function deletePresentation(id: string): Promise<Presentation[]> {
   return await listPresentations()
 }
 
+// Settings CRUD operations
+async function listSettings(): Promise<Settings[]> {
+  const settings: Settings[] = []
+  for (const { value } of settingsDb.getRange()) {
+    if (value) settings.push(value)
+  }
+  return settings
+}
+
+async function createSetting(
+  data: Omit<Settings, 'createdAt' | 'updatedAt' | 'version'>
+): Promise<Settings[]> {
+  // For settings, the ID is passed in the data since it's the setting key
+  const id = data.id
+  const now = Date.now()
+  const setting: Settings = {
+    ...data,
+    id,
+    createdAt: now,
+    updatedAt: now,
+    version: 1
+  }
+  await settingsDb.put(id, setting)
+  return await listSettings()
+}
+
+async function getSetting(id: string): Promise<Settings | null> {
+  return (await settingsDb.get(id)) || null
+}
+
+async function updateSetting(id: string, data: Partial<Settings>): Promise<Settings[]> {
+  const existing = await settingsDb.get(id)
+  if (!existing) throw new Error('Setting not found')
+
+  const updated: Settings = {
+    ...existing,
+    ...data,
+    id,
+    updatedAt: Date.now(),
+    version: existing.version + 1
+  }
+
+  await settingsDb.put(id, updated)
+  return await listSettings()
+}
+
+async function deleteSetting(id: string): Promise<Settings[]> {
+  if (!id || id.trim() === '') {
+    throw new Error('Cannot delete setting: ID is empty or undefined')
+  }
+
+  await settingsDb.remove(id)
+  return await listSettings()
+}
+
 // Setlist CRUD operations
 async function listSetlists(): Promise<Setlist[]> {
   console.log('📋 [BACKEND] Listing all setlists...')
@@ -627,11 +684,17 @@ async function clearAllDatabases(): Promise<void> {
   }
   console.log('Presentations database cleared')
 
-  // Clear presentations
-  for (const { key } of presentationDb.getRange()) {
-    await presentationDb.remove(key)
+  // Clear setlists
+  for (const { key } of setlistDb.getRange()) {
+    await setlistDb.remove(key)
   }
-  console.log('Presentations database cleared')
+  console.log('Setlists database cleared')
+
+  // Clear settings
+  for (const { key } of settingsDb.getRange()) {
+    await settingsDb.remove(key)
+  }
+  console.log('Settings database cleared')
 
   // Clear slides
   for (const { key } of slideDb.getRange()) {
@@ -915,6 +978,17 @@ function stopProjection(): void {
     projectionWindow.close()
   }
 }
+
+// Custom font management
+const CUSTOM_FONTS_DIR = path.join(app.getPath('userData'), 'custom-fonts')
+
+// Ensure custom fonts directory exists
+if (!fsSync.existsSync(CUSTOM_FONTS_DIR)) {
+  fsSync.mkdirSync(CUSTOM_FONTS_DIR, { recursive: true })
+}
+
+// Supported font file extensions
+const SUPPORTED_FONT_EXTENSIONS = ['.ttf', '.otf', '.woff', '.woff2', '.eot']
 
 // This method will be called when Electron has finished initialization
 app.whenReady().then(() => {
@@ -1379,6 +1453,30 @@ app.whenReady().then(() => {
     return await deletePresentation(id)
   })
 
+  // IPC handlers - Settings
+  ipcMain.handle('list-settings', async () => {
+    return await listSettings()
+  })
+
+  ipcMain.handle(
+    'create-setting',
+    async (_event, data: Omit<Settings, 'createdAt' | 'updatedAt' | 'version'>) => {
+      return await createSetting(data)
+    }
+  )
+
+  ipcMain.handle('get-setting', async (_event, id: string) => {
+    return await getSetting(id)
+  })
+
+  ipcMain.handle('update-setting', async (_event, id: string, data: Partial<Settings>) => {
+    return await updateSetting(id, data)
+  })
+
+  ipcMain.handle('delete-setting', async (_event, id: string) => {
+    return await deleteSetting(id)
+  })
+
   // IPC handlers - Setlists
   ipcMain.handle('list-setlists', async () => {
     console.log('📋 [IPC] Received list-setlists request')
@@ -1565,6 +1663,266 @@ app.whenReady().then(() => {
 
   ipcMain.on('stop-projection', () => {
     stopProjection()
+  })
+
+  // System font enumeration (optional advanced feature)
+  ipcMain.handle('get-system-fonts', async () => {
+    try {
+      // For now, return a basic list of common system fonts
+      // This can be enhanced with font-list package if needed
+      const systemFonts = [
+        // macOS fonts
+        'San Francisco',
+        'SF Pro Display',
+        'SF Pro Text',
+        'Helvetica Neue',
+        'Lucida Grande',
+        'Apple Garamond',
+        'Baskerville',
+
+        // Windows fonts
+        'Segoe UI',
+        'Segoe UI Historic',
+        'Segoe UI Emoji',
+        'Calibri',
+        'Cambria',
+        'Consolas',
+        'Tahoma',
+
+        // Linux fonts
+        'Ubuntu',
+        'Cantarell',
+        'DejaVu Sans',
+        'Liberation Sans',
+        'Noto Sans',
+        'Roboto',
+
+        // Cross-platform
+        'Arial',
+        'Times New Roman',
+        'Courier New',
+        'Verdana',
+        'Georgia',
+        'Impact',
+        'Trebuchet MS'
+      ]
+
+      return systemFonts
+    } catch (error) {
+      console.error('Failed to get system fonts:', error)
+      return []
+    }
+  })
+
+  // Custom font IPC handlers
+  ipcMain.handle('upload-custom-font', async () => {
+    try {
+      const result = await dialog.showOpenDialog({
+        title: 'Select Font Files',
+        filters: [
+          {
+            name: 'Font Files',
+            extensions: ['ttf', 'otf', 'woff', 'woff2', 'eot']
+          }
+        ],
+        properties: ['openFile', 'multiSelections']
+      })
+
+      if (result.canceled || !result.filePaths.length) {
+        return { success: false, message: 'No files selected' }
+      }
+
+      const uploadedFonts: Array<{
+        id: string
+        name: string
+        fileName: string
+        originalName: string
+        filePath: string
+        fileSize: number
+        uploadDate: string
+        type: string
+      }> = []
+
+      for (let i = 0; i < result.filePaths.length; i++) {
+        const filePath = result.filePaths[i]
+        try {
+          const fileName = path.basename(filePath)
+          const fileExt = path.extname(fileName).toLowerCase()
+
+          // Validate file extension
+          if (!SUPPORTED_FONT_EXTENSIONS.includes(fileExt)) {
+            console.warn(`Skipping unsupported font file: ${fileName}`)
+            continue
+          }
+
+          // Generate unique filename to avoid conflicts
+          // Use timestamp + index to ensure uniqueness even for simultaneous uploads
+          const timestamp = Date.now() + i
+          const uniqueFileName = `${timestamp}_${fileName}`
+          const destPath = path.join(CUSTOM_FONTS_DIR, uniqueFileName)
+
+          // Copy font file to custom fonts directory
+          fsSync.copyFileSync(filePath, destPath)
+
+          // Extract font name from filename (remove extension and timestamp)
+          const fontName = fileName.replace(fileExt, '').replace(/[-_]/g, ' ')
+
+          const fontInfo = {
+            id: timestamp.toString(),
+            name: fontName,
+            fileName: uniqueFileName,
+            originalName: fileName,
+            filePath: destPath,
+            fileSize: fsSync.statSync(destPath).size,
+            uploadDate: new Date().toISOString(),
+            type: 'custom'
+          }
+
+          uploadedFonts.push(fontInfo)
+          console.log(`✅ Font uploaded: ${fontName}`)
+        } catch (error) {
+          console.error(`❌ Failed to upload font ${path.basename(filePath)}:`, error)
+        }
+      }
+
+      return {
+        success: true,
+        fonts: uploadedFonts,
+        message: `Successfully uploaded ${uploadedFonts.length} font(s)`
+      }
+    } catch (error) {
+      console.error('Font upload error:', error)
+      return { success: false, message: 'Failed to upload fonts' }
+    }
+  })
+
+  ipcMain.handle('get-custom-fonts', async () => {
+    try {
+      if (!fsSync.existsSync(CUSTOM_FONTS_DIR)) {
+        return []
+      }
+
+      const fontFiles = fsSync.readdirSync(CUSTOM_FONTS_DIR)
+      const customFonts: Array<{
+        id: string
+        name: string
+        fileName: string
+        originalName: string
+        filePath: string
+        fileSize: number
+        uploadDate: string
+        type: string
+      }> = []
+
+      for (const fileName of fontFiles) {
+        const filePath = path.join(CUSTOM_FONTS_DIR, fileName)
+        const fileExt = path.extname(fileName).toLowerCase()
+
+        if (SUPPORTED_FONT_EXTENSIONS.includes(fileExt)) {
+          try {
+            const stats = fsSync.statSync(filePath)
+
+            // Extract timestamp and original name from filename
+            const parts = fileName.split('_')
+            const timestamp = parts[0]
+            const originalName = parts.slice(1).join('_')
+            const fontName = originalName.replace(fileExt, '').replace(/[-_]/g, ' ')
+
+            const fontInfo = {
+              id: timestamp,
+              name: fontName,
+              fileName: fileName,
+              originalName: originalName,
+              filePath: filePath,
+              fileSize: stats.size,
+              uploadDate: stats.birthtime.toISOString(),
+              type: 'custom'
+            }
+
+            customFonts.push(fontInfo)
+          } catch (error) {
+            console.error(`Error reading font file ${fileName}:`, error)
+          }
+        }
+      }
+
+      return customFonts.sort((a, b) => a.name.localeCompare(b.name))
+    } catch (error) {
+      console.error('Failed to get custom fonts:', error)
+      return []
+    }
+  })
+
+  ipcMain.handle('delete-custom-font', async (_, fontId: string) => {
+    try {
+      // Get custom fonts directly
+      if (!fsSync.existsSync(CUSTOM_FONTS_DIR)) {
+        return { success: false, message: 'Font not found' }
+      }
+
+      const fontFiles = fsSync.readdirSync(CUSTOM_FONTS_DIR)
+      let foundFont: { id: string; fileName: string; filePath: string } | null = null
+
+      for (const fileName of fontFiles) {
+        const parts = fileName.split('_')
+        const timestamp = parts[0]
+        if (timestamp === fontId) {
+          foundFont = {
+            id: timestamp,
+            fileName: fileName,
+            filePath: path.join(CUSTOM_FONTS_DIR, fileName)
+          }
+          break
+        }
+      }
+
+      if (!foundFont) {
+        return { success: false, message: 'Font not found' }
+      }
+
+      // Delete the font file
+      if (fsSync.existsSync(foundFont.filePath)) {
+        fsSync.unlinkSync(foundFont.filePath)
+      }
+
+      return { success: true, message: `Font deleted successfully` }
+    } catch (error) {
+      console.error('Failed to delete custom font:', error)
+      return { success: false, message: 'Failed to delete font' }
+    }
+  })
+
+  ipcMain.handle('get-font-url', async (_, fontId: string) => {
+    try {
+      // Get custom fonts directly
+      if (!fsSync.existsSync(CUSTOM_FONTS_DIR)) {
+        return null
+      }
+
+      const fontFiles = fsSync.readdirSync(CUSTOM_FONTS_DIR)
+      let foundFont: { filePath: string } | null = null
+
+      for (const fileName of fontFiles) {
+        const parts = fileName.split('_')
+        const timestamp = parts[0]
+        if (timestamp === fontId) {
+          foundFont = {
+            filePath: path.join(CUSTOM_FONTS_DIR, fileName)
+          }
+          break
+        }
+      }
+
+      if (!foundFont || !fsSync.existsSync(foundFont.filePath)) {
+        return null
+      }
+
+      // Return file:// URL for local font file
+      return `file://${foundFont.filePath}`
+    } catch (error) {
+      console.error('Failed to get font URL:', error)
+      return null
+    }
   })
 
   // Create main window

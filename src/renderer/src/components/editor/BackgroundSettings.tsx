@@ -11,12 +11,10 @@ import {
   Globe, 
   Monitor, 
   Settings, 
-  Upload,
   Palette
 } from 'lucide-react'
 import { useBackgroundStore } from '@renderer/store/editor-background'
 import { MediaBrowser } from './MediaBrowser'
-import { saveFileToMedia } from '@renderer/utils/mediaUtils'
 import type { Media } from '@renderer/types/database'
 
 interface BackgroundSettingsProps {
@@ -28,11 +26,6 @@ export const BackgroundSettings: React.FC<BackgroundSettingsProps> = ({ classNam
   const [mediaBrowserOpen, setMediaBrowserOpen] = useState(false)
   const [mediaBrowserType, setMediaBrowserType] = useState<'image' | 'video'>('image')
   const [mediaBrowserIsGlobal, setMediaBrowserIsGlobal] = useState(false)
-  
-  const imageInputRef = useRef<HTMLInputElement>(null)
-  const videoInputRef = useRef<HTMLInputElement>(null)
-  const globalImageInputRef = useRef<HTMLInputElement>(null)
-  const globalVideoInputRef = useRef<HTMLInputElement>(null)
 
   const {
     setSlideBackground,
@@ -91,48 +84,6 @@ export const BackgroundSettings: React.FC<BackgroundSettingsProps> = ({ classNam
     setMediaBrowserOpen(true)
   }, [])
 
-  // Handle file uploads
-  const handleImageUpload = useCallback(async (
-    event: React.ChangeEvent<HTMLInputElement>,
-    isGlobal = false
-  ) => {
-    const file = event.target.files?.[0]
-    if (file && file.type.startsWith('image/')) {
-      try {
-        const mediaReference = await saveFileToMedia(file)
-        
-        if (isGlobal) {
-          setGlobalBackground('image', mediaReference)
-        } else {
-          setSlideBackground('image', mediaReference)
-        }
-      } catch (error) {
-        console.error('Failed to upload image:', error)
-      }
-    }
-    event.target.value = ''
-  }, [setGlobalBackground, setSlideBackground])
-
-  const handleVideoUpload = useCallback(async (
-    event: React.ChangeEvent<HTMLInputElement>,
-    isGlobal = false
-  ) => {
-    const file = event.target.files?.[0]
-    if (file && file.type.startsWith('video/')) {
-      try {
-        const mediaReference = await saveFileToMedia(file)
-        
-        if (isGlobal) {
-          setGlobalBackground('video', mediaReference)
-        } else {
-          setSlideBackground('video', mediaReference)
-        }
-      } catch (error) {
-        console.error('Failed to upload video:', error)
-      }
-    }
-    event.target.value = ''
-  }, [setGlobalBackground, setSlideBackground])
 
   // Check if any background is active
   const hasBackground = slideBackgroundType !== 'none' || globalBackgroundType !== 'none'
@@ -168,8 +119,8 @@ export const BackgroundSettings: React.FC<BackgroundSettingsProps> = ({ classNam
                 <h4 className="font-medium text-sm">Current Slide</h4>
               </div>
 
-              {/* Quick Actions */}
-              <div className="grid grid-cols-2 gap-2 mb-2">
+              {/* Media Browser Actions */}
+              <div className="grid grid-cols-2 gap-2 mb-3">
                 <Button
                   onClick={() => openMediaBrowser('image', false)}
                   variant="outline"
@@ -187,27 +138,6 @@ export const BackgroundSettings: React.FC<BackgroundSettingsProps> = ({ classNam
                 >
                   <Video className="w-3 h-3 mr-1" />
                   Add Video
-                </Button>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 mb-3">
-                <Button
-                  onClick={() => imageInputRef.current?.click()}
-                  variant="outline"
-                  size="sm"
-                  className="text-xs h-8"
-                >
-                  <Upload className="w-3 h-3 mr-1" />
-                  Upload Image
-                </Button>
-                <Button
-                  onClick={() => videoInputRef.current?.click()}
-                  variant="outline"
-                  size="sm"
-                  className="text-xs h-8"
-                >
-                  <Upload className="w-3 h-3 mr-1" />
-                  Upload Video
                 </Button>
               </div>
 
@@ -290,8 +220,8 @@ export const BackgroundSettings: React.FC<BackgroundSettingsProps> = ({ classNam
                 <h4 className="font-medium text-sm">All Slides</h4>
               </div>
 
-              {/* Quick Actions */}
-              <div className="grid grid-cols-2 gap-2 mb-2">
+              {/* Media Browser Actions */}
+              <div className="grid grid-cols-2 gap-2 mb-3">
                 <Button
                   onClick={() => openMediaBrowser('image', true)}
                   variant="outline"
@@ -309,27 +239,6 @@ export const BackgroundSettings: React.FC<BackgroundSettingsProps> = ({ classNam
                 >
                   <Video className="w-3 h-3 mr-1" />
                   Add Video
-                </Button>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 mb-3">
-                <Button
-                  onClick={() => globalImageInputRef.current?.click()}
-                  variant="outline"
-                  size="sm"
-                  className="text-xs h-8"
-                >
-                  <Upload className="w-3 h-3 mr-1" />
-                  Upload Image
-                </Button>
-                <Button
-                  onClick={() => globalVideoInputRef.current?.click()}
-                  variant="outline"
-                  size="sm"
-                  className="text-xs h-8"
-                >
-                  <Upload className="w-3 h-3 mr-1" />
-                  Upload Video
                 </Button>
               </div>
 
@@ -464,36 +373,6 @@ export const BackgroundSettings: React.FC<BackgroundSettingsProps> = ({ classNam
           </div>
         </PopoverContent>
       </Popover>
-
-      {/* Hidden File Inputs */}
-      <input
-        ref={imageInputRef}
-        type="file"
-        accept="image/*"
-        onChange={(e) => handleImageUpload(e, false)}
-        className="hidden"
-      />
-      <input
-        ref={videoInputRef}
-        type="file"
-        accept="video/*"
-        onChange={(e) => handleVideoUpload(e, false)}
-        className="hidden"
-      />
-      <input
-        ref={globalImageInputRef}
-        type="file"
-        accept="image/*"
-        onChange={(e) => handleImageUpload(e, true)}
-        className="hidden"
-      />
-      <input
-        ref={globalVideoInputRef}
-        type="file"
-        accept="video/*"
-        onChange={(e) => handleVideoUpload(e, true)}
-        className="hidden"
-      />
 
       {/* Media Browser Modal */}
       <MediaBrowser

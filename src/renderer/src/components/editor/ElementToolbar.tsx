@@ -3,7 +3,7 @@ import { useCanvasStore } from '@renderer/store/editor-canvas'
 import { Button } from '@renderer/components/ui/button'
 import { MediaBrowser } from './MediaBrowser'
 import { TemplateSelector } from './TemplateSelector'
-import { AlignmentSettings } from './AlignmentSettings'
+
 import { BackgroundSettings } from './BackgroundSettings'
 import { createMediaReference } from '@renderer/utils/mediaUtils'
 import type { Media } from '@renderer/types/database'
@@ -92,8 +92,6 @@ export const ElementToolbar: React.FC<ElementToolbarProps> = ({ className = '' }
             <Layout className="w-4 h-4 mr-2" />
             Templates
           </Button>
-
-          <AlignmentSettings />
 
           <BackgroundSettings />
 

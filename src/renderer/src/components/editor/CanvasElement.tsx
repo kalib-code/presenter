@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useCanvasStore } from '@renderer/store/editor-canvas'
 import { resolveMediaUrl, isMediaReference } from '@renderer/utils/mediaUtils'
 import type { EditorElement } from '@renderer/store/editor-canvas'
@@ -18,8 +18,10 @@ export const CanvasElement: React.FC<CanvasElementProps> = ({
   onMouseDown,
   onResizeStart
 }) => {
-  const { selectElement, deleteElement } = useCanvasStore()
+  const { selectElement, deleteElement, updateElement } = useCanvasStore()
   const [resolvedContent, setResolvedContent] = useState<string>(element.content)
+  const [isEditing, setIsEditing] = useState(false)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   // Resolve media references when element content changes
   useEffect(() => {
@@ -40,9 +42,53 @@ export const CanvasElement: React.FC<CanvasElementProps> = ({
     selectElement(element.id)
   }
 
+  const handleDoubleClick = (e: React.MouseEvent): void => {
+    e.stopPropagation()
+    if (element.type === 'text') {
+      setIsEditing(true)
+      // Focus the textarea after state update
+      setTimeout(() => {
+        textareaRef.current?.focus()
+        textareaRef.current?.select()
+      }, 0)
+    }
+  }
+
+  const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>): void => {
+    updateElement(element.id, { content: e.target.value })
+  }
+
+  const handleTextBlur = (): void => {
+    setIsEditing(false)
+  }
+
+  const handleTextKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      setIsEditing(false)
+    }
+    if (e.key === 'Escape') {
+      setIsEditing(false)
+    }
+    // Stop propagation to prevent canvas shortcuts
+    e.stopPropagation()
+  }
+
   const handleDelete = (e: React.MouseEvent): void => {
     e.stopPropagation()
     deleteElement(element.id)
+  }
+
+  const handleElementMouseDown = (e: React.MouseEvent): void => {
+    // Allow dragging from within the element content
+    // Only stop propagation if we're in text editing mode
+    if (element.type === 'text' && isEditing) {
+      e.stopPropagation()
+      return
+    }
+
+    // For all other cases, allow the drag to bubble up
+    onMouseDown(e, element.id)
   }
 
   const renderElement = (): JSX.Element | null => {
@@ -50,7 +96,9 @@ export const CanvasElement: React.FC<CanvasElementProps> = ({
       case 'text':
         return (
           <div
-            className="w-full h-full flex items-center justify-center cursor-text select-none"
+            className={`w-full h-full flex items-center justify-center relative ${
+              isEditing ? 'cursor-text' : 'cursor-move'
+            }`}
             style={{
               fontSize: element.style.fontSize,
               fontFamily: element.style.fontFamily,
@@ -67,9 +115,47 @@ export const CanvasElement: React.FC<CanvasElementProps> = ({
               overflow: 'hidden'
             }}
             onClick={handleClick}
-            onMouseDown={(e) => e.stopPropagation()}
+            onDoubleClick={handleDoubleClick}
+            onMouseDown={handleElementMouseDown}
           >
-            {element.content || 'Click to edit text'}
+            {isEditing ? (
+              <textarea
+                ref={textareaRef}
+                value={element.content}
+                onChange={handleTextChange}
+                onBlur={handleTextBlur}
+                onKeyDown={handleTextKeyDown}
+                className="w-full h-full bg-transparent border-none outline-none resize-none text-center"
+                style={{
+                  fontSize: element.style.fontSize,
+                  fontFamily: element.style.fontFamily,
+                  color: element.style.color,
+                  fontWeight: element.style.fontWeight,
+                  fontStyle: element.style.fontStyle,
+                  lineHeight: element.style.lineHeight,
+                  textAlign: element.style.textAlign,
+                  textShadow: element.style.textShadow,
+                  padding: '0'
+                }}
+                placeholder="Type your text here..."
+                onMouseDown={(e) => e.stopPropagation()}
+              />
+            ) : (
+              <div
+                className="w-full h-full flex items-center justify-center select-none"
+                style={{
+                  justifyContent:
+                    element.style.textAlign === 'left'
+                      ? 'flex-start'
+                      : element.style.textAlign === 'right'
+                        ? 'flex-end'
+                        : 'center',
+                  whiteSpace: 'pre-line'
+                }}
+              >
+                {element.content || 'Double-click to edit text'}
+              </div>
+            )}
           </div>
         )
 
@@ -80,7 +166,7 @@ export const CanvasElement: React.FC<CanvasElementProps> = ({
             alt="Slide element"
             className="w-full h-full object-cover rounded"
             style={{ opacity: element.opacity }}
-            onMouseDown={(e) => e.stopPropagation()}
+            onMouseDown={handleElementMouseDown}
             onClick={handleClick}
             draggable={false}
             onError={() => {
@@ -100,7 +186,7 @@ export const CanvasElement: React.FC<CanvasElementProps> = ({
             src={resolvedContent}
             className="w-full h-full object-cover rounded"
             style={{ opacity: element.opacity }}
-            onMouseDown={(e) => e.stopPropagation()}
+            onMouseDown={handleElementMouseDown}
             onClick={handleClick}
             controls
             muted
@@ -123,7 +209,13 @@ export const CanvasElement: React.FC<CanvasElementProps> = ({
 
   return (
     <div
-      className={`absolute group cursor-move ${
+      className={`absolute group ${
+        element.type === 'text' && !isEditing
+          ? 'cursor-move'
+          : element.type === 'text' && isEditing
+            ? 'cursor-text'
+            : 'cursor-move'
+      } ${
         isSelected
           ? 'border-2 border-dashed border-blue-500'
           : 'border-2 border-dashed border-transparent'
@@ -136,7 +228,6 @@ export const CanvasElement: React.FC<CanvasElementProps> = ({
         zIndex: element.zIndex || 0,
         transform: element.rotation ? `rotate(${element.rotation}deg)` : undefined
       }}
-      onMouseDown={(e) => onMouseDown(e, element.id)}
       data-canvas="true"
     >
       {renderElement()}
@@ -144,7 +235,7 @@ export const CanvasElement: React.FC<CanvasElementProps> = ({
       {/* Delete button */}
       <button
         onClick={handleDelete}
-        className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-xs z-10"
+        className="absolute -top-6 -right-6 w-6 h-6 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-xs z-10"
       >
         ×
       </button>

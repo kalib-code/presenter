@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react'
+import React, { useCallback, useState, useEffect } from 'react'
 import { useCanvasStore, useSelectedElement } from '@renderer/store/editor-canvas'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
@@ -26,8 +26,16 @@ import {
   EyeOff,
   Palette,
   Underline,
-  Type
+  Type,
+  Upload
 } from 'lucide-react'
+import { CustomFontManager } from '@renderer/components/ui/custom-font-manager'
+import {
+  getCustomFonts,
+  loadAllCustomFonts,
+  createCustomFontStack,
+  type CustomFont
+} from '@renderer/utils/fontUtils'
 
 interface PropertiesPanelProps {
   className?: string
@@ -43,6 +51,26 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ className = ''
     moveElementsToFront,
     moveElementsToBack
   } = useCanvasStore()
+
+  // Custom fonts state
+  const [customFonts, setCustomFonts] = useState<CustomFont[]>([])
+
+  // Load custom fonts on component mount
+  useEffect(() => {
+    loadCustomFonts()
+  }, [])
+
+  const loadCustomFonts = async (): Promise<void> => {
+    try {
+      const fonts = await getCustomFonts()
+      setCustomFonts(fonts)
+
+      // Load fonts into CSS
+      await loadAllCustomFonts()
+    } catch (error) {
+      console.error('Failed to load custom fonts:', error)
+    }
+  }
 
   const handleStyleUpdate = useCallback(
     (updates: Partial<typeof selectedElement.style>) => {
@@ -142,8 +170,316 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ className = ''
         </div>
       </div>
 
-      <div className="p-4 space-y-6 overflow-y-auto max-h-[calc(100vh-200px)]">
-        {/* Position & Size */}
+      <div className="p-4 space-y-4 overflow-y-auto max-h-[calc(100vh-200px)]">
+        {/* Text-specific controls - MOVED TO TOP */}
+        {selectedElement.type === 'text' && (
+          <>
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Type className="w-4 h-4 text-blue-600" />
+                <Label className="text-sm font-medium">Text</Label>
+              </div>
+
+              {/* Font Selection - Most Important First */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-medium">Font</Label>
+                  <CustomFontManager
+                    onFontSelected={(fontName) => {
+                      if (selectedElement) {
+                        const fontStack = createCustomFontStack(fontName)
+                        handleStyleUpdate({ fontFamily: fontStack })
+                        loadCustomFonts()
+                      }
+                    }}
+                    trigger={
+                      <Button variant="ghost" size="sm" className="h-6 px-2 text-xs">
+                        <Upload className="w-3 h-3 mr-1" />
+                        Add
+                      </Button>
+                    }
+                  />
+                </div>
+                <Select
+                  value={selectedElement.style.fontFamily}
+                  onValueChange={(value) => handleStyleUpdate({ fontFamily: value })}
+                >
+                  <SelectTrigger className="h-8">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {customFonts.length > 0 && (
+                      <>
+                        <div className="px-2 py-1 text-xs font-medium text-muted-foreground">Custom</div>
+                        {customFonts.map((font, index) => (
+                          <SelectItem
+                            key={`${font.id}-${index}`}
+                            value={createCustomFontStack(font.name)}
+                            style={{ fontFamily: font.name }}
+                          >
+                            {font.name}
+                          </SelectItem>
+                        ))}
+                        <div className="border-t border-border my-1" />
+                      </>
+                    )}
+                    <div className="px-2 py-1 text-xs font-medium text-muted-foreground">Popular</div>
+                    <SelectItem value="Arial">Arial</SelectItem>
+                    <SelectItem value="Helvetica">Helvetica</SelectItem>
+                    <SelectItem value="Times New Roman">Times New Roman</SelectItem>
+                    <SelectItem value="Georgia">Georgia</SelectItem>
+                    <SelectItem value="Verdana">Verdana</SelectItem>
+                    <SelectItem value="Impact">Impact</SelectItem>
+                    <div className="border-t border-border my-1" />
+                    <div className="px-2 py-1 text-xs font-medium text-muted-foreground">System</div>
+                    <SelectItem value="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen-Sans, Ubuntu, Cantarell, 'Helvetica Neue', sans-serif">
+                      Default Sans
+                    </SelectItem>
+                    <SelectItem value="'New York', 'Times New Roman', Times, 'Droid Serif', 'Source Serif Pro', serif">
+                      Default Serif
+                    </SelectItem>
+                    <SelectItem value="'SF Mono', Monaco, Menlo, Consolas, 'Liberation Mono', 'Courier New', monospace">
+                      Default Mono
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Size & Weight - Second Most Important */}
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <Label className="text-xs">Size</Label>
+                  <div className="flex items-center gap-1">
+                    <Input
+                      type="number"
+                      value={selectedElement.style.fontSize}
+                      onChange={(e) => handleStyleUpdate({ fontSize: parseInt(e.target.value) || 16 })}
+                      className="h-8 text-center"
+                      min={8}
+                      max={120}
+                    />
+                    <span className="text-xs text-muted-foreground">px</span>
+                  </div>
+                </div>
+                <div className="col-span-2">
+                  <Label className="text-xs">Weight & Style</Label>
+                  <div className="flex gap-1">
+                    <Select
+                      value={selectedElement.style.fontWeight}
+                      onValueChange={(value) => handleStyleUpdate({ fontWeight: value as any })}
+                    >
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="300">Light</SelectItem>
+                        <SelectItem value="400">Regular</SelectItem>
+                        <SelectItem value="500">Medium</SelectItem>
+                        <SelectItem value="600">Semi Bold</SelectItem>
+                        <SelectItem value="700">Bold</SelectItem>
+                        <SelectItem value="800">Extra Bold</SelectItem>
+                        <SelectItem value="900">Black</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      onClick={() =>
+                        handleStyleUpdate({
+                          fontStyle: selectedElement.style.fontStyle === 'italic' ? 'normal' : 'italic'
+                        })
+                      }
+                      variant={selectedElement.style.fontStyle === 'italic' ? 'default' : 'outline'}
+                      size="sm"
+                      className="h-8 px-3"
+                    >
+                      <Italic className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Colors - Third Most Important */}
+              <div className="space-y-2">
+                <Label className="text-xs font-medium">Colors</Label>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label className="text-xs text-muted-foreground mb-1 block">Text</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        type="color"
+                        value={selectedElement.style.color}
+                        onChange={(e) => handleStyleUpdate({ color: e.target.value })}
+                        className="w-12 h-8 p-1 border rounded"
+                      />
+                      <Input
+                        type="text"
+                        value={selectedElement.style.color}
+                        onChange={(e) => handleStyleUpdate({ color: e.target.value })}
+                        placeholder="#000000"
+                        className="flex-1 h-8 text-xs"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground mb-1 block">Background</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        type="color"
+                        value={
+                          selectedElement.style.backgroundColor === 'transparent'
+                            ? '#000000'
+                            : selectedElement.style.backgroundColor
+                        }
+                        onChange={(e) => handleStyleUpdate({ backgroundColor: e.target.value })}
+                        className="w-12 h-8 p-1 border rounded"
+                      />
+                      <Button
+                        onClick={() => handleStyleUpdate({ backgroundColor: 'transparent' })}
+                        variant="outline"
+                        size="sm"
+                        className="flex-1 h-8 text-xs"
+                      >
+                        Clear
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Quick Color Swatches */}
+                <div className="grid grid-cols-8 gap-1">
+                  {[
+                    '#FFFFFF', '#000000', '#FF0000', '#00FF00', 
+                    '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF'
+                  ].map((color) => (
+                    <button
+                      key={color}
+                      onClick={() => handleStyleUpdate({ color })}
+                      className="w-6 h-6 rounded border-2 border-gray-300 hover:border-gray-500 transition-colors"
+                      style={{ backgroundColor: color }}
+                      title={`Set text color to ${color}`}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              {/* Alignment */}
+              <div className="space-y-2">
+                <Label className="text-xs font-medium">Alignment</Label>
+                <div className="flex gap-1">
+                  <Button
+                    onClick={() => handleStyleUpdate({ textAlign: 'left' })}
+                    variant={selectedElement.style.textAlign === 'left' ? 'default' : 'outline'}
+                    size="sm"
+                    className="flex-1 h-8"
+                  >
+                    <AlignLeft className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    onClick={() => handleStyleUpdate({ textAlign: 'center' })}
+                    variant={selectedElement.style.textAlign === 'center' ? 'default' : 'outline'}
+                    size="sm"
+                    className="flex-1 h-8"
+                  >
+                    <AlignCenter className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    onClick={() => handleStyleUpdate({ textAlign: 'right' })}
+                    variant={selectedElement.style.textAlign === 'right' ? 'default' : 'outline'}
+                    size="sm"
+                    className="flex-1 h-8"
+                  >
+                    <AlignRight className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+
+              {/* Advanced Text Options - Collapsible */}
+              <details className="group">
+                <summary className="cursor-pointer list-none">
+                  <div className="flex items-center justify-between py-2 hover:bg-muted/50 rounded px-2 -mx-2">
+                    <Label className="text-xs font-medium">Advanced</Label>
+                    <div className="transition-transform group-open:rotate-90">
+                      <AlignRight className="w-3 h-3" />
+                    </div>
+                  </div>
+                </summary>
+                
+                <div className="space-y-3 mt-2">
+                  {/* Line Height */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <Label className="text-xs text-muted-foreground">Line Height</Label>
+                      <span className="text-xs text-muted-foreground">{selectedElement.style.lineHeight}</span>
+                    </div>
+                    <Slider
+                      value={[selectedElement.style.lineHeight]}
+                      onValueChange={([value]) => handleStyleUpdate({ lineHeight: value })}
+                      max={3}
+                      min={0.5}
+                      step={0.1}
+                      className="w-full"
+                    />
+                  </div>
+
+                  {/* Text Effects */}
+                  <div>
+                    <Label className="text-xs text-muted-foreground mb-2 block">Effects</Label>
+                    <div className="grid grid-cols-2 gap-1">
+                      <Button
+                        onClick={() => handleStyleUpdate({ textShadow: 'none' })}
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs"
+                      >
+                        No Shadow
+                      </Button>
+                      <Button
+                        onClick={() => handleStyleUpdate({ textShadow: '2px 2px 4px rgba(0,0,0,0.5)' })}
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs"
+                      >
+                        Drop Shadow
+                      </Button>
+                      <Button
+                        onClick={() =>
+                          handleStyleUpdate({
+                            textShadow: '1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000'
+                          })
+                        }
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs"
+                      >
+                        Outline
+                      </Button>
+                      <Button
+                        onClick={() => {
+                          const currentColor = selectedElement.style.color
+                          const gradientText = `linear-gradient(45deg, ${currentColor}, #FFD700)`
+                          handleStyleUpdate({
+                            background: gradientText,
+                            WebkitBackgroundClip: 'text',
+                            WebkitTextFillColor: 'transparent',
+                            backgroundClip: 'text'
+                          } as any)
+                        }}
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs"
+                      >
+                        Gradient
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </details>
+            </div>
+            
+            <Separator />
+          </>
+        )}
+
+        {/* Position & Size - Moved below text controls */}
         <div className="space-y-3">
           <Label className="text-sm font-medium">Position & Size</Label>
           <div className="grid grid-cols-2 gap-2">
@@ -186,366 +522,53 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ className = ''
           </div>
         </div>
 
-        <Separator />
-
-        {/* Opacity */}
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <Label className="text-sm font-medium">Opacity</Label>
-            <span className="text-xs text-muted-foreground">
-              {Math.round((selectedElement.opacity || 1) * 100)}%
-            </span>
+        {/* Opacity & Rotation */}
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-sm font-medium">Opacity</Label>
+              <span className="text-xs text-muted-foreground">
+                {Math.round((selectedElement.opacity || 1) * 100)}%
+              </span>
+            </div>
+            <Slider
+              value={[(selectedElement.opacity || 1) * 100]}
+              onValueChange={([value]) => handleElementUpdate({ opacity: value / 100 })}
+              max={100}
+              min={0}
+              step={5}
+              className="w-full"
+            />
           </div>
-          <Slider
-            value={[(selectedElement.opacity || 1) * 100]}
-            onValueChange={([value]) => handleElementUpdate({ opacity: value / 100 })}
-            max={100}
-            min={0}
-            step={5}
-            className="w-full"
-          />
-        </div>
-
-        {/* Rotation */}
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <Label className="text-sm font-medium">Rotation</Label>
-            <span className="text-xs text-muted-foreground">{selectedElement.rotation || 0}°</span>
+          
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-sm font-medium">Rotation</Label>
+              <span className="text-xs text-muted-foreground">{selectedElement.rotation || 0}°</span>
+            </div>
+            <Slider
+              value={[selectedElement.rotation || 0]}
+              onValueChange={([value]) => handleElementUpdate({ rotation: value })}
+              max={360}
+              min={-360}
+              step={5}
+              className="w-full"
+            />
           </div>
-          <Slider
-            value={[selectedElement.rotation || 0]}
-            onValueChange={([value]) => handleElementUpdate({ rotation: value })}
-            max={360}
-            min={-360}
-            step={5}
-            className="w-full"
-          />
         </div>
-
-        <Separator />
 
         {/* Layer Controls */}
-        <div className="space-y-3">
+        <div className="space-y-2">
           <Label className="text-sm font-medium">Layer Order</Label>
           <div className="flex gap-2">
-            <Button onClick={handleBringToFront} variant="outline" size="sm" className="flex-1">
+            <Button onClick={handleBringToFront} variant="outline" size="sm" className="flex-1 h-8">
               Bring to Front
             </Button>
-            <Button onClick={handleSendToBack} variant="outline" size="sm" className="flex-1">
+            <Button onClick={handleSendToBack} variant="outline" size="sm" className="flex-1 h-8">
               Send to Back
             </Button>
           </div>
         </div>
-
-        {/* Text-specific controls */}
-        {selectedElement.type === 'text' && (
-          <>
-            <Separator />
-            <div className="space-y-4">
-              <Label className="text-sm font-medium">Text Styling</Label>
-
-              {/* Font Family */}
-              <div className="space-y-2">
-                <Label className="text-xs text-muted-foreground">Font Family</Label>
-                <Select
-                  value={selectedElement.style.fontFamily}
-                  onValueChange={(value) => handleStyleUpdate({ fontFamily: value })}
-                >
-                  <SelectTrigger className="h-8">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Arial">Arial</SelectItem>
-                    <SelectItem value="Helvetica">Helvetica</SelectItem>
-                    <SelectItem value="Times New Roman">Times New Roman</SelectItem>
-                    <SelectItem value="Georgia">Georgia</SelectItem>
-                    <SelectItem value="Verdana">Verdana</SelectItem>
-                    <SelectItem value="Trebuchet MS">Trebuchet MS</SelectItem>
-                    <SelectItem value="Impact">Impact</SelectItem>
-                    <SelectItem value="Comic Sans MS">Comic Sans MS</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Font Size */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label className="text-xs text-muted-foreground">Font Size</Label>
-                  <span className="text-xs text-muted-foreground">
-                    {selectedElement.style.fontSize}px
-                  </span>
-                </div>
-                <Slider
-                  value={[selectedElement.style.fontSize]}
-                  onValueChange={([value]) => handleStyleUpdate({ fontSize: value })}
-                  max={120}
-                  min={8}
-                  step={2}
-                  className="w-full"
-                />
-              </div>
-
-              {/* Font Weight */}
-              <div className="space-y-2">
-                <Label className="text-xs text-muted-foreground">Font Weight</Label>
-                <Select
-                  value={selectedElement.style.fontWeight}
-                  onValueChange={(value) => handleStyleUpdate({ fontWeight: value as any })}
-                >
-                  <SelectTrigger className="h-8">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="100">100 - Thin</SelectItem>
-                    <SelectItem value="200">200 - Extra Light</SelectItem>
-                    <SelectItem value="300">300 - Light</SelectItem>
-                    <SelectItem value="400">400 - Normal</SelectItem>
-                    <SelectItem value="500">500 - Medium</SelectItem>
-                    <SelectItem value="600">600 - Semi Bold</SelectItem>
-                    <SelectItem value="700">700 - Bold</SelectItem>
-                    <SelectItem value="800">800 - Extra Bold</SelectItem>
-                    <SelectItem value="900">900 - Black</SelectItem>
-                    <SelectItem value="normal">Normal</SelectItem>
-                    <SelectItem value="bold">Bold</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Font Style */}
-              <div className="flex gap-2">
-                <Button
-                  onClick={() =>
-                    handleStyleUpdate({
-                      fontStyle: selectedElement.style.fontStyle === 'italic' ? 'normal' : 'italic'
-                    })
-                  }
-                  variant={selectedElement.style.fontStyle === 'italic' ? 'default' : 'outline'}
-                  size="sm"
-                  className="flex-1"
-                >
-                  <Italic className="w-4 h-4 mr-1" />
-                  Italic
-                </Button>
-              </div>
-
-              {/* Text Alignment */}
-              <div className="space-y-2">
-                <Label className="text-xs text-muted-foreground">Text Alignment</Label>
-                <div className="flex gap-1">
-                  <Button
-                    onClick={() => handleStyleUpdate({ textAlign: 'left' })}
-                    variant={selectedElement.style.textAlign === 'left' ? 'default' : 'outline'}
-                    size="sm"
-                    className="flex-1"
-                  >
-                    <AlignLeft className="w-4 h-4" />
-                  </Button>
-                  <Button
-                    onClick={() => handleStyleUpdate({ textAlign: 'center' })}
-                    variant={selectedElement.style.textAlign === 'center' ? 'default' : 'outline'}
-                    size="sm"
-                    className="flex-1"
-                  >
-                    <AlignCenter className="w-4 h-4" />
-                  </Button>
-                  <Button
-                    onClick={() => handleStyleUpdate({ textAlign: 'right' })}
-                    variant={selectedElement.style.textAlign === 'right' ? 'default' : 'outline'}
-                    size="sm"
-                    className="flex-1"
-                  >
-                    <AlignRight className="w-4 h-4" />
-                  </Button>
-                </div>
-              </div>
-
-              {/* Colors */}
-              <div className="space-y-3">
-                <div className="space-y-2">
-                  <Label className="text-xs text-muted-foreground">Text Color</Label>
-                  <div className="flex gap-2">
-                    <Input
-                      type="color"
-                      value={selectedElement.style.color}
-                      onChange={(e) => handleStyleUpdate({ color: e.target.value })}
-                      className="w-12 h-8 p-1 border rounded"
-                    />
-                    <Input
-                      type="text"
-                      value={selectedElement.style.color}
-                      onChange={(e) => handleStyleUpdate({ color: e.target.value })}
-                      placeholder="#FFFFFF"
-                      className="flex-1 h-8"
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label className="text-xs text-muted-foreground">Background Color</Label>
-                  <div className="flex gap-2">
-                    <Input
-                      type="color"
-                      value={
-                        selectedElement.style.backgroundColor === 'transparent'
-                          ? '#000000'
-                          : selectedElement.style.backgroundColor
-                      }
-                      onChange={(e) => handleStyleUpdate({ backgroundColor: e.target.value })}
-                      className="w-12 h-8 p-1 border rounded"
-                    />
-                    <Input
-                      type="text"
-                      value={selectedElement.style.backgroundColor}
-                      onChange={(e) => handleStyleUpdate({ backgroundColor: e.target.value })}
-                      placeholder="transparent"
-                      className="flex-1 h-8"
-                    />
-                  </div>
-                  <Button
-                    onClick={() => handleStyleUpdate({ backgroundColor: 'transparent' })}
-                    variant="outline"
-                    size="sm"
-                    className="w-full"
-                  >
-                    Make Transparent
-                  </Button>
-                </div>
-              </div>
-
-              {/* Line Height */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label className="text-xs text-muted-foreground">Line Height</Label>
-                  <span className="text-xs text-muted-foreground">
-                    {selectedElement.style.lineHeight}
-                  </span>
-                </div>
-                <Slider
-                  value={[selectedElement.style.lineHeight]}
-                  onValueChange={([value]) => handleStyleUpdate({ lineHeight: value })}
-                  max={3}
-                  min={0.5}
-                  step={0.1}
-                  className="w-full"
-                />
-              </div>
-
-              {/* Text Shadow */}
-              <div className="space-y-3">
-                <Label className="text-xs text-muted-foreground">Text Shadow</Label>
-                <Input
-                  type="text"
-                  value={selectedElement.style.textShadow}
-                  onChange={(e) => handleStyleUpdate({ textShadow: e.target.value })}
-                  placeholder="2px 2px 4px rgba(0,0,0,0.8)"
-                  className="h-8"
-                />
-                <div className="grid grid-cols-2 gap-1">
-                  <Button
-                    onClick={() => handleStyleUpdate({ textShadow: 'none' })}
-                    variant="outline"
-                    size="sm"
-                  >
-                    None
-                  </Button>
-                  <Button
-                    onClick={() => handleStyleUpdate({ textShadow: '2px 2px 4px rgba(0,0,0,0.8)' })}
-                    variant="outline"
-                    size="sm"
-                  >
-                    Soft
-                  </Button>
-                  <Button
-                    onClick={() => handleStyleUpdate({ textShadow: '3px 3px 6px rgba(0,0,0,0.9)' })}
-                    variant="outline"
-                    size="sm"
-                  >
-                    Medium
-                  </Button>
-                  <Button
-                    onClick={() => handleStyleUpdate({ textShadow: '4px 4px 8px rgba(0,0,0,1)' })}
-                    variant="outline"
-                    size="sm"
-                  >
-                    Strong
-                  </Button>
-                  <Button
-                    onClick={() => handleStyleUpdate({ textShadow: '1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000' })}
-                    variant="outline"
-                    size="sm"
-                  >
-                    Outline
-                  </Button>
-                  <Button
-                    onClick={() => handleStyleUpdate({ textShadow: '0 0 10px rgba(255,255,255,0.8)' })}
-                    variant="outline"
-                    size="sm"
-                  >
-                    Glow
-                  </Button>
-                </div>
-              </div>
-
-              {/* Text Effects */}
-              <div className="space-y-3">
-                <Label className="text-xs text-muted-foreground">Text Effects</Label>
-                <div className="grid grid-cols-2 gap-2">
-                  <Button
-                    onClick={() => {
-                      const currentColor = selectedElement.style.color
-                      const gradientText = `linear-gradient(45deg, ${currentColor}, #FFD700)`
-                      handleStyleUpdate({ 
-                        background: gradientText,
-                        WebkitBackgroundClip: 'text',
-                        WebkitTextFillColor: 'transparent',
-                        backgroundClip: 'text'
-                      } as any)
-                    }}
-                    variant="outline"
-                    size="sm"
-                  >
-                    <Palette className="w-4 h-4 mr-1" />
-                    Gradient
-                  </Button>
-                  <Button
-                    onClick={() => {
-                      handleStyleUpdate({ 
-                        background: 'none',
-                        WebkitBackgroundClip: 'unset',
-                        WebkitTextFillColor: selectedElement.style.color,
-                        backgroundClip: 'unset'
-                      } as any)
-                    }}
-                    variant="outline"
-                    size="sm"
-                  >
-                    <Type className="w-4 h-4 mr-1" />
-                    Reset
-                  </Button>
-                </div>
-              </div>
-
-              {/* Quick Color Presets */}
-              <div className="space-y-3">
-                <Label className="text-xs text-muted-foreground">Quick Colors</Label>
-                <div className="grid grid-cols-6 gap-1">
-                  {[
-                    '#FFFFFF', '#000000', '#FF0000', '#00FF00', '#0000FF', '#FFFF00',
-                    '#FF00FF', '#00FFFF', '#FFA500', '#800080', '#FFC0CB', '#A52A2A'
-                  ].map((color) => (
-                    <button
-                      key={color}
-                      onClick={() => handleStyleUpdate({ color })}
-                      className="w-8 h-8 rounded border-2 border-gray-300 hover:border-gray-500 transition-colors"
-                      style={{ backgroundColor: color }}
-                      title={color}
-                    />
-                  ))}
-                </div>
-              </div>
-            </div>
-          </>
-        )}
 
         {/* Media-specific controls */}
         {(selectedElement.type === 'image' || selectedElement.type === 'video') && (

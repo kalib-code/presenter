@@ -15,7 +15,7 @@ interface CanvasProps {
 export const Canvas: React.FC<CanvasProps> = ({ className = '' }) => {
   const canvasRef = useRef<HTMLDivElement>(null)
   const dragStartPos = useRef<{ x: number; y: number } | null>(null)
-  
+
   // State for resolved media URLs
   const [resolvedSlideImageUrl, setResolvedSlideImageUrl] = useState<string | null>(null)
   const [resolvedSlideVideoUrl, setResolvedSlideVideoUrl] = useState<string | null>(null)
@@ -39,7 +39,6 @@ export const Canvas: React.FC<CanvasProps> = ({ className = '' }) => {
     safeArea
   } = useCanvasStore()
 
-
   // Background stores - use direct store access to avoid infinite loops
   const slideBackgroundType = useBackgroundStore((state) => state.backgroundType)
   const slideBackgroundImage = useBackgroundStore((state) => state.backgroundImage)
@@ -59,16 +58,23 @@ export const Canvas: React.FC<CanvasProps> = ({ className = '' }) => {
 
   const backgroundSize = useBackgroundStore((state) => state.backgroundSize)
   const backgroundPosition = useBackgroundStore((state) => state.backgroundPosition)
-  
+
   // Alignment settings
   const showRulers = useShowRulers()
 
   // Resolve slide background image URL
   useEffect(() => {
     if (slideBackgroundImage) {
+      console.log('🎨 [CANVAS] Resolving slide background image:', slideBackgroundImage)
       resolveMediaUrl(slideBackgroundImage)
-        .then(setResolvedSlideImageUrl)
-        .catch(() => setResolvedSlideImageUrl(null))
+        .then((url) => {
+          console.log('🎨 [CANVAS] Slide background image resolved:', url.substring(0, 100) + '...')
+          setResolvedSlideImageUrl(url)
+        })
+        .catch((error) => {
+          console.error('🎨 [CANVAS] Failed to resolve slide background image:', error)
+          setResolvedSlideImageUrl(null)
+        })
     } else {
       setResolvedSlideImageUrl(null)
     }
@@ -88,10 +94,21 @@ export const Canvas: React.FC<CanvasProps> = ({ className = '' }) => {
   // Resolve global background image URL
   useEffect(() => {
     if (globalBackgroundImage) {
+      console.log('🌍 [CANVAS] Resolving global background image:', globalBackgroundImage)
       resolveMediaUrl(globalBackgroundImage)
-        .then(setResolvedGlobalImageUrl)
-        .catch(() => setResolvedGlobalImageUrl(null))
+        .then((url) => {
+          console.log(
+            '🌍 [CANVAS] Global background image resolved:',
+            url.substring(0, 100) + '...'
+          )
+          setResolvedGlobalImageUrl(url)
+        })
+        .catch((error) => {
+          console.error('🌍 [CANVAS] Failed to resolve global background image:', error)
+          setResolvedGlobalImageUrl(null)
+        })
     } else {
+      console.log('🌍 [CANVAS] No global background image, clearing resolved URL')
       setResolvedGlobalImageUrl(null)
     }
   }, [globalBackgroundImage])
@@ -111,6 +128,25 @@ export const Canvas: React.FC<CanvasProps> = ({ className = '' }) => {
   const selectedElement = selectedElementId
     ? elements.find((el) => el.id === selectedElementId) || null
     : null
+
+  // Debug background state
+  useEffect(() => {
+    console.log('🎨 [CANVAS] Background state:', {
+      slideBackgroundType,
+      slideBackgroundImage: slideBackgroundImage?.substring(0, 50) + '...',
+      resolvedSlideImageUrl: resolvedSlideImageUrl?.substring(0, 50) + '...',
+      globalBackgroundType,
+      globalBackgroundImage: globalBackgroundImage?.substring(0, 50) + '...',
+      resolvedGlobalImageUrl: resolvedGlobalImageUrl?.substring(0, 50) + '...'
+    })
+  }, [
+    slideBackgroundType,
+    slideBackgroundImage,
+    resolvedSlideImageUrl,
+    globalBackgroundType,
+    globalBackgroundImage,
+    resolvedGlobalImageUrl
+  ])
 
   // Handle canvas click (deselect elements)
   const handleCanvasClick = useCallback(
@@ -182,7 +218,7 @@ export const Canvas: React.FC<CanvasProps> = ({ className = '' }) => {
       const mouseY = e.clientY - rect.top
 
       if (isDragging && draggedElementId && dragOffset) {
-        const draggedElement = elements.find(el => el.id === draggedElementId)
+        const draggedElement = elements.find((el) => el.id === draggedElementId)
         if (!draggedElement) return
 
         let newX = mouseX - dragOffset.x
@@ -192,7 +228,7 @@ export const Canvas: React.FC<CanvasProps> = ({ className = '' }) => {
         const snapped = useAlignmentStore.getState().snapPosition(
           { x: newX, y: newY },
           canvasSize,
-          elements.filter(el => el.id !== draggedElementId)
+          elements.filter((el) => el.id !== draggedElementId)
         )
         newX = snapped.x
         newY = snapped.y
@@ -307,10 +343,7 @@ export const Canvas: React.FC<CanvasProps> = ({ className = '' }) => {
   return (
     <div className={`relative overflow-hidden ${className}`}>
       {/* Rulers */}
-      <Rulers
-        canvasWidth={canvasSize.width}
-        canvasHeight={canvasSize.height}
-      />
+      <Rulers canvasWidth={canvasSize.width} canvasHeight={canvasSize.height} />
 
       {/* Canvas */}
       <div
@@ -337,11 +370,19 @@ export const Canvas: React.FC<CanvasProps> = ({ className = '' }) => {
                   backgroundSize: backgroundSize === 'none' ? 'auto' : backgroundSize,
                   backgroundPosition: backgroundPosition,
                   backgroundRepeat: backgroundSize === 'none' ? 'no-repeat' : 'no-repeat',
-                  opacity: slideBackgroundOpacity
+                  opacity: slideBackgroundOpacity,
+                  zIndex: 0
                 }}
+                onLoad={() => console.log('🎨 [CANVAS] Slide background image loaded successfully')}
+                onError={() => console.error('🎨 [CANVAS] Slide background image failed to load')}
               />
             )}
-            {slideBackgroundType === 'video' && 
+            {slideBackgroundType === 'image' && !resolvedSlideImageUrl && (
+              <div className="absolute inset-0 pointer-events-none bg-red-100 flex items-center justify-center text-red-600 text-sm">
+                Background image failed to load
+              </div>
+            )}
+            {slideBackgroundType === 'video' &&
               (slideBackgroundVideoBlob || resolvedSlideVideoUrl) && (
                 <video
                   className="absolute inset-0 w-full h-full pointer-events-none"
@@ -369,16 +410,40 @@ export const Canvas: React.FC<CanvasProps> = ({ className = '' }) => {
           <>
             {/* Global Background (only when no slide background) */}
             {globalBackgroundType === 'image' && resolvedGlobalImageUrl && (
-              <div
-                className="absolute inset-0 pointer-events-none"
-                style={{
-                  backgroundImage: `url(${resolvedGlobalImageUrl})`,
-                  backgroundSize: backgroundSize === 'none' ? 'auto' : backgroundSize,
-                  backgroundPosition: backgroundPosition,
-                  backgroundRepeat: backgroundSize === 'none' ? 'no-repeat' : 'no-repeat',
-                  opacity: globalBackgroundOpacity
-                }}
-              />
+              <>
+                {console.log(
+                  '🎨 [CANVAS] Rendering global background div with URL:',
+                  resolvedGlobalImageUrl
+                )}
+                <div
+                  className="absolute inset-0 pointer-events-none"
+                  style={{
+                    backgroundImage: `url("${resolvedGlobalImageUrl}")`,
+                    backgroundSize: backgroundSize === 'none' ? 'auto' : backgroundSize,
+                    backgroundPosition: backgroundPosition,
+                    backgroundRepeat: backgroundSize === 'none' ? 'no-repeat' : 'no-repeat',
+                    opacity: globalBackgroundOpacity,
+                    zIndex: 0
+                  }}
+                />
+                {/* Hidden image element to test if the URL loads */}
+                <img
+                  src={resolvedGlobalImageUrl}
+                  onLoad={() =>
+                    console.log('🌍 [CANVAS] Global background image loaded successfully')
+                  }
+                  onError={(e) =>
+                    console.error('🌍 [CANVAS] Global background image failed to load:', e)
+                  }
+                  style={{ display: 'none' }}
+                  alt=""
+                />
+              </>
+            )}
+            {globalBackgroundType === 'image' && !resolvedGlobalImageUrl && (
+              <div className="absolute inset-0 pointer-events-none bg-yellow-100 flex items-center justify-center text-yellow-600 text-sm">
+                Global background image failed to load
+              </div>
             )}
             {globalBackgroundType === 'video' &&
               (globalBackgroundVideoBlob || resolvedGlobalVideoUrl) && (
@@ -407,16 +472,10 @@ export const Canvas: React.FC<CanvasProps> = ({ className = '' }) => {
         )}
 
         {/* Grid Overlay */}
-        <GridOverlay 
-          canvasWidth={canvasSize.width}
-          canvasHeight={canvasSize.height}
-        />
+        <GridOverlay canvasWidth={canvasSize.width} canvasHeight={canvasSize.height} />
 
         {/* Guides Overlay */}
-        <GuidesOverlay
-          canvasWidth={canvasSize.width}
-          canvasHeight={canvasSize.height}
-        />
+        <GuidesOverlay canvasWidth={canvasSize.width} canvasHeight={canvasSize.height} />
 
         {/* Safe area guides */}
         <div

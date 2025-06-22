@@ -22,6 +22,11 @@ export interface Song extends BaseEntity {
   tags: string[]
   isPublic: boolean
   globalBackground?: Background
+  // Extended metadata
+  copyright?: string
+  publisher?: string
+  language?: string
+  notes?: string
 }
 
 export interface Slide {
@@ -34,6 +39,10 @@ export interface Slide {
   transition?: Transition
   order: number
   notes?: string
+
+  // New optimization fields
+  backgroundOverride?: Partial<Background>
+  useGlobalBackground?: boolean
 }
 
 export interface SlideElement {
@@ -61,6 +70,10 @@ export interface SlideElement {
       }
   style: ElementStyle
   zIndex: number
+
+  // New optimization fields (optional for backward compatibility)
+  stylePreset?: string
+  styleOverrides?: Partial<ElementStyle>
 }
 
 export interface ElementStyle {
@@ -159,13 +172,24 @@ export interface SetlistItem {
 // Presentation types
 export interface Presentation extends BaseEntity {
   name: string
-  type: 'scripture' | 'announcement' | 'custom'
+  type: 'scripture' | 'announcement' | 'custom' | 'sermon' | 'teaching' | 'testimony' | 'prayer'
   slides: PresentationSlide[]
   background?: Background
   theme?: Theme
   speaker?: string
   tags: string[]
   isPublic: boolean
+  // Extended metadata
+  serviceDate?: Date
+  occasion?: string
+  location?: string
+  description?: string
+  scripture?: string
+  topic?: string
+  estimatedDuration?: number
+  audience?: string
+  language?: string
+  notes?: string
 }
 
 export interface PresentationSlide {
@@ -308,4 +332,14 @@ export interface DatabaseError {
   operation: DatabaseOperation
   entity: string
   details?: Record<string, unknown>
+}
+
+// Add style preset types
+export interface StylePreset {
+  id: string
+  name: string
+  description?: string
+  style: ElementStyle
+  category: 'text' | 'title' | 'subtitle' | 'custom'
+  isBuiltIn: boolean
 }

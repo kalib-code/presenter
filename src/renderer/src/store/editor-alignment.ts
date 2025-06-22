@@ -13,14 +13,17 @@ export interface AlignmentGuide {
 export interface SnapPoint {
   x: number
   y: number
-  type: 'grid' | 'element' | 'guide'
+  type: 'grid' | 'element' | 'guide' | 'center'
   elementId?: string
 }
 
 interface AlignmentState {
   // Grid settings
   gridEnabled: boolean
-  gridSize: number
+  gridSize: number // Legacy: pixel-based grid size
+  gridMode: 'pixel' | 'boxes' // New: grid mode selection
+  gridBoxesX: number // New: number of boxes horizontally
+  gridBoxesY: number // New: number of boxes vertically
   gridVisible: boolean
   gridColor: string
   gridOpacity: number
@@ -29,6 +32,7 @@ interface AlignmentState {
   snapToGrid: boolean
   snapToElements: boolean
   snapToGuides: boolean
+  snapToCenter: boolean // New: snap to canvas center and element centers
   snapTolerance: number
 
   // Alignment guides
@@ -51,6 +55,8 @@ interface AlignmentActions {
   // Grid controls
   setGridEnabled: (enabled: boolean) => void
   setGridSize: (size: number) => void
+  setGridMode: (mode: 'pixel' | 'boxes') => void
+  setGridBoxes: (x: number, y: number) => void
   setGridVisible: (visible: boolean) => void
   setGridColor: (color: string) => void
   setGridOpacity: (opacity: number) => void
@@ -59,6 +65,7 @@ interface AlignmentActions {
   setSnapToGrid: (enabled: boolean) => void
   setSnapToElements: (enabled: boolean) => void
   setSnapToGuides: (enabled: boolean) => void
+  setSnapToCenter: (enabled: boolean) => void
   setSnapTolerance: (tolerance: number) => void
 
   // Guide management
@@ -81,11 +88,22 @@ interface AlignmentActions {
   setRulerUnit: (unit: 'px' | 'cm' | 'in') => void
 
   // Snap calculations
-  snapPosition: (position: { x: number; y: number }, canvasSize: { width: number; height: number }, elements: EditorElement[]) => { x: number; y: number; snappedX: boolean; snappedY: boolean }
-  getSnapPoints: (canvasSize: { width: number; height: number }, elements: EditorElement[], excludeElementId?: string) => SnapPoint[]
+  snapPosition: (
+    position: { x: number; y: number },
+    canvasSize: { width: number; height: number },
+    elements: EditorElement[]
+  ) => { x: number; y: number; snappedX: boolean; snappedY: boolean }
+  getSnapPoints: (
+    canvasSize: { width: number; height: number },
+    elements: EditorElement[],
+    excludeElementId?: string
+  ) => SnapPoint[]
 
   // Element alignment
-  alignElements: (elementIds: string[], alignment: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom') => void
+  alignElements: (
+    elementIds: string[],
+    alignment: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom'
+  ) => void
   distributeElements: (elementIds: string[], direction: 'horizontal' | 'vertical') => void
 
   // Utilities
@@ -95,31 +113,35 @@ interface AlignmentActions {
 type AlignmentStore = AlignmentState & AlignmentActions
 
 const initialState: AlignmentState = {
-  // Grid settings
-  gridEnabled: true,
+  // Grid settings - Disabled by default
+  gridEnabled: false,
   gridSize: 20,
-  gridVisible: true,
+  gridMode: 'boxes',
+  gridBoxesX: 10,
+  gridBoxesY: 10,
+  gridVisible: false,
   gridColor: '#E5E7EB',
   gridOpacity: 0.5,
 
-  // Snap settings
-  snapToGrid: true,
-  snapToElements: true,
-  snapToGuides: true,
+  // Snap settings - Disabled by default
+  snapToGrid: false,
+  snapToElements: false,
+  snapToGuides: false,
+  snapToCenter: false,
   snapTolerance: 10,
 
-  // Alignment guides
+  // Alignment guides - Disabled by default
   guides: [],
-  showGuides: true,
+  showGuides: false,
   guideColor: '#3B82F6',
   guideOpacity: 0.8,
 
-  // Smart guides
+  // Smart guides - Disabled by default
   smartGuides: [],
-  showSmartGuides: true,
+  showSmartGuides: false,
 
-  // Rulers
-  showRulers: true,
+  // Rulers - Disabled by default
+  showRulers: false,
   rulerColor: '#6B7280',
   rulerUnit: 'px'
 }
@@ -130,6 +152,12 @@ export const useAlignmentStore = create<AlignmentStore>()(
 
     setGridEnabled: (enabled) => set({ gridEnabled: enabled }),
     setGridSize: (size) => set({ gridSize: Math.max(5, Math.min(100, size)) }),
+    setGridMode: (mode) => set({ gridMode: mode }),
+    setGridBoxes: (x, y) =>
+      set({
+        gridBoxesX: Math.max(1, Math.min(50, x)),
+        gridBoxesY: Math.max(1, Math.min(50, y))
+      }),
     setGridVisible: (visible) => set({ gridVisible: visible }),
     setGridColor: (color) => set({ gridColor: color }),
     setGridOpacity: (opacity) => set({ gridOpacity: Math.max(0, Math.min(1, opacity)) }),
@@ -137,17 +165,24 @@ export const useAlignmentStore = create<AlignmentStore>()(
     setSnapToGrid: (enabled) => set({ snapToGrid: enabled }),
     setSnapToElements: (enabled) => set({ snapToElements: enabled }),
     setSnapToGuides: (enabled) => set({ snapToGuides: enabled }),
+    setSnapToCenter: (enabled) => set({ snapToCenter: enabled }),
     setSnapTolerance: (tolerance) => set({ snapTolerance: Math.max(1, Math.min(50, tolerance)) }),
 
     addGuide: (type, position) => {
+      const currentState = get()
+
       const guide: AlignmentGuide = {
         id: `guide_${Date.now()}_${Math.random().toString(36).slice(2)}`,
         type,
         position,
-        color: get().guideColor,
+        color: currentState.guideColor,
         temporary: false
       }
       set((state) => ({ guides: [...state.guides, guide] }))
+
+      // Verify the update
+      const updatedState = get()
+      console.log('🎯 [ALIGNMENT_STORE] After update, guides:', updatedState.guides)
     },
 
     removeGuide: (id) => {
@@ -156,9 +191,7 @@ export const useAlignmentStore = create<AlignmentStore>()(
 
     updateGuide: (id, position) => {
       set((state) => ({
-        guides: state.guides.map((guide) => 
-          guide.id === id ? { ...guide, position } : guide
-        )
+        guides: state.guides.map((guide) => (guide.id === id ? { ...guide, position } : guide))
       }))
     },
 
@@ -175,7 +208,7 @@ export const useAlignmentStore = create<AlignmentStore>()(
     setRulerColor: (color) => set({ rulerColor: color }),
     setRulerUnit: (unit) => set({ rulerUnit: unit }),
 
-    snapPosition: (position, _canvasSize, elements) => {
+    snapPosition: (position, canvasSize, elements) => {
       const state = get()
       let { x, y } = position
       let snappedX = false
@@ -188,18 +221,39 @@ export const useAlignmentStore = create<AlignmentStore>()(
       const snapTolerance = state.snapTolerance
 
       // Snap to grid
-      if (state.snapToGrid && state.gridSize > 0) {
-        const gridX = Math.round(x / state.gridSize) * state.gridSize
-        const gridY = Math.round(y / state.gridSize) * state.gridSize
+      if (state.snapToGrid) {
+        if (state.gridMode === 'boxes') {
+          // Box-based grid snapping
+          const boxWidth = canvasSize.width / state.gridBoxesX
+          const boxHeight = canvasSize.height / state.gridBoxesY
 
-        if (Math.abs(x - gridX) <= snapTolerance) {
-          x = gridX
-          snappedX = true
-        }
+          // Find nearest grid intersection
+          const gridX = Math.round(x / boxWidth) * boxWidth
+          const gridY = Math.round(y / boxHeight) * boxHeight
 
-        if (Math.abs(y - gridY) <= snapTolerance) {
-          y = gridY
-          snappedY = true
+          if (Math.abs(x - gridX) <= snapTolerance) {
+            x = gridX
+            snappedX = true
+          }
+
+          if (Math.abs(y - gridY) <= snapTolerance) {
+            y = gridY
+            snappedY = true
+          }
+        } else if (state.gridSize > 0) {
+          // Legacy pixel-based grid snapping
+          const gridX = Math.round(x / state.gridSize) * state.gridSize
+          const gridY = Math.round(y / state.gridSize) * state.gridSize
+
+          if (Math.abs(x - gridX) <= snapTolerance) {
+            x = gridX
+            snappedX = true
+          }
+
+          if (Math.abs(y - gridY) <= snapTolerance) {
+            y = gridY
+            snappedY = true
+          }
         }
       }
 
@@ -216,6 +270,22 @@ export const useAlignmentStore = create<AlignmentStore>()(
         }
       }
 
+      // Snap to canvas center
+      if (state.snapToCenter) {
+        const canvasCenterX = canvasSize.width / 2
+        const canvasCenterY = canvasSize.height / 2
+
+        if (!snappedX && Math.abs(x - canvasCenterX) <= snapTolerance) {
+          x = canvasCenterX
+          snappedX = true
+        }
+
+        if (!snappedY && Math.abs(y - canvasCenterY) <= snapTolerance) {
+          y = canvasCenterY
+          snappedY = true
+        }
+      }
+
       // Snap to elements
       if (state.snapToElements && elements.length > 0) {
         for (const element of elements) {
@@ -226,16 +296,13 @@ export const useAlignmentStore = create<AlignmentStore>()(
           const elementCenterX = element.position.x + element.size.width / 2
           const elementCenterY = element.position.y + element.size.height / 2
 
-          // Snap to element edges and center
+          // Snap to element edges
           if (!snappedX) {
             if (Math.abs(x - elementLeft) <= snapTolerance) {
               x = elementLeft
               snappedX = true
             } else if (Math.abs(x - elementRight) <= snapTolerance) {
               x = elementRight
-              snappedX = true
-            } else if (Math.abs(x - elementCenterX) <= snapTolerance) {
-              x = elementCenterX
               snappedX = true
             }
           }
@@ -247,7 +314,17 @@ export const useAlignmentStore = create<AlignmentStore>()(
             } else if (Math.abs(y - elementBottom) <= snapTolerance) {
               y = elementBottom
               snappedY = true
-            } else if (Math.abs(y - elementCenterY) <= snapTolerance) {
+            }
+          }
+
+          // Snap to element centers (only if snapToCenter is enabled)
+          if (state.snapToCenter) {
+            if (!snappedX && Math.abs(x - elementCenterX) <= snapTolerance) {
+              x = elementCenterX
+              snappedX = true
+            }
+
+            if (!snappedY && Math.abs(y - elementCenterY) <= snapTolerance) {
               y = elementCenterY
               snappedY = true
             }
@@ -262,11 +339,33 @@ export const useAlignmentStore = create<AlignmentStore>()(
       const state = get()
       const snapPoints: SnapPoint[] = []
 
+      // Canvas center snap point
+      if (state.snapToCenter) {
+        snapPoints.push({
+          x: canvasSize.width / 2,
+          y: canvasSize.height / 2,
+          type: 'center'
+        } as SnapPoint)
+      }
+
       // Grid snap points
-      if (state.snapToGrid && state.gridSize > 0) {
-        for (let x = 0; x <= canvasSize.width; x += state.gridSize) {
-          for (let y = 0; y <= canvasSize.height; y += state.gridSize) {
-            snapPoints.push({ x, y, type: 'grid' })
+      if (state.snapToGrid) {
+        if (state.gridMode === 'boxes') {
+          // Box-based grid snap points
+          const boxWidth = canvasSize.width / state.gridBoxesX
+          const boxHeight = canvasSize.height / state.gridBoxesY
+
+          for (let i = 0; i <= state.gridBoxesX; i++) {
+            for (let j = 0; j <= state.gridBoxesY; j++) {
+              snapPoints.push({ x: i * boxWidth, y: j * boxHeight, type: 'grid' })
+            }
+          }
+        } else if (state.gridSize > 0) {
+          // Legacy pixel-based grid snap points
+          for (let x = 0; x <= canvasSize.width; x += state.gridSize) {
+            for (let y = 0; y <= canvasSize.height; y += state.gridSize) {
+              snapPoints.push({ x, y, type: 'grid' })
+            }
           }
         }
       }
@@ -340,27 +439,32 @@ export const useAlignmentStore = create<AlignmentStore>()(
 
 // Performance-optimized primitive selectors (no object creation)
 // Grid selectors
-export const useGridEnabled = () => useAlignmentStore(state => state.gridEnabled)
-export const useGridSize = () => useAlignmentStore(state => state.gridSize)
-export const useGridVisible = () => useAlignmentStore(state => state.gridVisible)
-export const useGridColor = () => useAlignmentStore(state => state.gridColor)
-export const useGridOpacity = () => useAlignmentStore(state => state.gridOpacity)
+export const useGridEnabled = (): boolean => useAlignmentStore((state) => state.gridEnabled)
+export const useGridSize = (): number => useAlignmentStore((state) => state.gridSize)
+export const useGridMode = (): 'pixel' | 'boxes' => useAlignmentStore((state) => state.gridMode)
+export const useGridBoxesX = (): number => useAlignmentStore((state) => state.gridBoxesX)
+export const useGridBoxesY = (): number => useAlignmentStore((state) => state.gridBoxesY)
+export const useGridVisible = (): boolean => useAlignmentStore((state) => state.gridVisible)
+export const useGridColor = (): string => useAlignmentStore((state) => state.gridColor)
+export const useGridOpacity = (): number => useAlignmentStore((state) => state.gridOpacity)
 
 // Snap selectors
-export const useSnapToGrid = () => useAlignmentStore(state => state.snapToGrid)
-export const useSnapToElements = () => useAlignmentStore(state => state.snapToElements)
-export const useSnapToGuides = () => useAlignmentStore(state => state.snapToGuides)
-export const useSnapTolerance = () => useAlignmentStore(state => state.snapTolerance)
+export const useSnapToGrid = (): boolean => useAlignmentStore((state) => state.snapToGrid)
+export const useSnapToElements = (): boolean => useAlignmentStore((state) => state.snapToElements)
+export const useSnapToGuides = (): boolean => useAlignmentStore((state) => state.snapToGuides)
+export const useSnapToCenter = (): boolean => useAlignmentStore((state) => state.snapToCenter)
+export const useSnapTolerance = (): number => useAlignmentStore((state) => state.snapTolerance)
 
 // Guide selectors
-export const useGuides = () => useAlignmentStore(state => state.guides)
-export const useShowGuides = () => useAlignmentStore(state => state.showGuides)
-export const useGuideColor = () => useAlignmentStore(state => state.guideColor)
-export const useGuideOpacity = () => useAlignmentStore(state => state.guideOpacity)
-export const useSmartGuides = () => useAlignmentStore(state => state.smartGuides)
-export const useShowSmartGuides = () => useAlignmentStore(state => state.showSmartGuides)
+export const useGuides = (): AlignmentGuide[] => useAlignmentStore((state) => state.guides)
+export const useShowGuides = (): boolean => useAlignmentStore((state) => state.showGuides)
+export const useGuideColor = (): string => useAlignmentStore((state) => state.guideColor)
+export const useGuideOpacity = (): number => useAlignmentStore((state) => state.guideOpacity)
+export const useSmartGuides = (): AlignmentGuide[] =>
+  useAlignmentStore((state) => state.smartGuides)
+export const useShowSmartGuides = (): boolean => useAlignmentStore((state) => state.showSmartGuides)
 
 // Ruler selectors
-export const useShowRulers = () => useAlignmentStore(state => state.showRulers)
-export const useRulerColor = () => useAlignmentStore(state => state.rulerColor)
-export const useRulerUnit = () => useAlignmentStore(state => state.rulerUnit)
+export const useShowRulers = (): boolean => useAlignmentStore((state) => state.showRulers)
+export const useRulerColor = (): string => useAlignmentStore((state) => state.rulerColor)
+export const useRulerUnit = (): 'px' | 'cm' | 'in' => useAlignmentStore((state) => state.rulerUnit)

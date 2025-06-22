@@ -12,261 +12,241 @@ interface MediaBrowserProps {
   title?: string
 }
 
-export const MediaBrowser: React.FC<MediaBrowserProps> = ({
-  isOpen,
-  onClose,
-  onSelect,
-  mediaType = 'all',
-  title = 'Select Media'
-}) => {
-  console.log('🎯 MediaBrowser render:', { isOpen, mediaType, title })
-  const [media, setMedia] = useState<Media[]>([])
-  const [filteredMedia, setFilteredMedia] = useState<Media[]>([])
-  const [searchQuery, setSearchQuery] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [selectedFile, setSelectedFile] = useState<Media | null>(null)
-
-  // Fetch media files
-  const fetchMedia = useCallback(async (): Promise<void> => {
-    try {
-      setLoading(true)
-      console.log('🔍 Fetching media files...')
-      const files = await window.electron?.invoke('list-media-files')
-      console.log('📁 Media files fetched:', files)
-      console.log('📊 Number of files:', files.length)
-      setMedia(files)
-    } catch (error) {
-      console.error('❌ Failed to fetch media files:', error)
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  // Filter media based on type and search
-  useEffect(() => {
-    let filtered = media
-    console.log('🎯 Filtering media:', {
-      totalMedia: media.length,
-      mediaType,
-      searchQuery
-    })
-
-    // Filter by media type
-    if (mediaType !== 'all') {
-      filtered = filtered.filter((file) => file.type === mediaType)
-      console.log('🎯 After type filter:', {
-        filteredCount: filtered.length,
-        requestedType: mediaType,
-        availableTypes: media.map((f) => f.type)
-      })
-    }
-
-    // Filter by search query
-    if (searchQuery) {
-      filtered = filtered.filter((file) =>
-        file.name.toLowerCase().includes(searchQuery.toLowerCase())
-      )
-      console.log('🎯 After search filter:', filtered.length)
-    }
-
-    console.log('🎯 Final filtered media:', filtered.length)
-    setFilteredMedia(filtered)
-  }, [media, mediaType, searchQuery])
-
-  // Fetch media when component opens
-  useEffect(() => {
+export const MediaBrowser: React.FC<MediaBrowserProps> = React.memo(
+  ({ isOpen, onClose, onSelect, mediaType = 'all', title = 'Select Media' }) => {
+    // Only log when actually open to reduce noise
     if (isOpen) {
-      fetchMedia()
-      setSearchQuery('')
-      setSelectedFile(null)
+      console.log('🎯 MediaBrowser render:', { isOpen, mediaType, title })
     }
-  }, [isOpen, fetchMedia])
+    const [media, setMedia] = useState<Media[]>([])
+    const [filteredMedia, setFilteredMedia] = useState<Media[]>([])
+    const [searchQuery, setSearchQuery] = useState('')
+    const [loading, setLoading] = useState(false)
+    const [selectedFile, setSelectedFile] = useState<Media | null>(null)
 
-  // Get media URL for display
-  const getMediaUrl = useCallback(async (filename: string): Promise<string> => {
-    try {
-      console.log('🖼️ Loading URL for file:', filename)
-
-      // For Electron, we need to convert file URLs to data URLs for display
-      const dataUrl = await window.electron?.invoke('get-media-data-url', filename)
-
-      console.log('🔗 Generated data URL length:', dataUrl ? dataUrl.length : 0)
-      return dataUrl || ''
-    } catch (error) {
-      console.error('❌ Failed to get media URL:', error)
-      return ''
-    }
-  }, [])
-
-  const handleSelect = useCallback(
-    async (file: Media) => {
-      if (onSelect) {
-        // Return media reference instead of data URL
-        const mediaWithReference = {
-          ...file,
-          mediaReference: `media://${file.filename}`
-        }
-        console.log(
-          '🎯 [MEDIA_BROWSER] Selected media:',
-          file.filename,
-          'Reference:',
-          mediaWithReference.mediaReference
-        )
-        onSelect(mediaWithReference)
+    // Fetch media files
+    const fetchMedia = useCallback(async (): Promise<void> => {
+      try {
+        setLoading(true)
+        console.log('🔍 Fetching media files...')
+        const files = await window.electron?.invoke('list-media-files')
+        console.log('📁 Media files fetched:', files)
+        console.log('📊 Number of files:', files.length)
+        setMedia(files)
+      } catch (error) {
+        console.error('❌ Failed to fetch media files:', error)
+      } finally {
+        setLoading(false)
       }
-      onClose?.()
-    },
-    [onSelect, onClose]
-  )
+    }, [])
 
-  const formatFileSize = (bytes: number): string => {
-    if (bytes === 0) return '0 Bytes'
-    const k = 1024
-    const sizes = ['Bytes', 'KB', 'MB', 'GB']
-    const i = Math.floor(Math.log(bytes) / Math.log(k))
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
-  }
+    // Filter media based on type and search
+    useEffect(() => {
+      let filtered = media
 
-  if (!isOpen) {
-    console.log('🎯 MediaBrowser not rendering (isOpen=false)')
-    return null
-  }
+      // Filter by media type
+      if (mediaType !== 'all') {
+        filtered = filtered.filter((file) => file.type === mediaType)
+      }
 
-  console.log('🎯 MediaBrowser rendering modal overlay', {
-    mediaType,
-    filteredMediaCount: filteredMedia.length,
-    hasSelectedFile: !!selectedFile,
-    selectedFileName: selectedFile?.name,
-    selectedFileId: selectedFile?.id
-  })
-  return (
-    <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999]"
-      style={{ pointerEvents: 'auto' }}
-      onClick={(e) => {
-        // Only close if clicking the overlay, not the modal content
-        if (e.target === e.currentTarget) {
-          console.log('🎯 Overlay clicked, closing modal')
-          onClose()
+      // Filter by search query
+      if (searchQuery) {
+        filtered = filtered.filter((file) =>
+          file.name.toLowerCase().includes(searchQuery.toLowerCase())
+        )
+      }
+
+      setFilteredMedia(filtered)
+    }, [media, mediaType, searchQuery])
+
+    // Fetch media when component opens
+    useEffect(() => {
+      if (isOpen) {
+        fetchMedia()
+        setSearchQuery('')
+        setSelectedFile(null)
+      }
+    }, [isOpen, fetchMedia])
+
+    // Get media URL for display
+    const getMediaUrl = useCallback(async (filename: string): Promise<string> => {
+      try {
+        console.log('🖼️ Loading URL for file:', filename)
+
+        // For Electron, we need to convert file URLs to data URLs for display
+        const dataUrl = await window.electron?.invoke('get-media-data-url', filename)
+
+        console.log('🔗 Generated data URL length:', dataUrl ? dataUrl.length : 0)
+        return dataUrl || ''
+      } catch (error) {
+        console.error('❌ Failed to get media URL:', error)
+        return ''
+      }
+    }, [])
+
+    const handleSelect = useCallback(
+      async (file: Media) => {
+        if (onSelect) {
+          // Return media reference instead of data URL
+          const mediaWithReference = {
+            ...file,
+            mediaReference: `media://${file.filename}`
+          }
+          console.log(
+            '🎯 [MEDIA_BROWSER] Selected media:',
+            file.filename,
+            'Reference:',
+            mediaWithReference.mediaReference
+          )
+          onSelect(mediaWithReference)
         }
-      }}
-    >
+        onClose?.()
+      },
+      [onSelect, onClose]
+    )
+
+    const formatFileSize = (bytes: number): string => {
+      if (bytes === 0) return '0 Bytes'
+      const k = 1024
+      const sizes = ['Bytes', 'KB', 'MB', 'GB']
+      const i = Math.floor(Math.log(bytes) / Math.log(k))
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+    }
+
+    if (!isOpen) {
+      return null
+    }
+
+    return (
       <div
-        className="bg-card border border-border rounded-lg w-[800px] h-[600px] flex flex-col relative"
+        className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999]"
         style={{ pointerEvents: 'auto' }}
         onClick={(e) => {
-          // Prevent event bubbling to overlay
-          e.stopPropagation()
-          console.log('🎯 Modal content clicked')
+          // Only close if clicking the overlay, not the modal content
+          if (e.target === e.currentTarget) {
+            onClose()
+          }
         }}
       >
-        {/* Header */}
-        <div className="p-4 border-b border-border flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-card-foreground">{title}</h3>
-          <button
-            onClick={() => {
-              console.log('🎯 Close button clicked')
-              onClose()
-            }}
-            className="p-2 hover:bg-gray-100 rounded"
-            style={{ pointerEvents: 'auto' }}
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        {/* Search */}
-        <div className="p-4 border-b border-border">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search media files..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10"
-            />
-          </div>
-        </div>
-
-        {/* Media Grid */}
-        <div className="flex-1 overflow-y-auto p-4">
-          {loading ? (
-            <div className="flex items-center justify-center h-full">
-              <div className="text-muted-foreground">Loading media files...</div>
-            </div>
-          ) : filteredMedia.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
-              <div className="text-center">
-                <div className="mb-2">No media files found</div>
-                {searchQuery && (
-                  <div className="text-sm">
-                    Try adjusting your search or upload some media files
-                  </div>
-                )}
-              </div>
-            </div>
-          ) : (
-            <div className="grid grid-cols-4 gap-4">
-              {filteredMedia.map((file) => (
-                <MediaThumbnail
-                  key={file.id}
-                  file={file}
-                  isSelected={selectedFile?.id === file.id}
-                  onClick={() => {
-                    console.log('🎯 Media thumbnail clicked:', file.name, file.id)
-                    setSelectedFile(file)
-                    console.log('🎯 Selected file set to:', file)
-                  }}
-                  getMediaUrl={getMediaUrl}
-                  formatFileSize={formatFileSize}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="p-4 border-t border-border flex items-center justify-between">
-          <div className="text-sm text-muted-foreground">
-            {selectedFile ? `Selected: ${selectedFile.name}` : 'Select a media file'}
-          </div>
-          <div className="flex gap-2">
+        <div
+          className="bg-card border border-border rounded-lg w-[800px] h-[600px] flex flex-col relative"
+          style={{ pointerEvents: 'auto' }}
+          onClick={(e) => {
+            // Prevent event bubbling to overlay
+            e.stopPropagation()
+          }}
+        >
+          {/* Header */}
+          <div className="p-4 border-b border-border flex items-center justify-between">
+            <h3 className="text-lg font-semibold text-card-foreground">{title}</h3>
             <button
               onClick={() => {
-                console.log('🎯 Cancel button clicked')
+                console.log('🎯 Close button clicked')
                 onClose()
               }}
-              className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-100"
+              className="p-2 hover:bg-gray-100 rounded"
               style={{ pointerEvents: 'auto' }}
             >
-              Cancel
+              <X className="w-4 h-4" />
             </button>
-            <button
-              onClick={() => {
-                console.log('🎯 Select button clicked', { selectedFile })
-                if (selectedFile) {
-                  handleSelect(selectedFile as Media)
-                } else {
-                  console.log('🎯 No file selected')
-                }
-              }}
-              disabled={!selectedFile}
-              className={`px-4 py-2 rounded flex items-center gap-2 ${
-                selectedFile
-                  ? 'bg-blue-600 text-white hover:bg-blue-700'
-                  : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-              }`}
-              style={{ pointerEvents: 'auto' }}
-            >
-              <Check className="w-4 h-4" />
-              Select
-            </button>
+          </div>
+
+          {/* Search */}
+          <div className="p-4 border-b border-border">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search media files..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+          </div>
+
+          {/* Media Grid */}
+          <div className="flex-1 overflow-y-auto p-4">
+            {loading ? (
+              <div className="flex items-center justify-center h-full">
+                <div className="text-muted-foreground">Loading media files...</div>
+              </div>
+            ) : filteredMedia.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
+                <div className="text-center">
+                  <div className="mb-2">No media files found</div>
+                  {searchQuery && (
+                    <div className="text-sm">
+                      Try adjusting your search or upload some media files
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-4 gap-4">
+                {filteredMedia.map((file) => (
+                  <MediaThumbnail
+                    key={file.filename || file.id}
+                    file={file}
+                    isSelected={selectedFile?.filename === file.filename}
+                    onClick={() => {
+                      console.log('🎯 Media thumbnail clicked:', file.name, file.filename)
+                      console.log('🎯 Current selectedFile?.filename:', selectedFile?.filename)
+                      console.log('🎯 File.filename:', file.filename)
+                      console.log('🎯 Filenames match:', selectedFile?.filename === file.filename)
+                      setSelectedFile(file)
+                      console.log('🎯 Selected file set to:', file)
+                    }}
+                    getMediaUrl={getMediaUrl}
+                    formatFileSize={formatFileSize}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Footer */}
+          <div className="p-4 border-t border-border flex items-center justify-between">
+            <div className="text-sm text-muted-foreground">
+              {selectedFile ? `Selected: ${selectedFile.name}` : 'Select a media file'}
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  console.log('🎯 Cancel button clicked')
+                  onClose()
+                }}
+                className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-100"
+                style={{ pointerEvents: 'auto' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  console.log('🎯 Select button clicked', { selectedFile })
+                  if (selectedFile) {
+                    handleSelect(selectedFile as Media)
+                  } else {
+                    console.log('🎯 No file selected')
+                  }
+                }}
+                disabled={!selectedFile}
+                className={`px-4 py-2 rounded flex items-center gap-2 ${
+                  selectedFile
+                    ? 'bg-blue-600 text-white hover:bg-blue-700'
+                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                }`}
+                style={{ pointerEvents: 'auto' }}
+              >
+                <Check className="w-4 h-4" />
+                Select
+              </button>
+            </div>
           </div>
         </div>
       </div>
-    </div>
-  )
-}
+    )
+  }
+)
 
 // Media thumbnail component
 interface MediaThumbnailProps {
