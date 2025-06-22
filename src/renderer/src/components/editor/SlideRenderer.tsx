@@ -315,6 +315,17 @@ export const SlideRenderer: React.FC<SlideRendererProps> = ({
   // Determine which background to use (slide background takes precedence)
   const background = slideBackground || globalBackground
 
+  // Debug background selection in SlideRenderer
+  console.log('🎨 [SLIDE_RENDERER] Background selection:', {
+    hasSlideBackground: !!slideBackground,
+    slideBackground: slideBackground,
+    hasGlobalBackground: !!globalBackground,
+    globalBackground: globalBackground,
+    finalBackground: background,
+    isPreview: isPreview,
+    useProjectionScaling: useProjectionScaling
+  })
+
   return (
     <div
       className={`relative overflow-hidden bg-black ${className}`}

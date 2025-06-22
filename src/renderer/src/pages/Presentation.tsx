@@ -253,6 +253,20 @@ export default function Presentation(): JSX.Element {
       finalBackground: background
     })
 
+    // Additional debugging for background structure
+    if (background) {
+      console.log('📺 [PRESENTATION] Background details:', {
+        type: background.type,
+        value: background.value?.substring(0, 100) + '...',
+        hasValue: !!background.value,
+        opacity: background.opacity,
+        size: background.size,
+        position: background.position
+      })
+    } else {
+      console.log('📺 [PRESENTATION] No background found')
+    }
+
     // Handle countdown type first, regardless of slideData elements
     if (currentData.type === 'countdown') {
       console.log('📺 [PRESENTATION] Rendering countdown with CountdownDisplay')
@@ -311,6 +325,7 @@ export default function Presentation(): JSX.Element {
 
     return (
       <div className="w-full h-screen flex items-center justify-center bg-black">
+        {console.log('📺 [PRESENTATION] Rendering BackgroundRenderer with:', background)}
         <BackgroundRenderer background={background} />
 
         {/* Only render text content if not in blank mode */}

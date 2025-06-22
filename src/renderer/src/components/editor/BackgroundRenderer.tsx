@@ -31,7 +31,18 @@ export const BackgroundRenderer: React.FC<BackgroundRendererProps> = ({
   // Resolve media URL when background changes
   useEffect(() => {
     const resolveBackground = async (): Promise<void> => {
+      console.log('🎨 [BACKGROUND_RENDERER] Received background:', {
+        hasBackground: !!background,
+        type: background?.type,
+        value: background?.value?.substring(0, 100) + '...',
+        hasValue: !!background?.value,
+        opacity: background?.opacity,
+        size: background?.size,
+        position: background?.position
+      })
+
       if (!background?.value) {
+        console.log('🎨 [BACKGROUND_RENDERER] No background value, clearing resolved URL')
         setResolvedUrl('')
         return
       }
@@ -43,7 +54,7 @@ export const BackgroundRenderer: React.FC<BackgroundRendererProps> = ({
           console.log('🎨 [BACKGROUND_RENDERER] Resolving media reference:', background.value)
           const resolved = await resolveMediaUrl(background.value)
           setResolvedUrl(resolved)
-          console.log('✅ [BACKGROUND_RENDERER] Media resolved successfully')
+          console.log('✅ [BACKGROUND_RENDERER] Media resolved successfully:', resolved?.substring(0, 100) + '...')
         } else if (background.value.startsWith('data:')) {
           // Base64 data URL - use as-is for now (legacy support)
           // In the future, this could be enhanced to convert base64 to file URLs
@@ -52,7 +63,7 @@ export const BackgroundRenderer: React.FC<BackgroundRendererProps> = ({
         } else {
           // Direct URL (http/https)
           setResolvedUrl(background.value)
-          console.log('🎨 [BACKGROUND_RENDERER] Using direct URL')
+          console.log('🎨 [BACKGROUND_RENDERER] Using direct URL:', background.value?.substring(0, 100) + '...')
         }
       } catch (error) {
         console.error('❌ [BACKGROUND_RENDERER] Failed to resolve background:', error)
