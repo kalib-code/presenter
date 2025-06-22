@@ -1,5 +1,7 @@
-import React, { useCallback } from 'react'
-import { useCanvasStore, type EditorElement } from '@renderer/store/editor-canvas'
+import React, { useState, useEffect } from 'react'
+import { useCanvasStore } from '@renderer/store/editor-canvas'
+import { resolveMediaUrl, isMediaReference } from '@renderer/utils/mediaUtils'
+import type { EditorElement } from '@renderer/store/editor-canvas'
 
 interface CanvasElementProps {
   element: EditorElement
@@ -16,89 +18,86 @@ export const CanvasElement: React.FC<CanvasElementProps> = ({
   onMouseDown,
   onResizeStart
 }) => {
-  const { selectElement, deleteElement, updateElementContent } = useCanvasStore()
+  const { selectElement, deleteElement } = useCanvasStore()
+  const [resolvedContent, setResolvedContent] = useState<string>(element.content)
 
-  const handleClick = useCallback(
-    (e: React.MouseEvent) => {
-      e.stopPropagation()
-      selectElement(element.id)
-    },
-    [element.id, selectElement]
-  )
+  // Resolve media references when element content changes
+  useEffect(() => {
+    const loadContent = async (): Promise<void> => {
+      if (element.type === 'image' || element.type === 'video') {
+        const resolved = await resolveMediaUrl(element.content)
+        setResolvedContent(resolved)
+      } else {
+        setResolvedContent(element.content)
+      }
+    }
 
-  const handleContentChange = useCallback(
-    (value: string) => {
-      updateElementContent(element.id, value)
-    },
-    [element.id, updateElementContent]
-  )
+    loadContent()
+  }, [element.content, element.type])
 
-  const handleDelete = useCallback(() => {
+  const handleClick = (e: React.MouseEvent): void => {
+    e.stopPropagation()
+    selectElement(element.id)
+  }
+
+  const handleDelete = (e: React.MouseEvent): void => {
+    e.stopPropagation()
     deleteElement(element.id)
-  }, [element.id, deleteElement])
+  }
 
-  const renderElement = (): React.ReactNode => {
+  const renderElement = (): JSX.Element | null => {
     switch (element.type) {
       case 'text':
         return (
-          <div className="relative w-full h-full">
-            <div
-              className="w-full h-full flex items-center justify-center cursor-text"
-              style={{
-                fontSize: element.style.fontSize,
-                fontFamily: element.style.fontFamily,
-                color: element.style.color,
-                backgroundColor: element.style.backgroundColor,
-                textAlign: element.style.textAlign,
-                fontWeight: element.style.fontWeight,
-                fontStyle: element.style.fontStyle,
-                textShadow: element.style.textShadow,
-                lineHeight: element.style.lineHeight,
-                opacity: element.opacity
-              }}
-              onClick={handleClick}
-            >
-              <textarea
-                value={element.content}
-                onChange={(e) => handleContentChange(e.target.value)}
-                className="bg-transparent border-none outline-none w-full h-full resize-none"
-                style={{
-                  fontSize: element.style.fontSize,
-                  fontFamily: element.style.fontFamily,
-                  color: element.style.color,
-                  backgroundColor: 'transparent',
-                  fontWeight: element.style.fontWeight,
-                  fontStyle: element.style.fontStyle,
-                  lineHeight: element.style.lineHeight,
-                  textAlign: element.style.textAlign,
-                  textShadow: element.style.textShadow
-                }}
-                onMouseDown={(e) => e.stopPropagation()}
-                onClick={handleClick}
-                onFocus={() => selectElement(element.id)}
-                placeholder="Type your text here..."
-              />
-            </div>
+          <div
+            className="w-full h-full flex items-center justify-center cursor-text select-none"
+            style={{
+              fontSize: element.style.fontSize,
+              fontFamily: element.style.fontFamily,
+              color: element.style.color,
+              backgroundColor: element.style.backgroundColor,
+              textAlign: element.style.textAlign,
+              fontWeight: element.style.fontWeight,
+              fontStyle: element.style.fontStyle,
+              textShadow: element.style.textShadow,
+              lineHeight: element.style.lineHeight,
+              opacity: element.opacity,
+              padding: '8px',
+              wordWrap: 'break-word',
+              overflow: 'hidden'
+            }}
+            onClick={handleClick}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            {element.content || 'Click to edit text'}
           </div>
         )
 
       case 'image':
         return (
           <img
-            src={element.content}
+            src={resolvedContent}
             alt="Slide element"
             className="w-full h-full object-cover rounded"
             style={{ opacity: element.opacity }}
             onMouseDown={(e) => e.stopPropagation()}
             onClick={handleClick}
             draggable={false}
+            onError={() => {
+              console.error('Failed to load image:', element.content, resolvedContent)
+              console.log('🖼️ Image info:', {
+                originalContent: element.content,
+                resolvedContent: resolvedContent,
+                isMediaReference: isMediaReference(element.content)
+              })
+            }}
           />
         )
 
       case 'video':
         return (
           <video
-            src={element.content}
+            src={resolvedContent}
             className="w-full h-full object-cover rounded"
             style={{ opacity: element.opacity }}
             onMouseDown={(e) => e.stopPropagation()}
@@ -106,6 +105,14 @@ export const CanvasElement: React.FC<CanvasElementProps> = ({
             controls
             muted
             playsInline
+            onError={() => {
+              console.error('Failed to load video:', element.content, resolvedContent)
+              console.log('🎬 Video info:', {
+                originalContent: element.content,
+                resolvedContent: resolvedContent,
+                isMediaReference: isMediaReference(element.content)
+              })
+            }}
           />
         )
 

@@ -836,8 +836,10 @@ function createProjectionWindow(): BrowserWindow {
     title: 'Projection Window',
     backgroundColor: '#000000',
     webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
       nodeIntegration: true,
-      contextIsolation: false
+      contextIsolation: false,
+      webSecurity: false // Allow loading local files for media
       // Enable nodeIntegration for direct IPC access in presentation window
     }
   })
@@ -1136,14 +1138,17 @@ app.whenReady().then(() => {
 
   // Get media file as data URL for display in browser
   ipcMain.handle('get-media-data-url', async (_event, filename: string) => {
+    console.log('🔍 [MAIN] get-media-data-url requested for:', filename)
     try {
       const filePath = join(getMediaDirectory(), filename)
+      console.log('🔍 [MAIN] Looking for media file at:', filePath)
 
       // Check if file exists
       try {
         await fs.access(filePath)
+        console.log('✅ [MAIN] Media file found:', filePath)
       } catch {
-        console.error('Media file not found:', filePath)
+        console.error('❌ [MAIN] Media file not found:', filePath)
         return null
       }
 
@@ -1188,10 +1193,17 @@ app.whenReady().then(() => {
       const base64Data = fileBuffer.toString('base64')
       const dataUrl = `data:${mimeType};base64,${base64Data}`
 
-      console.log('Generated data URL for:', filename, 'size:', dataUrl.length, 'MIME:', mimeType)
+      console.log(
+        '✅ [MAIN] Generated data URL for:',
+        filename,
+        'size:',
+        dataUrl.length,
+        'MIME:',
+        mimeType
+      )
       return dataUrl
     } catch (error) {
-      console.error('Failed to get media data URL for:', filename, error)
+      console.error('❌ [MAIN] Failed to get media data URL for:', filename, error)
       return null
     }
   })

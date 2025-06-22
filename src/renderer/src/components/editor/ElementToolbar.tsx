@@ -2,6 +2,7 @@ import React, { useCallback, useState } from 'react'
 import { useCanvasStore } from '@renderer/store/editor-canvas'
 import { Button } from '@renderer/components/ui/button'
 import { MediaBrowser } from './MediaBrowser'
+import { createMediaReference } from '@renderer/utils/mediaUtils'
 import type { Media } from '@renderer/types/database'
 
 interface ElementToolbarProps {
@@ -37,25 +38,24 @@ export const ElementToolbar: React.FC<ElementToolbarProps> = ({ className = '' }
     async (file: Media) => {
       try {
         console.log('🎯 Element media selected:', file.name, file.type)
-        const mediaUrl = await window.electron.ipcRenderer.invoke(
-          'get-media-data-url',
-          file.filename
-        )
+
+        // ✅ SOLUTION: Store only the filename reference, not the binary data
+        const mediaReference = createMediaReference(file.filename) // Use utility function
 
         if (file.type === 'image') {
           addElement('image', {
-            content: mediaUrl,
+            content: mediaReference, // Store filename reference, not base64 data
             position: { x: 150, y: 150 },
             size: { width: 200, height: 150 }
           })
-          console.log('✅ Image element added')
+          console.log('✅ Image element added with reference:', mediaReference)
         } else if (file.type === 'video') {
           addElement('video', {
-            content: mediaUrl,
+            content: mediaReference, // Store filename reference, not base64 data
             position: { x: 200, y: 200 },
             size: { width: 320, height: 240 }
           })
-          console.log('✅ Video element added')
+          console.log('✅ Video element added with reference:', mediaReference)
         }
       } catch (error) {
         console.error('❌ Failed to add media element:', error)

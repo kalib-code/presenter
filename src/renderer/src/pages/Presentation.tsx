@@ -22,7 +22,8 @@ interface ProjectionData {
   type: 'verse' | 'chorus' | 'bridge' | 'slide' | 'announcement' | 'countdown'
   slideData?: {
     elements: Array<{
-      type: 'text'
+      id?: string
+      type: 'text' | 'image' | 'video'
       content: string
       position: { x: number; y: number }
       size: { width: number; height: number }
@@ -37,6 +38,7 @@ interface ProjectionData {
         lineHeight?: number
         opacity?: number
       }
+      zIndex?: number
     }>
     globalBackground?: {
       type: string
@@ -78,10 +80,25 @@ export default function Presentation(): JSX.Element {
   // Listen for projection updates from main process
   useEffect(() => {
     const handleProjectionUpdate = (_event: unknown, data: ProjectionData): void => {
-      console.log('📺 [PRESENTATION] Received projection data:', {
+      console.log(
+        '📺 [PRESENTATION] Received projection data (full):',
+        JSON.stringify(data, null, 2)
+      )
+      console.log('📺 [PRESENTATION] Projection data summary:', {
         title: data.title,
         type: data.type,
+        contentLength: data.content?.length || 0,
         hasSlideData: !!data.slideData,
+        elementsCount: data.slideData?.elements?.length || 0,
+        elements:
+          data.slideData?.elements?.map((el) => ({
+            type: el.type,
+            contentLength: el.content?.length || 0,
+            contentPreview: el.content?.substring(0, 50) + '...',
+            hasPosition: !!el.position,
+            hasSize: !!el.size,
+            hasStyle: !!el.style
+          })) || [],
         hasGlobalBackground: !!data.slideData?.globalBackground,
         globalBackground: data.slideData?.globalBackground,
         hasSlideBackground: !!data.slideData?.slideBackground,
@@ -387,6 +404,22 @@ export default function Presentation(): JSX.Element {
 
     // Render rich slide content if available
     if (currentData.slideData?.elements && currentData.slideData.elements.length > 0) {
+      console.log('📺 [PRESENTATION] Rendering with SlideRenderer:', {
+        elementsCount: currentData.slideData.elements.length,
+        elements: currentData.slideData.elements.map((el, i) => ({
+          index: i,
+          type: el.type,
+          contentLength: el.content?.length || 0,
+          contentPreview: el.content?.substring(0, 50) + '...',
+          position: el.position,
+          size: el.size,
+          hasStyle: !!el.style
+        })),
+        containerSize: `${windowDimensions.width}x${windowDimensions.height}`,
+        hasSlideBackground: !!currentData.slideData.slideBackground,
+        hasGlobalBackground: !!currentData.slideData.globalBackground
+      })
+
       return (
         <SlideRenderer
           elements={currentData.slideData.elements}
@@ -403,6 +436,13 @@ export default function Presentation(): JSX.Element {
     }
 
     // Fallback to simple text rendering
+    console.log('📺 [PRESENTATION] Using fallback text rendering:', {
+      hasSlideData: !!currentData.slideData,
+      elementsCount: currentData.slideData?.elements?.length || 0,
+      content: currentData.content,
+      type: currentData.type
+    })
+
     return (
       <div className="w-full h-screen flex items-center justify-center" style={backgroundStyles}>
         {backgroundElement}

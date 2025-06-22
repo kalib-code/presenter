@@ -81,6 +81,25 @@ interface ContentCard {
     value: string
     opacity?: number
   }
+  slideElements?: Array<{
+    id: string
+    type: 'text' | 'image' | 'video'
+    content: string
+    position: { x: number; y: number }
+    size: { width: number; height: number }
+    style: {
+      fontSize?: number
+      color?: string
+      fontFamily?: string
+      fontWeight?: string
+      fontStyle?: string
+      textAlign?: string
+      textShadow?: string
+      lineHeight?: number
+      opacity?: number
+    }
+    zIndex?: number
+  }>
 }
 
 interface ProjectionState {
@@ -174,59 +193,49 @@ function renderCardContent(card: ContentCard): JSX.Element {
     card.type,
     'Content length:',
     card.content.length,
-    'Content preview:',
-    card.content.substring(0, 100)
+    'Has slideElements:',
+    !!card.slideElements,
+    'Elements count:',
+    card.slideElements?.length || 0
   )
-
-  // Check if content has video/image references (basic detection)
-  const hasVideoBackground =
-    card.content.includes('.mp4') || card.content.includes('.mov') || card.content.includes('.webm')
-  const hasImageBackground =
-    card.content.includes('.jpg') ||
-    card.content.includes('.png') ||
-    card.content.includes('.jpeg') ||
-    card.content.includes('.webp')
-
-  // Extract media URL if present (simple regex)
-  const mediaMatch = card.content.match(
-    /\b(https?:\/\/[^\s]+\.(mp4|mov|webm|jpg|png|jpeg|webp))\b/i
-  )
-  const mediaUrl = mediaMatch ? mediaMatch[1] : null
-
-  // Clean content (remove media URLs for text display)
-  const cleanContent = card.content
-    .replace(/\b(https?:\/\/[^\s]+\.(mp4|mov|webm|jpg|png|jpeg|webp))\b/gi, '')
-    .trim()
-  const displayContent = cleanContent || card.content
-
-  console.log('Display content:', displayContent)
 
   // Render countdown content specially
   if (card.type === 'countdown') {
     const countdownMatch =
-      displayContent.match(/(\d+)s - (.+)/) || card.content.match(/(\d+)s - (.+)/)
+      card.content.match(/(\d+)s - (.+)/) || card.content.match(/(\d+)s - (.+)/)
     const duration = countdownMatch ? countdownMatch[1] : '300'
-    const message = countdownMatch ? countdownMatch[2] : displayContent
+    const message = countdownMatch ? countdownMatch[2] : card.content
 
     return (
       <div className="w-full aspect-video bg-black rounded border border-gray-300 relative overflow-hidden">
-        {/* Background media if present */}
-        {hasVideoBackground && mediaUrl ? (
-          <video
-            className="absolute inset-0 w-full h-full object-cover"
-            src={mediaUrl}
-            muted
-            loop
-            autoPlay
-            playsInline
-          />
-        ) : hasImageBackground && mediaUrl ? (
-          <img
-            className="absolute inset-0 w-full h-full object-cover"
-            src={mediaUrl}
-            alt="Background"
-          />
-        ) : null}
+        {/* Background Layer */}
+        {(() => {
+          const background = card.slideBackground || card.globalBackground
+          if (background?.type === 'video' && background.value) {
+            return (
+              <video
+                className="absolute inset-0 w-full h-full object-cover"
+                src={background.value}
+                autoPlay
+                loop
+                muted
+                playsInline
+                style={{ opacity: background.opacity || 1 }}
+              />
+            )
+          } else if (background?.type === 'image' && background.value) {
+            return (
+              <div
+                className="absolute inset-0 w-full h-full bg-cover bg-center bg-no-repeat"
+                style={{
+                  backgroundImage: `url(${background.value})`,
+                  opacity: background.opacity || 1
+                }}
+              />
+            )
+          }
+          return null
+        })()}
 
         {/* Content overlay */}
         <div className="absolute inset-0 flex flex-col items-center justify-center p-6">
@@ -240,12 +249,11 @@ function renderCardContent(card: ContentCard): JSX.Element {
     )
   }
 
-  // Regular content rendering
+  // Regular content rendering with multiple elements support
   return (
     <div className="w-full aspect-video bg-black rounded border border-gray-300 relative overflow-hidden">
       {/* Background Layer - Use slide background or global background */}
       {(() => {
-        // Prioritize slide-specific background, then global background
         const background = card.slideBackground || card.globalBackground
 
         if (background?.type === 'video' && background.value) {
@@ -272,62 +280,131 @@ function renderCardContent(card: ContentCard): JSX.Element {
           )
         }
 
-        // Fallback to media URLs in content
-        if (hasVideoBackground && mediaUrl) {
-          return (
-            <video
-              className="absolute inset-0 w-full h-full object-cover"
-              src={mediaUrl}
-              muted
-              loop
-              autoPlay
-              playsInline
-            />
-          )
-        } else if (hasImageBackground && mediaUrl) {
-          return (
-            <img
-              className="absolute inset-0 w-full h-full object-cover"
-              src={mediaUrl}
-              alt="Background"
-            />
-          )
-        }
-
         return null
       })()}
 
-      {/* Text content overlay */}
-      <div className="absolute inset-0 flex items-center justify-center p-2">
-        <div
-          className="text-center drop-shadow-lg whitespace-pre-line overflow-hidden"
-          style={{
-            // Scale font size based on container width (16:9 aspect ratio scaling)
-            // Editor canvas is typically 1920x1080, so we scale proportionally
-            fontSize: card.elementStyles?.fontSize
-              ? `${Math.max(11, card.elementStyles.fontSize * 0.18)}px` // Scale down from editor size
-              : '15px', // Default scaled size
-            color: card.elementStyles?.color || '#FFFFFF',
-            fontFamily: card.elementStyles?.fontFamily || 'Arial, sans-serif',
-            fontWeight: card.elementStyles?.fontWeight || 'bold',
-            fontStyle: card.elementStyles?.fontStyle || 'normal',
-            textAlign:
-              (card.elementStyles?.textAlign as 'center' | 'left' | 'right' | 'justify') ||
-              'center',
-            textShadow: card.elementStyles?.textShadow || '1px 1px 2px rgba(0,0,0,0.8)',
-            lineHeight: card.elementStyles?.lineHeight || 1.3,
-            opacity: card.elementStyles?.opacity || 1,
-            // For preview cards, always center the content instead of using absolute positioning
-            maxWidth: '100%',
-            maxHeight: '100%',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}
-        >
-          {displayContent || `[No content for ${card.title}]`}
+      {/* Elements Layer - Render all slide elements if available */}
+      {card.slideElements && card.slideElements.length > 0 ? (
+        // ✅ NEW: Render multiple elements with proper positioning
+        card.slideElements
+          .sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0)) // Sort by z-index
+          .map((element, index) => {
+            const key = element.id || `element-${index}`
+
+            // Calculate scaled positions and sizes for preview
+            const containerWidth = 300 // Approximate preview width
+            const containerHeight = 169 // 16:9 aspect ratio
+            const scaleX = containerWidth / 960 // Editor canvas width
+            const scaleY = containerHeight / 540 // Editor canvas height
+
+            const scaledLeft = element.position.x * scaleX
+            const scaledTop = element.position.y * scaleY
+            const scaledWidth = element.size.width * scaleX
+            const scaledHeight = element.size.height * scaleY
+
+            if (element.type === 'text') {
+              return (
+                <div
+                  key={key}
+                  className="absolute whitespace-pre-line overflow-hidden"
+                  style={{
+                    left: `${scaledLeft}px`,
+                    top: `${scaledTop}px`,
+                    width: `${scaledWidth}px`,
+                    height: `${scaledHeight}px`,
+                    fontSize: `${Math.max(8, (element.style.fontSize || 48) * 0.15)}px`,
+                    color: element.style.color || '#FFFFFF',
+                    fontFamily: element.style.fontFamily || 'Arial, sans-serif',
+                    fontWeight: element.style.fontWeight || 'bold',
+                    fontStyle: element.style.fontStyle || 'normal',
+                    textAlign:
+                      (element.style.textAlign as 'center' | 'left' | 'right' | 'justify') ||
+                      'center',
+                    textShadow: element.style.textShadow || '1px 1px 2px rgba(0,0,0,0.8)',
+                    lineHeight: element.style.lineHeight || 1.3,
+                    opacity: element.style.opacity || 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent:
+                      element.style.textAlign === 'left'
+                        ? 'flex-start'
+                        : element.style.textAlign === 'right'
+                          ? 'flex-end'
+                          : 'center'
+                  }}
+                >
+                  {element.content}
+                </div>
+              )
+            } else if (element.type === 'image') {
+              return (
+                <img
+                  key={key}
+                  src={element.content}
+                  alt="Slide element"
+                  className="absolute object-cover"
+                  style={{
+                    left: `${scaledLeft}px`,
+                    top: `${scaledTop}px`,
+                    width: `${scaledWidth}px`,
+                    height: `${scaledHeight}px`,
+                    opacity: element.style.opacity || 1
+                  }}
+                />
+              )
+            } else if (element.type === 'video') {
+              return (
+                <video
+                  key={key}
+                  src={element.content}
+                  className="absolute object-cover"
+                  style={{
+                    left: `${scaledLeft}px`,
+                    top: `${scaledTop}px`,
+                    width: `${scaledWidth}px`,
+                    height: `${scaledHeight}px`,
+                    opacity: element.style.opacity || 1
+                  }}
+                  muted
+                  loop
+                  autoPlay
+                  playsInline
+                />
+              )
+            }
+
+            return null
+          })
+      ) : (
+        // ✅ FALLBACK: Single text content overlay (legacy support)
+        <div className="absolute inset-0 flex items-center justify-center p-2">
+          <div
+            className="text-center drop-shadow-lg whitespace-pre-line overflow-hidden"
+            style={{
+              fontSize: card.elementStyles?.fontSize
+                ? `${Math.max(11, card.elementStyles.fontSize * 0.18)}px`
+                : '15px',
+              color: card.elementStyles?.color || '#FFFFFF',
+              fontFamily: card.elementStyles?.fontFamily || 'Arial, sans-serif',
+              fontWeight: card.elementStyles?.fontWeight || 'bold',
+              fontStyle: card.elementStyles?.fontStyle || 'normal',
+              textAlign:
+                (card.elementStyles?.textAlign as 'center' | 'left' | 'right' | 'justify') ||
+                'center',
+              textShadow: card.elementStyles?.textShadow || '1px 1px 2px rgba(0,0,0,0.8)',
+              lineHeight: card.elementStyles?.lineHeight || 1.3,
+              opacity: card.elementStyles?.opacity || 1,
+              maxWidth: '100%',
+              maxHeight: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+          >
+            {card.content || `[No content for ${card.title}]`}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }
@@ -542,111 +619,163 @@ export default function Home(): JSX.Element {
                 backgroundType: slide.background?.type
               })
 
+              // Determine card type and title
+              let cardType: 'verse' | 'chorus' | 'bridge' = 'verse'
+              let cardTitle = slide.title || `Slide ${slideIndex + 1}`
+
+              if (slide.type === 'chorus' || slide.title?.toLowerCase().includes('chorus')) {
+                cardType = 'chorus'
+                cardTitle = slide.title || 'Chorus'
+              } else if (slide.type === 'bridge' || slide.title?.toLowerCase().includes('bridge')) {
+                cardType = 'bridge'
+                cardTitle = slide.title || 'Bridge'
+              } else if (slide.type === 'verse' || slide.title?.toLowerCase().includes('verse')) {
+                cardType = 'verse'
+                cardTitle = slide.title || `Verse ${slideIndex + 1}`
+              }
+
               if (slide.elements && slide.elements.length > 0) {
+                // ✅ NEW APPROACH: Collect all elements for this slide
+                const slideElements: Array<{
+                  id: string
+                  type: 'text' | 'image' | 'video'
+                  content: string
+                  position: { x: number; y: number }
+                  size: { width: number; height: number }
+                  style: {
+                    fontSize?: number
+                    color?: string
+                    fontFamily?: string
+                    fontWeight?: string
+                    fontStyle?: string
+                    textAlign?: string
+                    textShadow?: string
+                    lineHeight?: number
+                    opacity?: number
+                  }
+                  zIndex?: number
+                }> = []
+
+                let slideContentPreview = '' // For card preview
+
                 slide.elements.forEach((element, elementIndex) => {
                   if (
-                    element.type === 'text' &&
-                    element.content &&
-                    typeof element.content === 'string'
+                    (element.type === 'text' ||
+                      element.type === 'image' ||
+                      element.type === 'video') &&
+                    element.content
                   ) {
+                    // Extract content based on element type
+                    let elementContent = ''
+                    if (element.type === 'text' && typeof element.content === 'string') {
+                      elementContent = element.content
+                      // Use text content for preview
+                      if (!slideContentPreview && elementContent.trim()) {
+                        slideContentPreview = elementContent
+                      }
+                    } else if (
+                      element.type === 'image' &&
+                      typeof element.content === 'object' &&
+                      element.content !== null &&
+                      'url' in element.content
+                    ) {
+                      elementContent = (element.content as { url: string }).url
+                    } else if (
+                      element.type === 'video' &&
+                      typeof element.content === 'object' &&
+                      element.content !== null &&
+                      'url' in element.content
+                    ) {
+                      elementContent = (element.content as { url: string }).url
+                    } else if (typeof element.content === 'string') {
+                      elementContent = element.content
+                      // Use text content for preview if it's text
+                      if (
+                        element.type === 'text' &&
+                        !slideContentPreview &&
+                        elementContent.trim()
+                      ) {
+                        slideContentPreview = elementContent
+                      }
+                    }
+
                     console.log(`🎵   Element ${elementIndex}:`, {
                       type: element.type,
-                      contentLength: element.content.length,
-                      contentPreview: element.content.substring(0, 100) + '...',
+                      contentLength: elementContent.length,
+                      contentPreview: elementContent.substring(0, 100) + '...',
                       hasStyle: !!element.style,
                       hasPosition: !!element.position,
                       hasSize: !!element.size
                     })
 
-                    // Create content card from slide
-                    let cardType: 'verse' | 'chorus' | 'bridge' = 'verse'
-                    let cardTitle = slide.title || `Slide ${slideIndex + 1}`
-
-                    // Determine type from slide type or title
-                    if (slide.type === 'chorus' || slide.title?.toLowerCase().includes('chorus')) {
-                      cardType = 'chorus'
-                      cardTitle = slide.title || 'Chorus'
-                    } else if (
-                      slide.type === 'bridge' ||
-                      slide.title?.toLowerCase().includes('bridge')
-                    ) {
-                      cardType = 'bridge'
-                      cardTitle = slide.title || 'Bridge'
-                    } else if (
-                      slide.type === 'verse' ||
-                      slide.title?.toLowerCase().includes('verse')
-                    ) {
-                      cardType = 'verse'
-                      cardTitle = slide.title || `Verse ${slideIndex + 1}`
-                    }
-
-                    // Create comprehensive element styles with defaults
-                    const elementStyles = {
-                      fontSize: element.style?.fontSize || 48,
-                      color: element.style?.color || '#FFFFFF',
-                      fontFamily: element.style?.fontFamily || 'Arial, sans-serif',
-                      fontWeight: element.style?.fontWeight || 'bold',
-                      fontStyle: element.style?.fontStyle || 'normal',
-                      textAlign: element.style?.textAlign || 'center',
-                      textShadow: element.style?.textShadow || '2px 2px 4px rgba(0,0,0,0.8)',
-                      lineHeight: element.style?.lineHeight || 1.2,
-                      left: element.position?.x || 96,
-                      top: element.position?.y || 139,
-                      width: element.size?.width || 779,
-                      height: element.size?.height || 197,
-                      opacity: element.style?.opacity || 1
-                    }
-
-                    cards.push({
-                      id: `${selectedItem.id}-slide-${slideIndex}-element-${elementIndex}`,
-                      title: cardTitle,
-                      content: element.content,
-                      type: cardType,
-                      order: slideIndex,
-                      elementStyles: elementStyles,
-                      slideBackground: slide.background,
-                      globalBackground: song.globalBackground
+                    // Add element to slide elements array
+                    slideElements.push({
+                      id: element.id || `element-${slideIndex}-${elementIndex}`,
+                      type: element.type as 'text' | 'image' | 'video',
+                      content: elementContent,
+                      position: element.position || { x: 96, y: 139 },
+                      size: element.size || { width: 779, height: 197 },
+                      style: {
+                        fontSize: element.style?.fontSize || 48,
+                        color: element.style?.color || '#FFFFFF',
+                        fontFamily: element.style?.fontFamily || 'Arial, sans-serif',
+                        fontWeight: element.style?.fontWeight || 'bold',
+                        fontStyle: element.style?.fontStyle || 'normal',
+                        textAlign: element.style?.textAlign || 'center',
+                        textShadow: element.style?.textShadow || '2px 2px 4px rgba(0,0,0,0.8)',
+                        lineHeight: element.style?.lineHeight || 1.2,
+                        opacity: element.style?.opacity || 1
+                      },
+                      zIndex: element.zIndex || elementIndex
                     })
                   }
                 })
+
+                // Create one card per slide with all elements
+                if (slideElements.length > 0) {
+                  cards.push({
+                    id: `${selectedItem.id}-slide-${slideIndex}`,
+                    title: cardTitle,
+                    content: slideContentPreview || `Slide ${slideIndex + 1}`, // Use text content for preview
+                    type: cardType,
+                    order: slideIndex,
+                    slideElements: slideElements, // ✅ Store all elements for this slide
+                    slideBackground: slide.background,
+                    globalBackground: song.globalBackground
+                  })
+
+                  console.log(`🎵 Created slide card with ${slideElements.length} elements:`, {
+                    slideIndex,
+                    title: cardTitle,
+                    elementsCount: slideElements.length,
+                    elementTypes: slideElements.map((el) => el.type)
+                  })
+                }
               } else {
                 // Handle slides without elements - create default text element
                 console.log(`🎵 Slide ${slideIndex} has no elements, creating default text element`)
 
-                let cardType: 'verse' | 'chorus' | 'bridge' = 'verse'
-                let cardTitle = slide.title || `Slide ${slideIndex + 1}`
                 const content = slide.content || slide.title || `Slide ${slideIndex + 1}`
 
-                // Determine type from slide type or title
-                if (slide.type === 'chorus' || slide.title?.toLowerCase().includes('chorus')) {
-                  cardType = 'chorus'
-                  cardTitle = slide.title || 'Chorus'
-                } else if (
-                  slide.type === 'bridge' ||
-                  slide.title?.toLowerCase().includes('bridge')
-                ) {
-                  cardType = 'bridge'
-                  cardTitle = slide.title || 'Bridge'
-                } else if (slide.type === 'verse' || slide.title?.toLowerCase().includes('verse')) {
-                  cardType = 'verse'
-                  cardTitle = slide.title || `Verse ${slideIndex + 1}`
-                }
-
-                // Create default element styles
-                const elementStyles = {
-                  fontSize: 48,
-                  color: '#FFFFFF',
-                  fontFamily: 'Arial, sans-serif',
-                  fontWeight: 'bold',
-                  fontStyle: 'normal',
-                  textAlign: 'center',
-                  textShadow: '2px 2px 4px rgba(0,0,0,0.8)',
-                  lineHeight: 1.2,
-                  left: 96,
-                  top: 139,
-                  width: 779,
-                  height: 197,
-                  opacity: 1
+                // Create default element
+                const defaultElement = {
+                  id: `default-element-${slideIndex}`,
+                  type: 'text' as const,
+                  content: content,
+                  position: { x: 96, y: 139 },
+                  size: { width: 779, height: 197 },
+                  style: {
+                    fontSize: 48,
+                    color: '#FFFFFF',
+                    fontFamily: 'Arial, sans-serif',
+                    fontWeight: 'bold',
+                    fontStyle: 'normal',
+                    textAlign: 'center',
+                    textShadow: '2px 2px 4px rgba(0,0,0,0.8)',
+                    lineHeight: 1.2,
+                    opacity: 1
+                  },
+                  zIndex: 0
                 }
 
                 cards.push({
@@ -655,7 +784,7 @@ export default function Home(): JSX.Element {
                   content: content,
                   type: cardType,
                   order: slideIndex,
-                  elementStyles: elementStyles,
+                  slideElements: [defaultElement], // Single default element
                   slideBackground: slide.background,
                   globalBackground: song.globalBackground
                 })
@@ -756,20 +885,206 @@ export default function Home(): JSX.Element {
         }
         break
 
-      case 'presentation':
+      case 'presentation': {
         const presentation = presentations.find((p) => p.id === selectedItem.referenceId)
         if (presentation) {
-          presentation.slides.forEach((slide, index) => {
-            cards.push({
-              id: `${selectedItem.id}-${index}`,
-              title: `Slide ${index + 1}`,
-              content: slide.content || slide.title || `Slide ${index + 1}`,
-              type: 'slide',
-              order: index
+          console.log(
+            '🎨 Processing presentation:',
+            presentation.name,
+            'Slides count:',
+            presentation.slides.length
+          )
+
+          presentation.slides.forEach((slide, slideIndex) => {
+            console.log(`🎨 Slide ${slideIndex}:`, {
+              title: slide.title,
+              contentLength: slide.content?.length || 0,
+              elementsCount: slide.elements?.length || 0,
+              hasBackground: !!slide.background,
+              backgroundType: slide.background?.type
             })
+
+            // Process presentation slide elements similar to song slides
+            if (slide.elements && slide.elements.length > 0) {
+              // ✅ NEW APPROACH: Collect all elements for this slide
+              const slideElements: Array<{
+                id: string
+                type: 'text' | 'image' | 'video'
+                content: string
+                position: { x: number; y: number }
+                size: { width: number; height: number }
+                style: {
+                  fontSize?: number
+                  color?: string
+                  fontFamily?: string
+                  fontWeight?: string
+                  fontStyle?: string
+                  textAlign?: string
+                  textShadow?: string
+                  lineHeight?: number
+                  opacity?: number
+                }
+                zIndex?: number
+              }> = []
+
+              let slideContentPreview = '' // For card preview
+
+              slide.elements.forEach((element, elementIndex) => {
+                if (
+                  (element.type === 'text' ||
+                    element.type === 'image' ||
+                    element.type === 'video') &&
+                  element.content
+                ) {
+                  // Extract content based on element type
+                  let elementContent = ''
+                  if (element.type === 'text' && typeof element.content === 'string') {
+                    elementContent = element.content
+                    // Use text content for preview
+                    if (!slideContentPreview && elementContent.trim()) {
+                      slideContentPreview = elementContent
+                    }
+                  } else if (
+                    element.type === 'image' &&
+                    typeof element.content === 'object' &&
+                    element.content !== null &&
+                    'url' in element.content
+                  ) {
+                    elementContent = (element.content as { url: string }).url
+                  } else if (
+                    element.type === 'video' &&
+                    typeof element.content === 'object' &&
+                    element.content !== null &&
+                    'url' in element.content
+                  ) {
+                    elementContent = (element.content as { url: string }).url
+                  } else if (typeof element.content === 'string') {
+                    elementContent = element.content
+                    // Use text content for preview if it's text
+                    if (element.type === 'text' && !slideContentPreview && elementContent.trim()) {
+                      slideContentPreview = elementContent
+                    }
+                  }
+
+                  console.log(`🎨   Element ${elementIndex}:`, {
+                    type: element.type,
+                    contentLength: elementContent.length,
+                    contentPreview: elementContent.substring(0, 100) + '...',
+                    hasStyle: !!element.style,
+                    hasPosition: !!element.position,
+                    hasSize: !!element.size
+                  })
+
+                  // Add element to slide elements array
+                  slideElements.push({
+                    id: element.id || `element-${slideIndex}-${elementIndex}`,
+                    type: element.type as 'text' | 'image' | 'video',
+                    content: elementContent,
+                    position: element.position || { x: 96, y: 139 },
+                    size: element.size || { width: 779, height: 197 },
+                    style: {
+                      fontSize: element.style?.fontSize || 48,
+                      color: element.style?.color || '#FFFFFF',
+                      fontFamily: element.style?.fontFamily || 'Arial, sans-serif',
+                      fontWeight: element.style?.fontWeight || 'bold',
+                      fontStyle: element.style?.fontStyle || 'normal',
+                      textAlign: element.style?.textAlign || 'center',
+                      textShadow: element.style?.textShadow || '2px 2px 4px rgba(0,0,0,0.8)',
+                      lineHeight: element.style?.lineHeight || 1.2,
+                      opacity: element.style?.opacity || 1
+                    },
+                    zIndex: element.zIndex || elementIndex
+                  })
+                }
+              })
+
+              // Create one card per slide with all elements
+              if (slideElements.length > 0) {
+                cards.push({
+                  id: `${selectedItem.id}-slide-${slideIndex}`,
+                  title: slide.title || `Slide ${slideIndex + 1}`,
+                  content: slideContentPreview || `Slide ${slideIndex + 1}`, // Use text content for preview
+                  type: 'slide',
+                  order: slideIndex,
+                  slideElements: slideElements, // ✅ Store all elements for this slide
+                  slideBackground: slide.background,
+                  globalBackground: presentation.background
+                })
+
+                console.log(`🎨 Created slide card with ${slideElements.length} elements:`, {
+                  slideIndex,
+                  title: slide.title || `Slide ${slideIndex + 1}`,
+                  elementsCount: slideElements.length,
+                  elementTypes: slideElements.map((el) => el.type)
+                })
+              }
+            } else {
+              // Handle slides without elements - create default text element
+              console.log(`🎨 Slide ${slideIndex} has no elements, creating default text element`)
+
+              const content = slide.content || slide.title || `Slide ${slideIndex + 1}`
+
+              // Create default element
+              const defaultElement = {
+                id: `default-element-${slideIndex}`,
+                type: 'text' as const,
+                content: content,
+                position: { x: 96, y: 139 },
+                size: { width: 779, height: 197 },
+                style: {
+                  fontSize: 48,
+                  color: '#FFFFFF',
+                  fontFamily: 'Arial, sans-serif',
+                  fontWeight: 'bold',
+                  fontStyle: 'normal',
+                  textAlign: 'center',
+                  textShadow: '2px 2px 4px rgba(0,0,0,0.8)',
+                  lineHeight: 1.2,
+                  opacity: 1
+                },
+                zIndex: 0
+              }
+
+              cards.push({
+                id: `${selectedItem.id}-slide-${slideIndex}`,
+                title: slide.title || `Slide ${slideIndex + 1}`,
+                content: content,
+                type: 'slide',
+                order: slideIndex,
+                slideElements: [defaultElement], // Single default element
+                slideBackground: slide.background,
+                globalBackground: presentation.background
+              })
+            }
+          })
+
+          console.log('🎨 Total presentation cards created:', cards.length)
+          cards.forEach((card, index) => {
+            console.log(`🎨 Card ${index}:`, {
+              title: card.title,
+              type: card.type,
+              contentLength: card.content.length,
+              hasElementStyles: !!card.elementStyles,
+              hasSlideBackground: !!card.slideBackground,
+              hasGlobalBackground: !!card.globalBackground
+            })
+          })
+        } else {
+          console.error(
+            'Presentation not found! Available presentations:',
+            presentations.map((p) => ({ id: p.id, name: p.name }))
+          )
+          // Add a placeholder card to show the issue
+          cards.push({
+            id: selectedItem.id,
+            title: 'Presentation Not Found',
+            content: `Could not find presentation with ID: ${selectedItem.referenceId}`,
+            type: 'slide',
+            order: 0
           })
         }
         break
+      }
 
       case 'announcement':
         cards.push({
@@ -797,111 +1112,150 @@ export default function Home(): JSX.Element {
   }, [selectedItem, songs, presentations])
 
   // Project content to second display
-  const projectContent = useCallback(async (card: ContentCard) => {
-    // First, refresh the song data to ensure we have the latest background information
-    console.log('🎯 [PROJECTION] Refreshing song data before projection...')
-    await fetchSongs()
+  const projectContent = useCallback(
+    async (card: ContentCard) => {
+      // Refresh data to ensure we have the latest background information
+      console.log('🎯 [PROJECTION] Refreshing data before projection...')
+      await fetchSongs()
+      await loadPresentations()
 
-    // Find the updated song data
-    const currentSongs = useSongStore.getState().songs
-    const updatedSong = currentSongs.find((s) => s.id === selectedItem?.referenceId)
+      // Handle song data updates
+      if (selectedItem?.type === 'song') {
+        const currentSongs = useSongStore.getState().songs
+        const updatedSong = currentSongs.find((s) => s.id === selectedItem?.referenceId)
 
-    if (updatedSong && selectedItem?.type === 'song') {
-      // Find the corresponding slide for this card
-      const slideIndex = parseInt(card.id.split('-slide-')[1]?.split('-')[0] || '0')
-      const slide = updatedSong.slides?.[slideIndex]
+        if (updatedSong) {
+          // Find the corresponding slide for this card
+          const slideIndex = parseInt(card.id.split('-slide-')[1]?.split('-')[0] || '0')
+          const slide = updatedSong.slides?.[slideIndex]
 
-      if (slide) {
-        // Update the card with fresh background data
-        card = {
-          ...card,
-          slideBackground: slide.background,
-          globalBackground: updatedSong.globalBackground
+          if (slide) {
+            // Update the card with fresh background data
+            card = {
+              ...card,
+              slideBackground: slide.background,
+              globalBackground: updatedSong.globalBackground
+            }
+
+            console.log('🎯 [PROJECTION] Updated song card with fresh background data:', {
+              hasSlideBackground: !!card.slideBackground,
+              slideBackground: card.slideBackground,
+              hasGlobalBackground: !!card.globalBackground,
+              globalBackground: card.globalBackground
+            })
+          }
         }
-
-        console.log('🎯 [PROJECTION] Updated card with fresh background data:', {
-          hasSlideBackground: !!card.slideBackground,
-          slideBackground: card.slideBackground,
-          hasGlobalBackground: !!card.globalBackground,
-          globalBackground: card.globalBackground
-        })
       }
-    }
 
-    console.log('🎯 [PROJECTION] Projecting card:', {
-      title: card.title,
-      type: card.type,
-      hasElementStyles: !!card.elementStyles,
-      elementStyles: card.elementStyles,
-      hasSlideBackground: !!card.slideBackground,
-      slideBackground: card.slideBackground,
-      hasGlobalBackground: !!card.globalBackground,
-      globalBackground: card.globalBackground
-    })
+      // Handle presentation data updates
+      if (selectedItem?.type === 'presentation') {
+        const currentPresentations = usePresentationStore.getState().presentations
+        const updatedPresentation = currentPresentations.find(
+          (p) => p.id === selectedItem?.referenceId
+        )
 
-    setSelectedCard(card)
-    setProjectionState((prev) => ({
-      ...prev,
-      isProjecting: true,
-      currentContent: card.content,
-      currentTitle: card.title
-    }))
+        if (updatedPresentation) {
+          // Find the corresponding slide for this card
+          const slideIndex = parseInt(card.id.split('-slide-')[1]?.split('-')[0] || '0')
+          const slide = updatedPresentation.slides?.[slideIndex]
 
-    // Prepare slide data with background and element information
-    const slideData = {
-      elements: card.elementStyles
-        ? [
-            {
-              type: 'text',
-              content: card.content,
-              position: {
-                x: card.elementStyles.left || 96,
-                y: card.elementStyles.top || 139
-              },
-              size: {
-                width: card.elementStyles.width || 779,
-                height: card.elementStyles.height || 197
-              },
-              style: card.elementStyles
+          if (slide) {
+            // Update the card with fresh background data
+            card = {
+              ...card,
+              slideBackground: slide.background,
+              globalBackground: updatedPresentation.background
             }
-          ]
-        : [
-            {
-              type: 'text',
-              content: card.content,
-              position: { x: 96, y: 139 },
-              size: { width: 779, height: 197 },
-              style: {
-                fontSize: 48,
-                color: '#FFFFFF',
-                fontFamily: 'Arial, sans-serif',
-                fontWeight: 'bold',
-                textAlign: 'center',
-                textShadow: '2px 2px 4px rgba(0,0,0,0.8)',
-                lineHeight: 1.2
-              }
-            }
-          ],
-      globalBackground: card.globalBackground,
-      slideBackground: card.slideBackground
-    }
 
-    console.log('🎯 [PROJECTION] Generated slideData:', {
-      elementsCount: slideData.elements.length,
-      hasGlobalBackground: !!slideData.globalBackground,
-      globalBackground: slideData.globalBackground,
-      hasSlideBackground: !!slideData.slideBackground,
-      slideBackground: slideData.slideBackground
-    })
+            console.log('🎯 [PROJECTION] Updated presentation card with fresh background data:', {
+              hasSlideBackground: !!card.slideBackground,
+              slideBackground: card.slideBackground,
+              hasGlobalBackground: !!card.globalBackground,
+              globalBackground: card.globalBackground
+            })
+          }
+        }
+      }
 
-    // Send rich content data to electron main process for second display
-    window.electron?.ipcRenderer.send('project-content', {
-      title: card.title,
-      content: card.content,
-      type: card.type,
-      slideData: slideData
-    })
-  }, [])
+      console.log('🎯 [PROJECTION] Projecting card:', {
+        title: card.title,
+        type: card.type,
+        hasElementStyles: !!card.elementStyles,
+        elementStyles: card.elementStyles,
+        hasSlideBackground: !!card.slideBackground,
+        slideBackground: card.slideBackground,
+        hasGlobalBackground: !!card.globalBackground,
+        globalBackground: card.globalBackground
+      })
+
+      setSelectedCard(card)
+      setProjectionState((prev) => ({
+        ...prev,
+        isProjecting: true,
+        currentContent: card.content,
+        currentTitle: card.title
+      }))
+
+      // Prepare slide data with background and element information
+      const slideData = {
+        elements:
+          card.slideElements ||
+          (card.elementStyles
+            ? [
+                {
+                  type: 'text',
+                  content: card.content,
+                  position: {
+                    x: card.elementStyles.left || 96,
+                    y: card.elementStyles.top || 139
+                  },
+                  size: {
+                    width: card.elementStyles.width || 779,
+                    height: card.elementStyles.height || 197
+                  },
+                  style: card.elementStyles
+                }
+              ]
+            : [
+                {
+                  type: 'text',
+                  content: card.content,
+                  position: { x: 96, y: 139 },
+                  size: { width: 779, height: 197 },
+                  style: {
+                    fontSize: 48,
+                    color: '#FFFFFF',
+                    fontFamily: 'Arial, sans-serif',
+                    fontWeight: 'bold',
+                    textAlign: 'center',
+                    textShadow: '2px 2px 4px rgba(0,0,0,0.8)',
+                    lineHeight: 1.2
+                  }
+                }
+              ]),
+        globalBackground: card.globalBackground,
+        slideBackground: card.slideBackground
+      }
+
+      console.log('🎯 [PROJECTION] Generated slideData:', {
+        elementsCount: slideData.elements.length,
+        elementTypes: slideData.elements.map((el) => el.type),
+        hasGlobalBackground: !!slideData.globalBackground,
+        globalBackground: slideData.globalBackground,
+        hasSlideBackground: !!slideData.slideBackground,
+        slideBackground: slideData.slideBackground
+      })
+
+      // Send rich content data to electron main process for second display
+      window.electron?.ipcRenderer.send('project-content', {
+        title: card.title,
+        content: card.content,
+        type: card.type,
+        slideData: slideData
+      })
+    },
+    [fetchSongs, loadPresentations]
+  )
 
   // Navigation functions
   const goToNextCard = useCallback(async () => {
@@ -964,7 +1318,7 @@ export default function Home(): JSX.Element {
   }
 
   // Handle setlist change
-  const handleSetlistChange = (setlist: Setlist) => {
+  const handleSetlistChange = (setlist: Setlist): void => {
     setSelectedSetlist(setlist)
     setSelectedItem(null) // Clear selected item when changing setlist
     setContentCards([])
@@ -1015,7 +1369,7 @@ export default function Home(): JSX.Element {
   }
 
   // Get icon for item type
-  const getItemIcon = (type: string) => {
+  const getItemIcon = (type: string): JSX.Element => {
     switch (type) {
       case 'song':
         return <Music className="w-4 h-4 text-blue-600" />
@@ -1031,7 +1385,7 @@ export default function Home(): JSX.Element {
   }
 
   // Get card type styling
-  const getCardStyling = (type: string) => {
+  const getCardStyling = (type: string): string => {
     switch (type) {
       case 'verse':
         return 'border-blue-200 bg-blue-50 dark:bg-blue-950'

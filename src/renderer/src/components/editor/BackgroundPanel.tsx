@@ -60,7 +60,7 @@ export const BackgroundPanel: React.FC<BackgroundPanelProps> = ({ className = ''
   const handleMediaSelect = async (file: Media) => {
     try {
       console.log('🎯 Media selected:', file.name, file.type, file.filename)
-      const mediaUrl = await window.electron.ipcRenderer.invoke('get-media-data-url', file.filename)
+      const mediaUrl = await window.electron?.invoke('get-media-data-url', file.filename)
       console.log('📸 Media URL generated, length:', mediaUrl ? mediaUrl.length : 0)
 
       // Only handle image and video types for backgrounds

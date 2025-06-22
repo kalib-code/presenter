@@ -57,77 +57,98 @@ export const useSetlistStore = create<SetlistState>()(
     countdownActive: false,
 
     loadSetlists: async () => {
-      set({ isLoading: true, error: null })
       try {
-        const setlists = await window.electron.ipcRenderer.invoke('list-setlists')
-        console.log('✅ Setlists loaded:', setlists.length)
-        set({ setlists, isLoading: false })
+        set({ loading: true, error: null })
+        console.log('📋 [STORE] Loading setlists...')
+        const setlists = await window.electron?.invoke('list-setlists')
+        console.log('📋 [STORE] Setlists loaded:', setlists?.length || 0)
+        if (setlists) {
+          setlists.forEach((setlist: Setlist) => {
+            console.log(
+              '📋 [STORE] Setlist:',
+              setlist.name,
+              'has',
+              setlist.items?.length || 0,
+              'items'
+            )
+            setlist.items?.forEach((item) => {
+              console.log(
+                '📋 [STORE]   - Item:',
+                item.title,
+                'type:',
+                item.type,
+                'refId:',
+                item.referenceId
+              )
+            })
+          })
+        }
+        set({ setlists: setlists || [], loading: false })
       } catch (error) {
-        console.error('❌ Failed to load setlists:', error)
-        set({
-          error: error instanceof Error ? error.message : 'Failed to load setlists',
-          isLoading: false
-        })
+        const errorMessage = error instanceof Error ? error.message : 'Failed to load setlists'
+        console.error('📋 [STORE] Error loading setlists:', error)
+        set({ error: errorMessage, loading: false })
       }
     },
 
     createSetlist: async (data) => {
-      set({ isLoading: true, error: null })
       try {
-        const setlists = await window.electron.ipcRenderer.invoke('create-setlist', data)
-        console.log('✅ Setlist created:', data.name)
-        set({ setlists, isLoading: false })
+        set({ loading: true, error: null })
+        console.log('📋 [STORE] Creating setlist:', data.name)
+        const setlists = await window.electron?.invoke('create-setlist', data)
+        console.log('📋 [STORE] Setlist created, total setlists:', setlists?.length || 0)
+        set({ setlists: setlists || [], loading: false })
+        return setlists || []
       } catch (error) {
-        console.error('❌ Failed to create setlist:', error)
-        set({
-          error: error instanceof Error ? error.message : 'Failed to create setlist',
-          isLoading: false
-        })
+        const errorMessage = error instanceof Error ? error.message : 'Failed to create setlist'
+        console.error('📋 [STORE] Error creating setlist:', error)
+        set({ error: errorMessage, loading: false })
+        throw error
       }
     },
 
     updateSetlist: async (id, data) => {
-      set({ isLoading: true, error: null })
       try {
-        const setlists = await window.electron.ipcRenderer.invoke('update-setlist', id, data)
-        console.log('✅ Setlist updated:', id)
-        set({ setlists, isLoading: false })
-
-        // Update current setlist if it's the one being updated
-        const state = get()
-        if (state.currentSetlist?.id === id) {
-          const updatedSetlist = setlists.find((s) => s.id === id)
-          if (updatedSetlist) {
-            set({ currentSetlist: updatedSetlist })
-          }
+        set({ loading: true, error: null })
+        console.log('📋 [STORE] Updating setlist:', id, 'with data keys:', Object.keys(data))
+        if (data.items) {
+          console.log('📋 [STORE] Updating', data.items.length, 'items')
+          data.items.forEach((item) => {
+            console.log(
+              '📋 [STORE]   - Item:',
+              item.title,
+              'type:',
+              item.type,
+              'refId:',
+              item.referenceId
+            )
+          })
         }
+        const setlists = await window.electron?.invoke('update-setlist', id, data)
+        console.log('📋 [STORE] Setlist updated, total setlists:', setlists?.length || 0)
+        set({ setlists: setlists || [], loading: false })
+        return setlists || []
       } catch (error) {
-        console.error('❌ Failed to update setlist:', error)
-        set({
-          error: error instanceof Error ? error.message : 'Failed to update setlist',
-          isLoading: false
-        })
+        const errorMessage = error instanceof Error ? error.message : 'Failed to update setlist'
+        console.error('📋 [STORE] Error updating setlist:', error)
+        set({ error: errorMessage, loading: false })
+        throw error
       }
     },
 
     deleteSetlist: async (id) => {
-      set({ isLoading: true, error: null })
       try {
-        const setlists = await window.electron.ipcRenderer.invoke('delete-setlist', id)
-        console.log('✅ Setlist deleted:', id)
-        set({ setlists, isLoading: false })
-
-        // Clear current setlist if it was deleted
-        const state = get()
-        if (state.currentSetlist?.id === id) {
-          set({ currentSetlist: null, isPresenting: false })
-        }
+        set({ loading: true, error: null })
+        console.log('📋 [STORE] Deleting setlist:', id)
+        const setlists = await window.electron?.invoke('delete-setlist', id)
+        console.log('📋 [STORE] Setlist deleted, remaining setlists:', setlists?.length || 0)
+        set({ setlists: setlists || [], loading: false })
+        return setlists || []
       } catch (error) {
-        console.error('❌ Failed to delete setlist:', error)
-        set({
-          error: error instanceof Error ? error.message : 'Failed to delete setlist',
-          isLoading: false
-        })
+        const errorMessage = error instanceof Error ? error.message : 'Failed to delete setlist'
+        console.error('📋 [STORE] Error deleting setlist:', error)
+        set({ error: errorMessage, loading: false })
+        throw error
       }
     },
 

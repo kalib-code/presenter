@@ -30,7 +30,7 @@ export const MediaBrowser: React.FC<MediaBrowserProps> = ({
     try {
       setLoading(true)
       console.log('🔍 Fetching media files...')
-      const files = await window.electron.ipcRenderer.invoke('list-media-files')
+      const files = await window.electron?.invoke('list-media-files')
       console.log('📁 Media files fetched:', files)
       console.log('📊 Number of files:', files.length)
       setMedia(files)
@@ -75,7 +75,7 @@ export const MediaBrowser: React.FC<MediaBrowserProps> = ({
       console.log('🖼️ Loading URL for file:', filename)
 
       // For Electron, we need to convert file URLs to data URLs for display
-      const dataUrl = await window.electron.ipcRenderer.invoke('get-media-data-url', filename)
+      const dataUrl = await window.electron?.invoke('get-media-data-url', filename)
 
       console.log('🔗 Generated data URL length:', dataUrl ? dataUrl.length : 0)
       return dataUrl || ''
@@ -85,12 +85,26 @@ export const MediaBrowser: React.FC<MediaBrowserProps> = ({
     }
   }, [])
 
-  const handleSelect = (): void => {
-    if (selectedFile) {
-      onSelect(selectedFile)
-      onClose()
-    }
-  }
+  const handleSelect = useCallback(
+    async (file: Media) => {
+      if (onSelect) {
+        // Convert to data URL for preview
+        try {
+          const dataUrl = await window.electron?.invoke('get-media-data-url', file.filename)
+          const mediaWithDataUrl = {
+            ...file,
+            dataUrl: dataUrl || undefined
+          }
+          onSelect(mediaWithDataUrl)
+        } catch (error) {
+          console.error('Failed to get data URL for media:', file.filename, error)
+          onSelect(file) // Fall back to original file without data URL
+        }
+      }
+      onClose?.()
+    },
+    [onSelect, onClose]
+  )
 
   const formatFileSize = (bytes: number): string => {
     if (bytes === 0) return '0 Bytes'
@@ -168,7 +182,7 @@ export const MediaBrowser: React.FC<MediaBrowserProps> = ({
             <Button onClick={onClose} variant="outline">
               Cancel
             </Button>
-            <Button onClick={handleSelect} disabled={!selectedFile}>
+            <Button onClick={() => handleSelect(selectedFile as Media)} disabled={!selectedFile}>
               <Check className="w-4 h-4 mr-2" />
               Select
             </Button>
