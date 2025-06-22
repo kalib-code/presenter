@@ -1136,7 +1136,29 @@ app.whenReady().then(() => {
     }
   })
 
-  // Get media file as data URL for display in browser
+  // Get media file URL (more efficient than data URL)
+  ipcMain.handle('get-media-file-url', async (_event, filename: string) => {
+    console.log('🔍 [MAIN] get-media-file-url requested for:', filename)
+    try {
+      const filePath = join(getMediaDirectory(), filename)
+
+      // Check if file exists
+      try {
+        await fs.access(filePath)
+        console.log('✅ [MAIN] Media file found:', filePath)
+        // Return file:// URL for efficient access
+        return `file://${filePath}`
+      } catch {
+        console.error('❌ [MAIN] Media file not found:', filePath)
+        return null
+      }
+    } catch (error) {
+      console.error('❌ [MAIN] Failed to get media file URL for:', filename, error)
+      return null
+    }
+  })
+
+  // Get media file as data URL for display in browser (fallback)
   ipcMain.handle('get-media-data-url', async (_event, filename: string) => {
     console.log('🔍 [MAIN] get-media-data-url requested for:', filename)
     try {
@@ -1205,6 +1227,131 @@ app.whenReady().then(() => {
     } catch (error) {
       console.error('❌ [MAIN] Failed to get media data URL for:', filename, error)
       return null
+    }
+  })
+
+  // Find media file by checksum (for base64 to file URL conversion)
+  ipcMain.handle('find-media-by-checksum', async (_event, checksum: string) => {
+    console.log(
+      '🔍 [MAIN] find-media-by-checksum requested for:',
+      checksum.substring(0, 16) + '...'
+    )
+    try {
+      const mediaDir = getMediaDirectory()
+
+      // Ensure media directory exists
+      try {
+        await fs.access(mediaDir)
+      } catch {
+        console.log('📁 [MAIN] Media directory does not exist:', mediaDir)
+        return null
+      }
+
+      // Read all files in media directory
+      const files = await fs.readdir(mediaDir)
+      console.log('📂 [MAIN] Checking', files.length, 'files in media directory')
+
+      // Check each file's checksum
+      for (const filename of files) {
+        try {
+          const filePath = join(mediaDir, filename)
+          const stats = await fs.stat(filePath)
+
+          // Skip directories
+          if (stats.isDirectory()) continue
+
+          // Read file and generate checksum
+          const fileBuffer = await fs.readFile(filePath)
+          const crypto = await import('crypto')
+          const hash = crypto.createHash('sha256')
+          hash.update(fileBuffer)
+          const fileChecksum = hash.digest('hex')
+
+          // Check if checksums match
+          if (fileChecksum === checksum) {
+            console.log('✅ [MAIN] Found matching file by checksum:', filename)
+            return filename
+          }
+        } catch (error) {
+          console.warn('⚠️ [MAIN] Failed to check file:', filename, error)
+          continue
+        }
+      }
+
+      console.log('❌ [MAIN] No matching file found for checksum')
+      return null
+    } catch (error) {
+      console.error('❌ [MAIN] Failed to find media by checksum:', error)
+      return null
+    }
+  })
+
+  // Save file to media folder and return filename
+  ipcMain.handle(
+    'save-media-file',
+    async (
+      _event,
+      fileData: {
+        filename: string
+        buffer: number[]
+        mimeType: string
+        size: number
+      }
+    ) => {
+      console.log('💾 [MAIN] save-media-file requested for:', fileData.filename)
+      try {
+        await ensureMediaDirectory()
+
+        // Convert number array back to buffer
+        const buffer = Buffer.from(fileData.buffer)
+
+        // Generate unique filename if needed (check for conflicts)
+        let finalFilename = fileData.filename
+        let counter = 1
+
+        while (true) {
+          const targetPath = join(getMediaDirectory(), finalFilename)
+          try {
+            await fs.access(targetPath)
+            // File exists, generate new name
+            const ext = extname(fileData.filename)
+            const baseName = basename(fileData.filename, ext)
+            finalFilename = `${baseName}_${counter}${ext}`
+            counter++
+          } catch {
+            // File doesn't exist, we can use this name
+            break
+          }
+        }
+
+        const finalPath = join(getMediaDirectory(), finalFilename)
+
+        // Write file to media directory
+        await fs.writeFile(finalPath, buffer)
+
+        console.log('✅ [MAIN] File saved to media folder:', finalFilename)
+
+        return {
+          filename: finalFilename,
+          path: finalPath,
+          url: getMediaUrl(finalFilename),
+          size: fileData.size
+        }
+      } catch (error) {
+        console.error('❌ [MAIN] Failed to save media file:', error)
+        throw error
+      }
+    }
+  )
+
+  // Check if media file exists
+  ipcMain.handle('media-file-exists', async (_event, filename: string) => {
+    try {
+      const filePath = join(getMediaDirectory(), filename)
+      await fs.access(filePath)
+      return true
+    } catch {
+      return false
     }
   })
 

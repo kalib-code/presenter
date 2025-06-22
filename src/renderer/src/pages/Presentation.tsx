@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { SlideRenderer } from '@renderer/components/editor/SlideRenderer'
+import { BackgroundRenderer } from '@renderer/components/editor/BackgroundRenderer'
 
 // Direct IPC access (nodeIntegration enabled for presentation window)
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -55,6 +56,28 @@ interface ProjectionData {
       playbackRate?: number
       size?: 'cover' | 'contain' | 'fill' | 'none'
       position?: 'center' | 'top' | 'bottom' | 'left' | 'right'
+    }
+    // Enhanced countdown configuration
+    countdownConfig?: {
+      title?: string
+      message?: string
+      duration?: number
+      styling?: {
+        counterSize?: 'small' | 'medium' | 'large' | 'extra-large'
+        counterColor?: string
+        titleSize?: 'small' | 'medium' | 'large'
+        titleColor?: string
+        messageSize?: 'small' | 'medium' | 'large'
+        messageColor?: string
+        textShadow?: boolean
+      }
+      background?: {
+        type: 'color' | 'image' | 'video'
+        value: string
+        opacity?: number
+        size?: 'cover' | 'contain' | 'fill' | 'none'
+        position?: 'center' | 'top' | 'bottom' | 'left' | 'right'
+      }
     }
   }
 }
@@ -182,76 +205,9 @@ export default function Presentation(): JSX.Element {
     const background =
       currentData.slideData?.slideBackground || currentData.slideData?.globalBackground
 
-    let backgroundStyles: React.CSSProperties = {
-      background: '#000'
-    }
-
-    let backgroundElement: JSX.Element | null = null
-
-    if (background) {
-      if (background.type === 'video' && background.value) {
-        const objectFit =
-          background.size === 'cover'
-            ? 'cover'
-            : background.size === 'contain'
-              ? 'contain'
-              : background.size === 'fill'
-                ? 'fill'
-                : background.size === 'none'
-                  ? 'none'
-                  : 'cover'
-
-        const objectPosition = background.position || 'center'
-
-        backgroundElement = (
-          <video
-            key={background.value}
-            autoPlay
-            loop
-            muted
-            playsInline
-            className="absolute inset-0 w-full h-full"
-            style={{
-              objectFit: objectFit,
-              objectPosition: objectPosition,
-              opacity: background.opacity || 1,
-              zIndex: 1
-            }}
-          >
-            <source src={background.value} type="video/mp4" />
-          </video>
-        )
-      } else if (background.type === 'image' && background.value) {
-        const backgroundSize = background.size === 'none' ? 'auto' : background.size || 'cover'
-        const backgroundPosition = background.position || 'center'
-
-        backgroundElement = (
-          <img
-            key={background.value}
-            src={background.value}
-            alt="Background"
-            className="absolute inset-0 w-full h-full object-cover"
-            style={{
-              objectFit:
-                backgroundSize === 'auto'
-                  ? 'none'
-                  : (backgroundSize as 'cover' | 'contain' | 'fill') || 'cover',
-              objectPosition: backgroundPosition,
-              opacity: background.opacity || 1,
-              zIndex: 1
-            }}
-          />
-        )
-      } else if (background.type === 'color' && background.value) {
-        backgroundStyles = {
-          background: background.value
-        }
-      }
-    }
-
     return (
-      <div className="w-full h-screen relative overflow-hidden" style={backgroundStyles}>
-        {backgroundElement}
+      <div className="w-full h-screen relative overflow-hidden bg-black">
+        <BackgroundRenderer background={background} />
         {/* No text elements - just background */}
       </div>
     )
@@ -297,109 +253,19 @@ export default function Presentation(): JSX.Element {
       finalBackground: background
     })
 
-    let backgroundStyles: React.CSSProperties = {
-      background: '#000'
-    }
-
-    let backgroundElement: JSX.Element | null = null
-
-    if (background) {
-      console.log('📺 [PRESENTATION] Creating background element:', {
-        type: background.type,
-        hasValue: !!background.value,
-        valueLength: background.value?.length || 0,
-        opacity: background.opacity,
-        size: background.size,
-        position: background.position
-      })
-
-      if (background.type === 'video' && background.value) {
-        // Convert background size to object-fit CSS property
-        const objectFit =
-          background.size === 'cover'
-            ? 'cover'
-            : background.size === 'contain'
-              ? 'contain'
-              : background.size === 'fill'
-                ? 'fill'
-                : background.size === 'none'
-                  ? 'none'
-                  : 'cover'
-
-        // Convert background position to object-position CSS property
-        const objectPosition = background.position || 'center'
-
-        console.log('📺 [PRESENTATION] Creating video element with:', {
-          objectFit,
-          objectPosition,
-          opacity: background.opacity || 1,
-          valuePreview: background.value.substring(0, 50) + '...'
-        })
-
-        backgroundElement = (
-          <video
-            key={background.value} // Force re-render when video source changes
-            autoPlay
-            loop
-            muted
-            playsInline
-            className="absolute inset-0 w-full h-full"
-            style={{
-              objectFit: objectFit,
-              objectPosition: objectPosition,
-              opacity: background.opacity || 1,
-              zIndex: 1
-            }}
-            onLoadStart={() => console.log('📺 [PRESENTATION] Video load started')}
-            onCanPlay={(e) => {
-              const video = e.target as HTMLVideoElement
-              console.log('📺 [PRESENTATION] Video can play:', {
-                videoWidth: video.videoWidth,
-                videoHeight: video.videoHeight,
-                windowWidth: window.innerWidth,
-                windowHeight: window.innerHeight,
-                objectFit,
-                objectPosition,
-                videoElement: video,
-                computedStyle: window.getComputedStyle(video)
-              })
-            }}
-            onError={(e) => console.error('📺 [PRESENTATION] Video error:', e)}
-          >
-            <source src={background.value} type="video/mp4" />
-          </video>
-        )
-      } else if (background.type === 'image' && background.value) {
-        // Convert background size and position from editor to CSS values
-        const backgroundSize = background.size === 'none' ? 'auto' : background.size || 'cover'
-        const backgroundPosition = background.position || 'center'
-
-        // For image backgrounds, we'll create an img element instead of using backgroundImage
-        // to ensure proper re-rendering when the image changes
-        backgroundElement = (
-          <img
-            key={background.value} // Force re-render when image source changes
-            src={background.value}
-            alt="Background"
-            className="absolute inset-0 w-full h-full object-cover"
-            style={{
-              objectFit:
-                backgroundSize === 'auto'
-                  ? 'none'
-                  : (backgroundSize as 'cover' | 'contain' | 'fill') || 'cover',
-              objectPosition: backgroundPosition,
-              opacity: background.opacity || 1,
-              zIndex: 1
-            }}
-            onLoad={() => console.log('📺 [PRESENTATION] Image loaded')}
-            onError={(e) => console.error('📺 [PRESENTATION] Image error:', e)}
-          />
-        )
-      } else if (background.type === 'color' && background.value) {
-        backgroundStyles = {
-          background: background.value
-        }
-      }
+    // Handle countdown type first, regardless of slideData elements
+    if (currentData.type === 'countdown') {
+      console.log('📺 [PRESENTATION] Rendering countdown with CountdownDisplay')
+      return (
+        <div className="w-full h-screen flex items-center justify-center bg-black">
+          <BackgroundRenderer background={background} />
+          {!presentationState.isBlank && (
+            <div className="relative z-10 w-full h-full">
+              <CountdownDisplay content={currentData.content} slideData={currentData.slideData} />
+            </div>
+          )}
+        </div>
+      )
     }
 
     // Render rich slide content if available
@@ -444,8 +310,8 @@ export default function Presentation(): JSX.Element {
     })
 
     return (
-      <div className="w-full h-screen flex items-center justify-center" style={backgroundStyles}>
-        {backgroundElement}
+      <div className="w-full h-screen flex items-center justify-center bg-black">
+        <BackgroundRenderer background={background} />
 
         {/* Only render text content if not in blank mode */}
         {!presentationState.isBlank && (
@@ -457,8 +323,6 @@ export default function Presentation(): JSX.Element {
                   {currentData.content}
                 </div>
               </div>
-            ) : currentData.type === 'countdown' ? (
-              <CountdownDisplay content={currentData.content} />
             ) : (
               <div className="text-5xl leading-relaxed text-white text-shadow-lg font-bold whitespace-pre-line">
                 {currentData.content}
@@ -481,11 +345,65 @@ export default function Presentation(): JSX.Element {
   )
 }
 
-// Countdown component
-function CountdownDisplay({ content }: { content: string }): JSX.Element {
+// Enhanced Countdown component
+interface CountdownSlideData {
+  countdownConfig?: {
+    title?: string
+    message?: string
+    duration?: number
+    styling?: {
+      counterSize?: 'small' | 'medium' | 'large' | 'extra-large'
+      counterColor?: string
+      titleSize?: 'small' | 'medium' | 'large'
+      titleColor?: string
+      messageSize?: 'small' | 'medium' | 'large'
+      messageColor?: string
+      textShadow?: boolean
+    }
+    background?: {
+      type: 'color' | 'image' | 'video'
+      value: string
+      opacity?: number
+      size?: 'cover' | 'contain' | 'fill' | 'none'
+      position?: 'center' | 'top' | 'bottom' | 'left' | 'right'
+    }
+  }
+  [key: string]: unknown // Allow other properties
+}
+
+function CountdownDisplay({
+  content,
+  slideData
+}: {
+  content: string
+  slideData?: CountdownSlideData
+}): JSX.Element {
+  // Try to get enhanced config from slideData first, fallback to legacy format
+  const countdownConfig = slideData?.countdownConfig
+
+  // Legacy fallback parsing
   const [durationStr, message] = content.split(' - ')
-  const initialDuration = parseInt(durationStr) || 300
+  const fallbackDuration = parseInt(durationStr) || 300
+  const fallbackMessage = message || 'Countdown'
+
+  // Use enhanced config or fallback values
+  const initialDuration = countdownConfig?.duration || fallbackDuration
+  const title = countdownConfig?.title || fallbackMessage
+  const displayMessage = countdownConfig?.message || fallbackMessage
+  const styling = countdownConfig?.styling
+  const background = countdownConfig?.background
+
   const [timeLeft, setTimeLeft] = useState(initialDuration)
+
+  console.log('🎯 [COUNTDOWN] Rendering countdown with config:', {
+    hasCountdownConfig: !!countdownConfig,
+    title,
+    displayMessage,
+    initialDuration,
+    hasBackground: !!background,
+    backgroundType: background?.type,
+    backgroundValue: background?.value
+  })
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -504,16 +422,90 @@ function CountdownDisplay({ content }: { content: string }): JSX.Element {
   const minutes = Math.floor(timeLeft / 60)
   const seconds = timeLeft % 60
 
+  // Size classes for responsive design
+  const getCounterSizeClass = (size?: string): string => {
+    switch (size) {
+      case 'small':
+        return 'text-6xl'
+      case 'medium':
+        return 'text-8xl'
+      case 'large':
+        return 'text-9xl'
+      case 'extra-large':
+        return 'text-[12rem]'
+      default:
+        return 'text-9xl'
+    }
+  }
+
+  const getTitleSizeClass = (size?: string): string => {
+    switch (size) {
+      case 'small':
+        return 'text-3xl'
+      case 'medium':
+        return 'text-5xl'
+      case 'large':
+        return 'text-7xl'
+      default:
+        return 'text-5xl'
+    }
+  }
+
+  const getMessageSizeClass = (size?: string): string => {
+    switch (size) {
+      case 'small':
+        return 'text-xl'
+      case 'medium':
+        return 'text-3xl'
+      case 'large':
+        return 'text-5xl'
+      default:
+        return 'text-3xl'
+    }
+  }
+
+  // Default background for countdown if none specified
+  const defaultBackground = background || {
+    type: 'color',
+    value: 'linear-gradient(135deg, #DC2626, #EA580C)',
+    opacity: 1
+  }
+
   return (
-    <div className="bg-gradient-to-br from-red-600 to-orange-600 w-full h-screen flex items-center justify-center">
-      <div className="text-center text-white">
-        <h1 className="text-5xl font-bold mb-12 text-shadow-lg">{message || 'Countdown'}</h1>
+    <div className="w-full h-screen flex items-center justify-center relative bg-black">
+      <BackgroundRenderer background={defaultBackground} />
+
+      <div className="relative z-10 text-center max-w-4xl mx-auto px-8">
+        <h1
+          className={`font-bold mb-12 ${getTitleSizeClass(styling?.titleSize)}`}
+          style={{
+            color: styling?.titleColor || '#FFFFFF',
+            textShadow: styling?.textShadow !== false ? '2px 2px 4px rgba(0,0,0,0.8)' : 'none'
+          }}
+        >
+          {title}
+        </h1>
+
         <div
-          className={`text-9xl font-bold text-shadow-lg font-mono ${
-            timeLeft <= 0 ? 'text-red-300 animate-pulse' : ''
+          className={`font-bold font-mono mb-8 ${getCounterSizeClass(styling?.counterSize)} ${
+            timeLeft <= 0 ? 'animate-pulse' : ''
           }`}
+          style={{
+            color: timeLeft <= 0 ? '#FCA5A5' : styling?.counterColor || '#FFFFFF',
+            textShadow: styling?.textShadow !== false ? '2px 2px 4px rgba(0,0,0,0.8)' : 'none'
+          }}
         >
           {timeLeft <= 0 ? 'TIME!' : `${minutes}:${seconds.toString().padStart(2, '0')}`}
+        </div>
+
+        <div
+          className={`${getMessageSizeClass(styling?.messageSize)}`}
+          style={{
+            color: styling?.messageColor || '#FFFFFF',
+            textShadow: styling?.textShadow !== false ? '2px 2px 4px rgba(0,0,0,0.8)' : 'none'
+          }}
+        >
+          {displayMessage}
         </div>
       </div>
     </div>

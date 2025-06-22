@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { ScalingConfig, scaleTextSize, screenManager } from '@renderer/utils/screenScaling'
 import { resolveMediaUrl, isMediaReference } from '@renderer/utils/mediaUtils'
 import { CANVAS_WIDTH, CANVAS_HEIGHT } from '@renderer/constants/canvas'
+import { BackgroundRenderer } from './BackgroundRenderer'
 
 // Helper function to generate placeholder for missing media
 const generatePlaceholderForElement = (content: string): string => {
@@ -314,84 +315,15 @@ export const SlideRenderer: React.FC<SlideRendererProps> = ({
   // Determine which background to use (slide background takes precedence)
   const background = slideBackground || globalBackground
 
-  // Background styles
-  let backgroundStyles: React.CSSProperties = {
-    background: '#000'
-  }
-
-  let backgroundElement: JSX.Element | null = null
-
-  if (background) {
-    if (background.type === 'video' && background.value) {
-      const objectFit =
-        background.size === 'cover'
-          ? 'cover'
-          : background.size === 'contain'
-            ? 'contain'
-            : background.size === 'fill'
-              ? 'fill'
-              : background.size === 'none'
-                ? 'none'
-                : 'cover'
-
-      const objectPosition = background.position || 'center'
-
-      backgroundElement = (
-        <video
-          key={background.value}
-          autoPlay
-          loop
-          muted
-          playsInline
-          className="absolute inset-0 w-full h-full"
-          style={{
-            objectFit: objectFit,
-            objectPosition: objectPosition,
-            opacity: background.opacity || 1,
-            zIndex: 1
-          }}
-        >
-          <source src={background.value} type="video/mp4" />
-        </video>
-      )
-    } else if (background.type === 'image' && background.value) {
-      const backgroundSize = background.size === 'none' ? 'auto' : background.size || 'cover'
-      const backgroundPosition = background.position || 'center'
-
-      backgroundElement = (
-        <img
-          key={background.value}
-          src={background.value}
-          alt="Background"
-          className="absolute inset-0 w-full h-full object-cover"
-          style={{
-            objectFit:
-              backgroundSize === 'auto'
-                ? 'none'
-                : (backgroundSize as 'cover' | 'contain' | 'fill') || 'cover',
-            objectPosition: backgroundPosition,
-            opacity: background.opacity || 1,
-            zIndex: 1
-          }}
-        />
-      )
-    } else if (background.type === 'color' && background.value) {
-      backgroundStyles = {
-        background: background.value
-      }
-    }
-  }
-
   return (
     <div
-      className={`relative overflow-hidden ${className}`}
+      className={`relative overflow-hidden bg-black ${className}`}
       style={{
         width: containerWidth,
-        height: containerHeight,
-        ...backgroundStyles
+        height: containerHeight
       }}
     >
-      {backgroundElement}
+      <BackgroundRenderer background={background} />
 
       {/* Render all elements (hidden when showBlank is true) */}
       {!showBlank &&

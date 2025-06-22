@@ -3,6 +3,9 @@ import { useSetlistStore } from '@renderer/store/setlist'
 import { useSongStore } from '@renderer/store/song'
 import { usePresentationStore } from '@renderer/store/presentation'
 import { screenManager, DisplayInfo } from '@renderer/utils/screenScaling'
+import { resolveMediaUrl, isMediaReference } from '@renderer/utils/mediaUtils'
+import { CANVAS_WIDTH, CANVAS_HEIGHT } from '@renderer/constants/canvas'
+import { BackgroundRenderer } from '@renderer/components/editor/BackgroundRenderer'
 import { Button } from '@renderer/components/ui/button'
 import { Badge } from '@renderer/components/ui/badge'
 import { Separator } from '@renderer/components/ui/separator'
@@ -100,6 +103,28 @@ interface ContentCard {
     }
     zIndex?: number
   }>
+  // Enhanced countdown configuration
+  countdownConfig?: {
+    title?: string
+    message?: string
+    duration?: number
+    styling?: {
+      counterSize?: 'small' | 'medium' | 'large' | 'extra-large'
+      counterColor?: string
+      titleSize?: 'small' | 'medium' | 'large'
+      titleColor?: string
+      messageSize?: 'small' | 'medium' | 'large'
+      messageColor?: string
+      textShadow?: boolean
+    }
+    background?: {
+      type: 'color' | 'image' | 'video'
+      value: string
+      opacity?: number
+      size?: 'cover' | 'contain' | 'fill' | 'none'
+      position?: 'center' | 'top' | 'bottom' | 'left' | 'right'
+    }
+  }
 }
 
 interface ProjectionState {
@@ -184,6 +209,95 @@ function SortableSetlistItem({
   )
 }
 
+// Component for rendering media elements in preview with URL resolution
+interface PreviewMediaElementProps {
+  element: {
+    id: string
+    type: 'text' | 'image' | 'video'
+    content: string
+    style: {
+      opacity?: number
+    }
+  }
+  scaledLeft: number
+  scaledTop: number
+  scaledWidth: number
+  scaledHeight: number
+}
+
+function PreviewMediaElement({
+  element,
+  scaledLeft,
+  scaledTop,
+  scaledWidth,
+  scaledHeight
+}: PreviewMediaElementProps): JSX.Element | null {
+  const [resolvedUrl, setResolvedUrl] = useState<string>(element.content)
+
+  useEffect(() => {
+    const loadUrl = async (): Promise<void> => {
+      if (isMediaReference(element.content)) {
+        try {
+          const resolved = await resolveMediaUrl(element.content)
+          setResolvedUrl(resolved)
+          console.log(
+            '🔍 [PREVIEW] Resolved media URL:',
+            element.content,
+            '→',
+            resolved.substring(0, 50) + '...'
+          )
+        } catch (error) {
+          console.error('❌ [PREVIEW] Failed to resolve media URL:', element.content, error)
+          setResolvedUrl(element.content) // Fallback to original
+        }
+      } else {
+        setResolvedUrl(element.content)
+      }
+    }
+
+    loadUrl()
+  }, [element.content])
+
+  const commonStyles = {
+    left: `${scaledLeft}px`,
+    top: `${scaledTop}px`,
+    width: `${scaledWidth}px`,
+    height: `${scaledHeight}px`,
+    opacity: element.style.opacity || 1
+  }
+
+  if (element.type === 'image') {
+    return (
+      <img
+        src={resolvedUrl}
+        alt="Slide element"
+        className="absolute object-cover"
+        style={commonStyles}
+        onError={() => {
+          console.error('🖼️ [PREVIEW] Image failed to load:', element.content, resolvedUrl)
+        }}
+      />
+    )
+  } else if (element.type === 'video') {
+    return (
+      <video
+        src={resolvedUrl}
+        className="absolute object-cover"
+        style={commonStyles}
+        muted
+        loop
+        autoPlay
+        playsInline
+        onError={() => {
+          console.error('🎬 [PREVIEW] Video failed to load:', element.content, resolvedUrl)
+        }}
+      />
+    )
+  }
+
+  return null
+}
+
 // Function to render card content as projection preview (16:9 aspect ratio)
 function renderCardContent(card: ContentCard): JSX.Element {
   console.log(
@@ -201,210 +315,148 @@ function renderCardContent(card: ContentCard): JSX.Element {
 
   // Render countdown content specially
   if (card.type === 'countdown') {
+    // Use enhanced config if available, fallback to legacy parsing
+    const countdownConfig = card.countdownConfig
     const countdownMatch =
       card.content.match(/(\d+)s - (.+)/) || card.content.match(/(\d+)s - (.+)/)
-    const duration = countdownMatch ? countdownMatch[1] : '300'
-    const message = countdownMatch ? countdownMatch[2] : card.content
+
+    const duration =
+      countdownConfig?.duration || (countdownMatch ? parseInt(countdownMatch[1]) : 300)
+    const title = countdownConfig?.title || 'Countdown'
+    const message = countdownConfig?.message || (countdownMatch ? countdownMatch[2] : card.content)
+    const styling = countdownConfig?.styling
+    const background = countdownConfig?.background || card.slideBackground || card.globalBackground
+
+    // Size classes for preview
+    const getCounterSizeClass = (size?: string): string => {
+      switch (size) {
+        case 'small':
+          return 'text-2xl'
+        case 'medium':
+          return 'text-3xl'
+        case 'large':
+          return 'text-4xl'
+        case 'extra-large':
+          return 'text-5xl'
+        default:
+          return 'text-4xl'
+      }
+    }
+
+    const getTitleSizeClass = (size?: string): string => {
+      switch (size) {
+        case 'small':
+          return 'text-sm'
+        case 'medium':
+          return 'text-lg'
+        case 'large':
+          return 'text-xl'
+        default:
+          return 'text-lg'
+      }
+    }
+
+    const getMessageSizeClass = (size?: string): string => {
+      switch (size) {
+        case 'small':
+          return 'text-xs'
+        case 'medium':
+          return 'text-sm'
+        case 'large':
+          return 'text-lg'
+        default:
+          return 'text-sm'
+      }
+    }
 
     return (
       <div className="w-full aspect-video bg-black rounded border border-gray-300 relative overflow-hidden">
-        {/* Background Layer */}
-        {(() => {
-          const background = card.slideBackground || card.globalBackground
-          if (background?.type === 'video' && background.value) {
-            return (
-              <video
-                className="absolute inset-0 w-full h-full object-cover"
-                src={background.value}
-                autoPlay
-                loop
-                muted
-                playsInline
-                style={{ opacity: background.opacity || 1 }}
-              />
-            )
-          } else if (background?.type === 'image' && background.value) {
-            return (
-              <div
-                className="absolute inset-0 w-full h-full bg-cover bg-center bg-no-repeat"
-                style={{
-                  backgroundImage: `url(${background.value})`,
-                  opacity: background.opacity || 1
-                }}
-              />
-            )
+        {/* Background Layer - Use BackgroundRenderer for consistency */}
+        <BackgroundRenderer
+          background={
+            background || {
+              type: 'color',
+              value: 'linear-gradient(135deg, #DC2626, #EA580C)',
+              opacity: 1
+            }
           }
-          return null
-        })()}
+        />
+        {/* Video preview overlay for video backgrounds */}
+        {background?.type === 'video' && (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="text-white/50 text-xs bg-black/50 px-2 py-1 rounded">VIDEO PREVIEW</div>
+          </div>
+        )}
 
         {/* Content overlay */}
-        <div className="absolute inset-0 flex flex-col items-center justify-center p-6">
-          <div className="text-4xl font-bold text-white drop-shadow-lg mb-2">
-            {Math.floor(parseInt(duration) / 60)}:
-            {(parseInt(duration) % 60).toString().padStart(2, '0')}
+        <div className="absolute inset-0 flex flex-col items-center justify-center p-4 text-center">
+          <div
+            className={`font-bold mb-2 ${getTitleSizeClass(styling?.titleSize)}`}
+            style={{
+              color: styling?.titleColor || '#FFFFFF',
+              textShadow: styling?.textShadow !== false ? '1px 1px 2px rgba(0,0,0,0.8)' : 'none'
+            }}
+          >
+            {title}
           </div>
-          <div className="text-lg text-white text-center font-medium drop-shadow-lg">{message}</div>
+
+          <div
+            className={`font-bold font-mono mb-2 ${getCounterSizeClass(styling?.counterSize)}`}
+            style={{
+              color: styling?.counterColor || '#FFFFFF',
+              textShadow: styling?.textShadow !== false ? '1px 1px 2px rgba(0,0,0,0.8)' : 'none'
+            }}
+          >
+            {Math.floor(duration / 60)}:{(duration % 60).toString().padStart(2, '0')}
+          </div>
+
+          <div
+            className={`${getMessageSizeClass(styling?.messageSize)}`}
+            style={{
+              color: styling?.messageColor || '#FFFFFF',
+              textShadow: styling?.textShadow !== false ? '1px 1px 2px rgba(0,0,0,0.8)' : 'none'
+            }}
+          >
+            {message}
+          </div>
         </div>
       </div>
     )
   }
 
-  // Regular content rendering with multiple elements support
+  // Regular content rendering - simplified with just centered text
   return (
     <div className="w-full aspect-video bg-black rounded border border-gray-300 relative overflow-hidden">
-      {/* Background Layer - Use slide background or global background */}
+      {/* Background Layer - Only show image backgrounds for regular content */}
       {(() => {
         const background = card.slideBackground || card.globalBackground
 
-        if (background?.type === 'video' && background.value) {
-          return (
-            <video
-              className="absolute inset-0 w-full h-full object-cover"
-              src={background.value}
-              autoPlay
-              loop
-              muted
-              playsInline
-              style={{ opacity: background.opacity || 1 }}
-            />
-          )
-        } else if (background?.type === 'image' && background.value) {
-          return (
-            <div
-              className="absolute inset-0 w-full h-full bg-cover bg-center bg-no-repeat"
-              style={{
-                backgroundImage: `url(${background.value})`,
-                opacity: background.opacity || 1
-              }}
-            />
-          )
+        // Only render image backgrounds for regular content cards
+        if (background?.type === 'image') {
+          return <BackgroundRenderer background={background} />
         }
 
         return null
       })()}
 
-      {/* Elements Layer - Render all slide elements if available */}
-      {card.slideElements && card.slideElements.length > 0 ? (
-        // ✅ NEW: Render multiple elements with proper positioning
-        card.slideElements
-          .sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0)) // Sort by z-index
-          .map((element, index) => {
-            const key = element.id || `element-${index}`
-
-            // Calculate scaled positions and sizes for preview
-            const containerWidth = 300 // Approximate preview width
-            const containerHeight = 169 // 16:9 aspect ratio
-            const scaleX = containerWidth / 960 // Editor canvas width
-            const scaleY = containerHeight / 540 // Editor canvas height
-
-            const scaledLeft = element.position.x * scaleX
-            const scaledTop = element.position.y * scaleY
-            const scaledWidth = element.size.width * scaleX
-            const scaledHeight = element.size.height * scaleY
-
-            if (element.type === 'text') {
-              return (
-                <div
-                  key={key}
-                  className="absolute whitespace-pre-line overflow-hidden"
-                  style={{
-                    left: `${scaledLeft}px`,
-                    top: `${scaledTop}px`,
-                    width: `${scaledWidth}px`,
-                    height: `${scaledHeight}px`,
-                    fontSize: `${Math.max(8, (element.style.fontSize || 48) * 0.15)}px`,
-                    color: element.style.color || '#FFFFFF',
-                    fontFamily: element.style.fontFamily || 'Arial, sans-serif',
-                    fontWeight: element.style.fontWeight || 'bold',
-                    fontStyle: element.style.fontStyle || 'normal',
-                    textAlign:
-                      (element.style.textAlign as 'center' | 'left' | 'right' | 'justify') ||
-                      'center',
-                    textShadow: element.style.textShadow || '1px 1px 2px rgba(0,0,0,0.8)',
-                    lineHeight: element.style.lineHeight || 1.3,
-                    opacity: element.style.opacity || 1,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent:
-                      element.style.textAlign === 'left'
-                        ? 'flex-start'
-                        : element.style.textAlign === 'right'
-                          ? 'flex-end'
-                          : 'center'
-                  }}
-                >
-                  {element.content}
-                </div>
-              )
-            } else if (element.type === 'image') {
-              return (
-                <img
-                  key={key}
-                  src={element.content}
-                  alt="Slide element"
-                  className="absolute object-cover"
-                  style={{
-                    left: `${scaledLeft}px`,
-                    top: `${scaledTop}px`,
-                    width: `${scaledWidth}px`,
-                    height: `${scaledHeight}px`,
-                    opacity: element.style.opacity || 1
-                  }}
-                />
-              )
-            } else if (element.type === 'video') {
-              return (
-                <video
-                  key={key}
-                  src={element.content}
-                  className="absolute object-cover"
-                  style={{
-                    left: `${scaledLeft}px`,
-                    top: `${scaledTop}px`,
-                    width: `${scaledWidth}px`,
-                    height: `${scaledHeight}px`,
-                    opacity: element.style.opacity || 1
-                  }}
-                  muted
-                  loop
-                  autoPlay
-                  playsInline
-                />
-              )
-            }
-
-            return null
-          })
-      ) : (
-        // ✅ FALLBACK: Single text content overlay (legacy support)
-        <div className="absolute inset-0 flex items-center justify-center p-2">
-          <div
-            className="text-center drop-shadow-lg whitespace-pre-line overflow-hidden"
-            style={{
-              fontSize: card.elementStyles?.fontSize
-                ? `${Math.max(11, card.elementStyles.fontSize * 0.18)}px`
-                : '15px',
-              color: card.elementStyles?.color || '#FFFFFF',
-              fontFamily: card.elementStyles?.fontFamily || 'Arial, sans-serif',
-              fontWeight: card.elementStyles?.fontWeight || 'bold',
-              fontStyle: card.elementStyles?.fontStyle || 'normal',
-              textAlign:
-                (card.elementStyles?.textAlign as 'center' | 'left' | 'right' | 'justify') ||
-                'center',
-              textShadow: card.elementStyles?.textShadow || '1px 1px 2px rgba(0,0,0,0.8)',
-              lineHeight: card.elementStyles?.lineHeight || 1.3,
-              opacity: card.elementStyles?.opacity || 1,
-              maxWidth: '100%',
-              maxHeight: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
-            }}
-          >
-            {card.content || `[No content for ${card.title}]`}
-          </div>
+      {/* Simplified content rendering - just show text content centered */}
+      <div className="absolute inset-0 flex items-center justify-center p-4">
+        <div
+          className="text-center drop-shadow-lg whitespace-pre-line overflow-hidden w-full"
+          style={{
+            fontSize: '15px',
+            color: '#FFFFFF',
+            fontFamily: 'Arial, sans-serif',
+            fontWeight: 'bold',
+            textAlign: 'center',
+            textShadow: '1px 1px 2px rgba(0,0,0,0.8)',
+            lineHeight: 1.3,
+            opacity: 1
+          }}
+        >
+          {card.content || `[No content for ${card.title}]`}
         </div>
-      )}
+      </div>
     </div>
   )
 }
@@ -485,9 +537,7 @@ export default function Home(): JSX.Element {
   })
 
   // Screen detection state
-  const [availableDisplays, setAvailableDisplays] = useState<DisplayInfo[]>([])
   const [currentProjectionDisplay, setCurrentProjectionDisplay] = useState<DisplayInfo | null>(null)
-  const [previewAspectRatio, setPreviewAspectRatio] = useState<number>(16 / 9) // Default 16:9
   const [windowDimensions, setWindowDimensions] = useState({
     width: window.innerWidth,
     height: window.innerHeight
@@ -508,21 +558,17 @@ export default function Home(): JSX.Element {
     loadPresentations()
 
     // Initialize screen manager
-    const initializeScreens = async () => {
+    const initializeScreens = async (): Promise<void> => {
       await screenManager.initialize()
       const displays = screenManager.getDisplays()
       const projectionDisplay = screenManager.getCurrentProjectionDisplay()
 
-      setAvailableDisplays(displays)
       setCurrentProjectionDisplay(projectionDisplay)
 
       if (projectionDisplay) {
-        const aspectRatio = projectionDisplay.workArea.width / projectionDisplay.workArea.height
-        setPreviewAspectRatio(aspectRatio)
         console.log('📺 [HOME] Initialized screens:', {
           displaysCount: displays.length,
-          currentDisplay: projectionDisplay.id,
-          aspectRatio: aspectRatio.toFixed(3)
+          currentDisplay: projectionDisplay.id
         })
       }
     }
@@ -532,12 +578,9 @@ export default function Home(): JSX.Element {
     // Listen for display changes
     const unsubscribe = screenManager.onDisplaysChanged((displays) => {
       console.log('📺 [HOME] Displays changed:', displays.length)
-      setAvailableDisplays(displays)
       const currentDisplay = screenManager.getCurrentProjectionDisplay()
       if (currentDisplay) {
         setCurrentProjectionDisplay(currentDisplay)
-        const aspectRatio = currentDisplay.workArea.width / currentDisplay.workArea.height
-        setPreviewAspectRatio(aspectRatio)
       }
     })
 
@@ -559,7 +602,7 @@ export default function Home(): JSX.Element {
 
   // Refresh data when window gains focus (to pick up changes made in editor)
   useEffect(() => {
-    const handleFocus = () => {
+    const handleFocus = (): void => {
       console.log('🎯 [HOME] Window focused, refreshing song data...')
       fetchSongs() // Refresh songs to get updated background data
     }
@@ -585,7 +628,7 @@ export default function Home(): JSX.Element {
     const cards: ContentCard[] = []
 
     switch (selectedItem.type) {
-      case 'song':
+      case 'song': {
         console.log('Selected song item:', selectedItem)
         console.log(
           'Available songs:',
@@ -884,6 +927,7 @@ export default function Home(): JSX.Element {
           })
         }
         break
+      }
 
       case 'presentation': {
         const presentation = presentations.find((p) => p.id === selectedItem.referenceId)
@@ -1096,15 +1140,33 @@ export default function Home(): JSX.Element {
         })
         break
 
-      case 'countdown':
+      case 'countdown': {
+        // Use enhanced countdown config if available, fallback to legacy format
+        const countdownConfig = selectedItem.countdownConfig
+        const duration = countdownConfig?.duration || selectedItem.countdownDuration || 300
+        const message =
+          countdownConfig?.message || selectedItem.countdownMessage || 'Service Starting Soon!'
+        const title = countdownConfig?.title || 'Countdown Timer'
+
+        console.log('🎯 [HOME] Creating countdown card with config:', {
+          hasCountdownConfig: !!countdownConfig,
+          countdownConfig,
+          duration,
+          title,
+          message
+        })
+
         cards.push({
           id: selectedItem.id,
-          title: 'Countdown Timer',
-          content: `${selectedItem.countdownDuration || 300}s - ${selectedItem.countdownMessage || 'Service Starting Soon!'}`,
+          title: title,
+          content: `${duration}s - ${message}`,
           type: 'countdown',
-          order: 0
+          order: 0,
+          // Pass the enhanced config for preview rendering
+          countdownConfig: countdownConfig
         })
         break
+      }
     }
 
     setContentCards(cards)
@@ -1198,52 +1260,82 @@ export default function Home(): JSX.Element {
 
       // Prepare slide data with background and element information
       const slideData = {
+        // For countdown cards, don't create elements - let CountdownDisplay handle rendering
         elements:
-          card.slideElements ||
-          (card.elementStyles
-            ? [
-                {
-                  type: 'text',
-                  content: card.content,
-                  position: {
-                    x: card.elementStyles.left || 96,
-                    y: card.elementStyles.top || 139
-                  },
-                  size: {
-                    width: card.elementStyles.width || 779,
-                    height: card.elementStyles.height || 197
-                  },
-                  style: card.elementStyles
-                }
-              ]
-            : [
-                {
-                  type: 'text',
-                  content: card.content,
-                  position: { x: 96, y: 139 },
-                  size: { width: 779, height: 197 },
-                  style: {
-                    fontSize: 48,
-                    color: '#FFFFFF',
-                    fontFamily: 'Arial, sans-serif',
-                    fontWeight: 'bold',
-                    textAlign: 'center',
-                    textShadow: '2px 2px 4px rgba(0,0,0,0.8)',
-                    lineHeight: 1.2
-                  }
-                }
-              ]),
+          card.type === 'countdown'
+            ? []
+            : card.slideElements ||
+              (card.elementStyles
+                ? [
+                    {
+                      type: 'text',
+                      content: card.content,
+                      position: {
+                        x: card.elementStyles.left || 96,
+                        y: card.elementStyles.top || 139
+                      },
+                      size: {
+                        width: card.elementStyles.width || 779,
+                        height: card.elementStyles.height || 197
+                      },
+                      style: card.elementStyles
+                    }
+                  ]
+                : [
+                    {
+                      type: 'text',
+                      content: card.content,
+                      position: { x: 96, y: 139 },
+                      size: { width: 779, height: 197 },
+                      style: {
+                        fontSize: 48,
+                        color: '#FFFFFF',
+                        fontFamily: 'Arial, sans-serif',
+                        fontWeight: 'bold',
+                        textAlign: 'center',
+                        textShadow: '2px 2px 4px rgba(0,0,0,0.8)',
+                        lineHeight: 1.2
+                      }
+                    }
+                  ]),
         globalBackground: card.globalBackground,
-        slideBackground: card.slideBackground
+        slideBackground: card.slideBackground,
+        // Include countdown configuration for countdown cards
+        ...(card.type === 'countdown' &&
+          card.countdownConfig && { countdownConfig: card.countdownConfig })
       }
 
       console.log('🎯 [PROJECTION] Generated slideData:', {
         elementsCount: slideData.elements.length,
         elementTypes: slideData.elements.map((el) => el.type),
+        elements: slideData.elements.map((el, i) => ({
+          index: i,
+          type: el.type,
+          contentLength: el.content?.length || 0,
+          contentPreview: el.content?.substring(0, 50) + '...',
+          position: el.position,
+          size: el.size,
+          hasStyle: !!el.style
+        })),
         hasGlobalBackground: !!slideData.globalBackground,
         globalBackground: slideData.globalBackground,
         hasSlideBackground: !!slideData.slideBackground,
-        slideBackground: slideData.slideBackground
+        slideBackground: slideData.slideBackground,
+        hasCountdownConfig: !!slideData.countdownConfig,
+        countdownConfig: slideData.countdownConfig
+      })
+
+      console.log('🎯 [PROJECTION] Selected card slideElements:', {
+        hasSlideElements: !!card.slideElements,
+        slideElementsCount: card.slideElements?.length || 0,
+        slideElements: card.slideElements?.map((el, i) => ({
+          index: i,
+          type: el.type,
+          contentLength: el.content?.length || 0,
+          contentPreview: el.content?.substring(0, 50) + '...',
+          position: el.position,
+          size: el.size
+        }))
       })
 
       // Send rich content data to electron main process for second display
@@ -1276,7 +1368,7 @@ export default function Home(): JSX.Element {
 
   // Keyboard shortcuts
   useEffect(() => {
-    const handleKeyPress = (event: KeyboardEvent) => {
+    const handleKeyPress = (event: KeyboardEvent): void => {
       switch (event.code) {
         case 'Space':
           event.preventDefault()
@@ -1302,17 +1394,17 @@ export default function Home(): JSX.Element {
   }, [goToNextCard, goToPrevCard])
 
   // Projection controls
-  const toggleBlank = () => {
+  const toggleBlank = (): void => {
     setProjectionState((prev) => ({ ...prev, isBlank: !prev.isBlank }))
     window.electron?.ipcRenderer.send('toggle-blank', !projectionState.isBlank)
   }
 
-  const toggleLogo = () => {
+  const toggleLogo = (): void => {
     setProjectionState((prev) => ({ ...prev, showLogo: !prev.showLogo }))
     window.electron?.ipcRenderer.send('toggle-logo', !projectionState.showLogo)
   }
 
-  const stopProjection = () => {
+  const stopProjection = (): void => {
     setProjectionState((prev) => ({ ...prev, isProjecting: false, isBlank: false }))
     window.electron?.ipcRenderer.send('stop-projection')
   }
@@ -1576,7 +1668,7 @@ export default function Home(): JSX.Element {
         <div className="w-80 border-l bg-card">
           <div className="p-4 border-b">
             <h2 className="font-semibold text-lg">Live Preview</h2>
-            <p className="text-sm text-muted-foreground">What's being projected</p>
+            <p className="text-sm text-muted-foreground">What&apos;s being projected</p>
           </div>
 
           {/* Preview Area */}
@@ -1609,67 +1701,178 @@ export default function Home(): JSX.Element {
                     height: previewHeight
                   }}
                 >
-                  {/* Background Layer */}
-                  {selectedItem &&
-                    (() => {
-                      // Get the current song data for background
-                      const currentSong =
-                        selectedItem.type === 'song'
-                          ? songs.find((s) => s.id === selectedItem.referenceId)
-                          : null
+                  {/* Render the actual projected content */}
+                  {projectionState.isProjecting && !projectionState.isBlank && selectedCard ? (
+                    // Show the same content that's being projected
+                    <div className="absolute inset-0">
+                      {/* Background Layer */}
+                      {(() => {
+                        const background =
+                          selectedCard.slideBackground || selectedCard.globalBackground
 
-                      // Get global background from song
-                      const globalBackground = currentSong?.globalBackground
+                        return <BackgroundRenderer background={background} />
+                      })()}
 
-                      return (
-                        <>
-                          {/* Global Background */}
-                          {globalBackground?.type === 'video' && globalBackground.value && (
-                            <video
-                              className="absolute inset-0 w-full h-full object-cover"
-                              src={globalBackground.value}
-                              autoPlay
-                              loop
-                              muted
-                              playsInline
-                              style={{
-                                opacity: globalBackground.opacity || 1
-                              }}
-                            />
-                          )}
-                          {globalBackground?.type === 'image' && globalBackground.value && (
-                            <div
-                              className="absolute inset-0 w-full h-full bg-cover bg-center bg-no-repeat"
-                              style={{
-                                backgroundImage: `url(${globalBackground.value})`,
-                                opacity: globalBackground.opacity || 1
-                              }}
-                            />
-                          )}
-                        </>
-                      )
-                    })()}
+                      {/* Content Layer */}
+                      {selectedCard.type === 'countdown' && selectedCard.countdownConfig ? (
+                        // Render countdown with enhanced config
+                        <div className="absolute inset-0 flex flex-col items-center justify-center p-2 text-center">
+                          <div
+                            className="font-bold mb-1 text-xs"
+                            style={{
+                              color: selectedCard.countdownConfig.styling?.titleColor || '#FFFFFF',
+                              textShadow:
+                                selectedCard.countdownConfig.styling?.textShadow !== false
+                                  ? '1px 1px 2px rgba(0,0,0,0.8)'
+                                  : 'none'
+                            }}
+                          >
+                            {selectedCard.countdownConfig.title || 'Countdown'}
+                          </div>
 
-                  {/* Content Layer */}
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    {projectionState.isProjecting && !projectionState.isBlank ? (
-                      <div className="text-white text-center p-4 w-full h-full flex items-center justify-center">
-                        <div className="text-sm whitespace-pre-wrap font-bold drop-shadow-lg max-w-full overflow-hidden">
-                          {projectionState.currentContent}
+                          <div
+                            className="font-bold font-mono mb-1 text-lg"
+                            style={{
+                              color:
+                                selectedCard.countdownConfig.styling?.counterColor || '#FFFFFF',
+                              textShadow:
+                                selectedCard.countdownConfig.styling?.textShadow !== false
+                                  ? '1px 1px 2px rgba(0,0,0,0.8)'
+                                  : 'none'
+                            }}
+                          >
+                            {Math.floor((selectedCard.countdownConfig.duration || 300) / 60)}:
+                            {((selectedCard.countdownConfig.duration || 300) % 60)
+                              .toString()
+                              .padStart(2, '0')}
+                          </div>
+
+                          <div
+                            className="text-xs"
+                            style={{
+                              color:
+                                selectedCard.countdownConfig.styling?.messageColor || '#FFFFFF',
+                              textShadow:
+                                selectedCard.countdownConfig.styling?.textShadow !== false
+                                  ? '1px 1px 2px rgba(0,0,0,0.8)'
+                                  : 'none'
+                            }}
+                          >
+                            {selectedCard.countdownConfig.message || 'Starting Soon'}
+                          </div>
                         </div>
-                      </div>
-                    ) : projectionState.isBlank ? (
+                      ) : selectedCard.slideElements && selectedCard.slideElements.length > 0 ? (
+                        // Render multiple slide elements
+                        <>
+                          {selectedCard.slideElements
+                            .sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0))
+                            .map((element, index) => {
+                              const key = element.id || `preview-element-${index}`
+
+                              // Calculate proper scale factor based on preview container vs canvas size
+                              const scaleX = previewWidth / CANVAS_WIDTH
+                              const scaleY = previewHeight / CANVAS_HEIGHT
+                              const scale = Math.min(scaleX, scaleY) // Use the smaller scale to maintain aspect ratio
+
+                              const scaledLeft = element.position.x * scale
+                              const scaledTop = element.position.y * scale
+                              const scaledWidth = element.size.width * scale
+                              const scaledHeight = element.size.height * scale
+                              const scaledFontSize = (element.style.fontSize || 48) * scale
+
+                              if (element.type === 'text') {
+                                return (
+                                  <div
+                                    key={key}
+                                    className="absolute whitespace-pre-line overflow-hidden flex items-center"
+                                    style={{
+                                      left: `${scaledLeft}px`,
+                                      top: `${scaledTop}px`,
+                                      width: `${scaledWidth}px`,
+                                      height: `${scaledHeight}px`,
+                                      fontSize: `${Math.max(6, scaledFontSize)}px`,
+                                      color: element.style.color || '#FFFFFF',
+                                      fontFamily: element.style.fontFamily || 'Arial, sans-serif',
+                                      fontWeight: element.style.fontWeight || 'bold',
+                                      fontStyle: element.style.fontStyle || 'normal',
+                                      textShadow:
+                                        element.style.textShadow || '1px 1px 2px rgba(0,0,0,0.8)',
+                                      lineHeight: element.style.lineHeight || 1.3,
+                                      opacity: element.style.opacity || 1,
+                                      justifyContent:
+                                        element.style.textAlign === 'left'
+                                          ? 'flex-start'
+                                          : element.style.textAlign === 'right'
+                                            ? 'flex-end'
+                                            : 'center'
+                                    }}
+                                  >
+                                    <div
+                                      style={{
+                                        textAlign:
+                                          (element.style.textAlign as
+                                            | 'center'
+                                            | 'left'
+                                            | 'right'
+                                            | 'justify') || 'center',
+                                        width: '100%'
+                                      }}
+                                    >
+                                      {element.content}
+                                    </div>
+                                  </div>
+                                )
+                              } else if (element.type === 'image') {
+                                return (
+                                  <PreviewMediaElement
+                                    key={key}
+                                    element={element}
+                                    scaledLeft={scaledLeft}
+                                    scaledTop={scaledTop}
+                                    scaledWidth={scaledWidth}
+                                    scaledHeight={scaledHeight}
+                                  />
+                                )
+                              } else if (element.type === 'video') {
+                                return (
+                                  <PreviewMediaElement
+                                    key={key}
+                                    element={element}
+                                    scaledLeft={scaledLeft}
+                                    scaledTop={scaledTop}
+                                    scaledWidth={scaledWidth}
+                                    scaledHeight={scaledHeight}
+                                  />
+                                )
+                              }
+
+                              return null
+                            })}
+                        </>
+                      ) : (
+                        // Fallback: Render simple text content
+                        <div className="absolute inset-0 flex items-center justify-center p-2">
+                          <div className="text-white text-center text-xs font-bold drop-shadow-lg max-w-full overflow-hidden whitespace-pre-wrap">
+                            {selectedCard.content}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : projectionState.isBlank ? (
+                    <div className="absolute inset-0 flex items-center justify-center">
                       <div className="text-gray-500 text-center">
                         <MonitorOff className="w-8 h-8 mx-auto mb-2" />
                         <div className="text-sm">Screen Blanked</div>
                       </div>
-                    ) : (
+                    </div>
+                  ) : (
+                    <div className="absolute inset-0 flex items-center justify-center">
                       <div className="text-gray-500 text-center">
                         <Monitor className="w-8 h-8 mx-auto mb-2" />
                         <div className="text-sm">No Content</div>
                       </div>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
               )
             })()}

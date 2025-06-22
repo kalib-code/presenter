@@ -2,6 +2,11 @@
  * Media utilities for handling media references and URL resolution
  */
 
+// Helper function to check if content is a media reference
+export const isMediaReference = (content: string): boolean => {
+  return content.startsWith('media://')
+}
+
 // Helper function to resolve media references to actual URLs
 export const resolveMediaUrl = async (content: string): Promise<string> => {
   // Check if content is a media reference (starts with "media://")
@@ -9,76 +14,61 @@ export const resolveMediaUrl = async (content: string): Promise<string> => {
     const filename = content.replace('media://', '')
     console.log('🔍 [MEDIA_UTILS] Resolving media reference:', filename)
 
-    // Debug: Check what's available in the window context
-    console.log('🔍 [MEDIA_UTILS] Window context debug:', {
-      hasElectron: !!window.electron,
-      hasElectronInvoke: !!(window.electron && window.electron.invoke),
-      hasRequire: !!(window as { require?: unknown }).require,
-      hasProcess: typeof process !== 'undefined',
-      contextIsolated: typeof process !== 'undefined' ? process.contextIsolated : 'unknown'
-    })
-
-    // Try multiple methods to access IPC
-    let ipcResult: string | null = null
-
-    // Method 1: Use preload API if available
+    // Try to get file URL first (more efficient)
     if (window.electron && window.electron.invoke) {
-      console.log('🔍 [MEDIA_UTILS] Using preload API')
       try {
-        ipcResult = await window.electron.invoke('get-media-data-url', filename)
+        const fileUrl = await window.electron.invoke('get-media-file-url', filename)
+        if (fileUrl) {
+          console.log('✅ [MEDIA_UTILS] Got file URL:', filename)
+          return fileUrl
+        }
       } catch (error) {
-        console.error('❌ [MEDIA_UTILS] Preload API failed:', error)
+        console.warn('⚠️ [MEDIA_UTILS] File URL failed, falling back to data URL:', error)
       }
     }
 
-    // Method 2: Try direct electron access if preload failed
-    if (
-      !ipcResult &&
-      (
-        window as {
-          require?: (module: string) => {
-            ipcRenderer: { invoke: (channel: string, ...args: unknown[]) => Promise<unknown> }
-          }
-        }
-      ).require
-    ) {
-      console.log('🔍 [MEDIA_UTILS] Trying direct electron access')
+    // Fallback to data URL for compatibility
+    if (window.electron && window.electron.invoke) {
       try {
-        const electronModule = (
-          window as {
-            require: (module: string) => {
-              ipcRenderer: { invoke: (channel: string, ...args: unknown[]) => Promise<unknown> }
-            }
-          }
-        ).require('electron')
-        ipcResult = (await electronModule.ipcRenderer.invoke('get-media-data-url', filename)) as
-          | string
-          | null
+        const dataUrl = await window.electron.invoke('get-media-data-url', filename)
+        if (dataUrl) {
+          console.log('✅ [MEDIA_UTILS] Got data URL fallback:', filename)
+          return dataUrl
+        }
       } catch (error) {
-        console.error('❌ [MEDIA_UTILS] Direct electron access failed:', error)
+        console.error('❌ [MEDIA_UTILS] Both file URL and data URL failed:', error)
       }
     }
 
     // If no IPC access available, generate placeholder
-    if (!ipcResult) {
-      console.log(
-        '❌ [MEDIA_UTILS] No IPC access available or file not found, generating placeholder'
-      )
-      return generatePlaceholderDataUrl(filename)
-    }
-
-    console.log('✅ [MEDIA_UTILS] IPC response received:', {
-      success: !!ipcResult,
-      isDataUrl: ipcResult.startsWith('data:'),
-      responseType: typeof ipcResult,
-      urlLength: ipcResult.length
-    })
-
-    return ipcResult
+    console.log(
+      '❌ [MEDIA_UTILS] No IPC access available or file not found, generating placeholder'
+    )
+    return generatePlaceholderDataUrl(filename)
   }
 
-  // If it's already a data URL or regular URL, return as-is
+  // Check if content is a base64 data URL - return as-is for legacy support
+  if (content.startsWith('data:')) {
+    console.log('📋 [MEDIA_UTILS] Detected base64 data URL, using as-is (legacy support)')
+    return content
+  }
+
+  // If it's already a URL, return as-is
   return content
+}
+
+// New function to get file URL (more efficient than data URL)
+export const getMediaFileUrl = async (filename: string): Promise<string> => {
+  if (window.electron && window.electron.invoke) {
+    try {
+      const fileUrl = await window.electron.invoke('get-media-file-url', filename)
+      return fileUrl || generatePlaceholderDataUrl(filename)
+    } catch (error) {
+      console.error('❌ [MEDIA_UTILS] Failed to get file URL:', error)
+      return generatePlaceholderDataUrl(filename)
+    }
+  }
+  return generatePlaceholderDataUrl(filename)
 }
 
 // Generate a placeholder data URL for missing media files
@@ -137,11 +127,6 @@ const generatePlaceholderDataUrl = (filename: string): string => {
   return `data:image/svg+xml;base64,${btoa(svg)}`
 }
 
-// Check if a content string is a media reference
-export const isMediaReference = (content: string): boolean => {
-  return content.startsWith('media://')
-}
-
 // Extract filename from media reference
 export const getFilenameFromMediaReference = (content: string): string => {
   if (isMediaReference(content)) {
@@ -153,4 +138,45 @@ export const getFilenameFromMediaReference = (content: string): string => {
 // Create a media reference from filename
 export const createMediaReference = (filename: string): string => {
   return `media://${filename}`
+}
+
+// Helper to save file to media folder and return media reference
+export const saveFileToMedia = async (file: File): Promise<string> => {
+  if (!window.electron || !window.electron.invoke) {
+    throw new Error('Electron IPC not available')
+  }
+
+  try {
+    // Convert file to buffer for IPC
+    const arrayBuffer = await file.arrayBuffer()
+    const buffer = new Uint8Array(arrayBuffer)
+
+    // Save file and get filename
+    const result = await window.electron.invoke('save-media-file', {
+      filename: file.name,
+      buffer: Array.from(buffer),
+      mimeType: file.type,
+      size: file.size
+    })
+
+    console.log('✅ [MEDIA_UTILS] File saved to media folder:', result.filename)
+    return createMediaReference(result.filename)
+  } catch (error) {
+    console.error('❌ [MEDIA_UTILS] Failed to save file to media:', error)
+    throw error
+  }
+}
+
+// Helper to check if a media file exists
+export const mediaFileExists = async (filename: string): Promise<boolean> => {
+  if (!window.electron || !window.electron.invoke) {
+    return false
+  }
+
+  try {
+    return await window.electron.invoke('media-file-exists', filename)
+  } catch (error) {
+    console.error('❌ [MEDIA_UTILS] Failed to check media file existence:', error)
+    return false
+  }
 }

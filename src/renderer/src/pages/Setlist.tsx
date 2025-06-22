@@ -61,6 +61,7 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { Setlist, SetlistItem } from '@renderer/types/database'
+import { CountdownConfig } from '@renderer/components/ui/countdown-config'
 
 // Sortable Item Component
 interface SortableItemProps {
@@ -262,6 +263,10 @@ export default function Setlist(): JSX.Element {
   const [editingItem, setEditingItem] = useState<SetlistItem | null>(null)
   const [editItemDuration, setEditItemDuration] = useState('')
   const [editItemNotes, setEditItemNotes] = useState('')
+
+  // Countdown configuration modal state
+  const [isCountdownConfigOpen, setIsCountdownConfigOpen] = useState(false)
+  const [pendingCountdownTitle, setPendingCountdownTitle] = useState('')
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -549,6 +554,50 @@ export default function Setlist(): JSX.Element {
     setEditingItem(null)
     setEditItemDuration('')
     setEditItemNotes('')
+  }
+
+  const handleSaveCountdownConfig = async (
+    config: NonNullable<SetlistItem['countdownConfig']>
+  ): Promise<void> => {
+    if (!selectedSetlist) {
+      console.error('❌ No selected setlist when trying to add countdown')
+      return
+    }
+
+    console.log('➕ Adding enhanced countdown to setlist:', {
+      config,
+      title: pendingCountdownTitle,
+      setlistId: selectedSetlist.id
+    })
+
+    const newItem: Omit<SetlistItem, 'id' | 'order'> = {
+      type: 'countdown',
+      referenceId: 'new',
+      title: config.title || pendingCountdownTitle,
+      duration: config.duration || 300,
+      notes: '',
+      isActive: true,
+      // Legacy properties for backward compatibility
+      countdownDuration: config.duration,
+      countdownMessage: config.message,
+      // Enhanced configuration
+      countdownConfig: config
+    }
+
+    console.log('🛠️ Created enhanced countdown item:', newItem)
+
+    // Wait for the addItem operation to complete
+    await addItem(selectedSetlist.id, newItem)
+    setIsCountdownConfigOpen(false)
+    setPendingCountdownTitle('')
+
+    // Get the fresh state directly from the store
+    const freshSetlists = useSetlistStore.getState().setlists
+    const updatedSetlist = freshSetlists.find((s) => s.id === selectedSetlist.id)
+    if (updatedSetlist) {
+      setSelectedSetlist(updatedSetlist)
+      console.log('📊 After adding countdown - Updated setlist items:', updatedSetlist.items.length)
+    }
   }
 
   if (isLoading) {
@@ -1126,7 +1175,10 @@ export default function Setlist(): JSX.Element {
                         'countdown timer'.includes(addItemSearchTerm.toLowerCase())) && (
                         <div
                           className="flex items-center justify-between p-3 border rounded-lg hover:bg-accent cursor-pointer transition-colors border-dashed"
-                          onClick={() => handleAddItem('countdown', 'new', 'Countdown Timer')}
+                          onClick={() => {
+                            setPendingCountdownTitle('Countdown Timer')
+                            setIsCountdownConfigOpen(true)
+                          }}
                         >
                           <div className="flex items-center space-x-3">
                             <div className="p-2 bg-red-100 dark:bg-red-900 rounded">
@@ -1309,6 +1361,16 @@ export default function Setlist(): JSX.Element {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Countdown Configuration Modal */}
+      <CountdownConfig
+        isOpen={isCountdownConfigOpen}
+        onClose={() => {
+          setIsCountdownConfigOpen(false)
+          setPendingCountdownTitle('')
+        }}
+        onSave={handleSaveCountdownConfig}
+      />
     </>
   )
 }

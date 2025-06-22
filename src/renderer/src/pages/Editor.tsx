@@ -21,6 +21,7 @@ import {
   ZoomOut
 } from 'lucide-react'
 import { useSongStore } from '@renderer/store/song'
+import { saveFileToMedia } from '@renderer/utils/mediaUtils'
 import type { Slide } from '@renderer/types/database'
 
 type EditorMode = 'song' | 'slide'
@@ -777,12 +778,15 @@ export default function Editor(): JSX.Element {
     setSelectedElement(newElement.id)
   }
 
-  const addImageElement = (event: React.ChangeEvent<HTMLInputElement>): void => {
+  const addImageElement = async (event: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
     const file = event.target.files?.[0]
     if (file && file.type.startsWith('image/')) {
-      const reader = new FileReader()
-      reader.onload = (e) => {
-        const result = e.target?.result as string
+      try {
+        console.log('🖼️ Adding image element:', file.name)
+
+        // Save file to media folder and get media reference
+        const mediaReference = await saveFileToMedia(file)
+        console.log('📸 Image saved with reference:', mediaReference)
 
         // Position new elements within the safe area
         const safeX = 60 + Math.random() * (960 - 120 - 200) // Random X within safe area
@@ -793,7 +797,7 @@ export default function Editor(): JSX.Element {
           type: 'image',
           position: { x: Math.floor(safeX), y: Math.floor(safeY) },
           size: { width: 200, height: 150 },
-          content: result, // Store base64 image data
+          content: mediaReference, // Store media reference instead of base64
           style: {
             fontSize: 16,
             fontFamily: 'Arial',
@@ -808,19 +812,25 @@ export default function Editor(): JSX.Element {
         }
         setCanvasElements([...canvasElements, newElement])
         setSelectedElement(newElement.id)
+
+        console.log('✅ Image element added successfully')
+      } catch (error) {
+        console.error('❌ Failed to add image element:', error)
       }
-      reader.readAsDataURL(file)
     }
     // Reset the input value so the same file can be selected again
     event.target.value = ''
   }
 
-  const addVideoElement = (event: React.ChangeEvent<HTMLInputElement>): void => {
+  const addVideoElement = async (event: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
     const file = event.target.files?.[0]
     if (file && file.type.startsWith('video/')) {
-      const reader = new FileReader()
-      reader.onload = (e) => {
-        const result = e.target?.result as string
+      try {
+        console.log('🎬 Adding video element:', file.name)
+
+        // Save file to media folder and get media reference
+        const mediaReference = await saveFileToMedia(file)
+        console.log('📹 Video saved with reference:', mediaReference)
 
         // Position new elements within the safe area
         const safeX = 60 + Math.random() * (960 - 120 - 320) // Random X within safe area
@@ -831,7 +841,7 @@ export default function Editor(): JSX.Element {
           type: 'video',
           position: { x: Math.floor(safeX), y: Math.floor(safeY) },
           size: { width: 320, height: 180 },
-          content: result, // Store base64 video data
+          content: mediaReference, // Store media reference instead of base64
           style: {
             fontSize: 16,
             fontFamily: 'Arial',
@@ -846,8 +856,11 @@ export default function Editor(): JSX.Element {
         }
         setCanvasElements([...canvasElements, newElement])
         setSelectedElement(newElement.id)
+
+        console.log('✅ Video element added successfully')
+      } catch (error) {
+        console.error('❌ Failed to add video element:', error)
       }
-      reader.readAsDataURL(file)
     }
     // Reset the input value so the same file can be selected again
     event.target.value = ''
@@ -895,16 +908,25 @@ export default function Editor(): JSX.Element {
     }
   }
 
-  const handleBackgroundImageUpload = (event: React.ChangeEvent<HTMLInputElement>): void => {
+  const handleBackgroundImageUpload = async (
+    event: React.ChangeEvent<HTMLInputElement>
+  ): Promise<void> => {
     const file = event.target.files?.[0]
     if (file && file.type.startsWith('image/')) {
-      const reader = new FileReader()
-      reader.onload = (e) => {
-        const result = e.target?.result as string
-        setBackgroundImage(result)
+      try {
+        console.log('🖼️ Uploading background image:', file.name)
+
+        // Save file to media folder and get media reference
+        const mediaReference = await saveFileToMedia(file)
+        console.log('📸 Background image saved with reference:', mediaReference)
+
+        setBackgroundImage(mediaReference)
         setBackgroundVideo(null) // Clear video when image is selected
+
+        console.log('✅ Background image set successfully')
+      } catch (error) {
+        console.error('❌ Failed to upload background image:', error)
       }
-      reader.readAsDataURL(file)
     }
   }
 
@@ -993,17 +1015,25 @@ export default function Editor(): JSX.Element {
     })
   }
 
-  const handleGlobalBackgroundImageUpload = (event: React.ChangeEvent<HTMLInputElement>): void => {
+  const handleGlobalBackgroundImageUpload = async (
+    event: React.ChangeEvent<HTMLInputElement>
+  ): Promise<void> => {
     const file = event.target.files?.[0]
     if (file) {
-      const reader = new FileReader()
-      reader.onload = (e) => {
-        const result = e.target?.result as string
-        setGlobalBackgroundImage(result)
+      try {
+        console.log('🖼️ Uploading global background image:', file.name)
+
+        // Save file to media folder and get media reference
+        const mediaReference = await saveFileToMedia(file)
+        console.log('📸 Global background image saved with reference:', mediaReference)
+
+        setGlobalBackgroundImage(mediaReference)
         setGlobalBackgroundVideo(null) // Clear video when image is set
-        console.log('Global background image uploaded:', file.name)
+
+        console.log('✅ Global background image set successfully')
+      } catch (error) {
+        console.error('❌ Failed to upload global background image:', error)
       }
-      reader.readAsDataURL(file)
     }
     // Reset the input
     event.target.value = ''

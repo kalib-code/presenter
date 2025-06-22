@@ -19,6 +19,7 @@ export const MediaBrowser: React.FC<MediaBrowserProps> = ({
   mediaType = 'all',
   title = 'Select Media'
 }) => {
+  console.log('🎯 MediaBrowser render:', { isOpen, mediaType, title })
   const [media, setMedia] = useState<Media[]>([])
   const [filteredMedia, setFilteredMedia] = useState<Media[]>([])
   const [searchQuery, setSearchQuery] = useState('')
@@ -44,10 +45,20 @@ export const MediaBrowser: React.FC<MediaBrowserProps> = ({
   // Filter media based on type and search
   useEffect(() => {
     let filtered = media
+    console.log('🎯 Filtering media:', {
+      totalMedia: media.length,
+      mediaType,
+      searchQuery
+    })
 
     // Filter by media type
     if (mediaType !== 'all') {
       filtered = filtered.filter((file) => file.type === mediaType)
+      console.log('🎯 After type filter:', {
+        filteredCount: filtered.length,
+        requestedType: mediaType,
+        availableTypes: media.map((f) => f.type)
+      })
     }
 
     // Filter by search query
@@ -55,8 +66,10 @@ export const MediaBrowser: React.FC<MediaBrowserProps> = ({
       filtered = filtered.filter((file) =>
         file.name.toLowerCase().includes(searchQuery.toLowerCase())
       )
+      console.log('🎯 After search filter:', filtered.length)
     }
 
+    console.log('🎯 Final filtered media:', filtered.length)
     setFilteredMedia(filtered)
   }, [media, mediaType, searchQuery])
 
@@ -88,18 +101,18 @@ export const MediaBrowser: React.FC<MediaBrowserProps> = ({
   const handleSelect = useCallback(
     async (file: Media) => {
       if (onSelect) {
-        // Convert to data URL for preview
-        try {
-          const dataUrl = await window.electron?.invoke('get-media-data-url', file.filename)
-          const mediaWithDataUrl = {
-            ...file,
-            dataUrl: dataUrl || undefined
-          }
-          onSelect(mediaWithDataUrl)
-        } catch (error) {
-          console.error('Failed to get data URL for media:', file.filename, error)
-          onSelect(file) // Fall back to original file without data URL
+        // Return media reference instead of data URL
+        const mediaWithReference = {
+          ...file,
+          mediaReference: `media://${file.filename}`
         }
+        console.log(
+          '🎯 [MEDIA_BROWSER] Selected media:',
+          file.filename,
+          'Reference:',
+          mediaWithReference.mediaReference
+        )
+        onSelect(mediaWithReference)
       }
       onClose?.()
     },
@@ -114,17 +127,52 @@ export const MediaBrowser: React.FC<MediaBrowserProps> = ({
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
   }
 
-  if (!isOpen) return null
+  if (!isOpen) {
+    console.log('🎯 MediaBrowser not rendering (isOpen=false)')
+    return null
+  }
 
+  console.log('🎯 MediaBrowser rendering modal overlay', {
+    mediaType,
+    filteredMediaCount: filteredMedia.length,
+    hasSelectedFile: !!selectedFile,
+    selectedFileName: selectedFile?.name,
+    selectedFileId: selectedFile?.id
+  })
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-card border border-border rounded-lg w-[800px] h-[600px] flex flex-col">
+    <div
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999]"
+      style={{ pointerEvents: 'auto' }}
+      onClick={(e) => {
+        // Only close if clicking the overlay, not the modal content
+        if (e.target === e.currentTarget) {
+          console.log('🎯 Overlay clicked, closing modal')
+          onClose()
+        }
+      }}
+    >
+      <div
+        className="bg-card border border-border rounded-lg w-[800px] h-[600px] flex flex-col relative"
+        style={{ pointerEvents: 'auto' }}
+        onClick={(e) => {
+          // Prevent event bubbling to overlay
+          e.stopPropagation()
+          console.log('🎯 Modal content clicked')
+        }}
+      >
         {/* Header */}
         <div className="p-4 border-b border-border flex items-center justify-between">
           <h3 className="text-lg font-semibold text-card-foreground">{title}</h3>
-          <Button onClick={onClose} variant="ghost" size="sm">
+          <button
+            onClick={() => {
+              console.log('🎯 Close button clicked')
+              onClose()
+            }}
+            className="p-2 hover:bg-gray-100 rounded"
+            style={{ pointerEvents: 'auto' }}
+          >
             <X className="w-4 h-4" />
-          </Button>
+          </button>
         </div>
 
         {/* Search */}
@@ -164,7 +212,11 @@ export const MediaBrowser: React.FC<MediaBrowserProps> = ({
                   key={file.id}
                   file={file}
                   isSelected={selectedFile?.id === file.id}
-                  onClick={() => setSelectedFile(file)}
+                  onClick={() => {
+                    console.log('🎯 Media thumbnail clicked:', file.name, file.id)
+                    setSelectedFile(file)
+                    console.log('🎯 Selected file set to:', file)
+                  }}
                   getMediaUrl={getMediaUrl}
                   formatFileSize={formatFileSize}
                 />
@@ -179,13 +231,36 @@ export const MediaBrowser: React.FC<MediaBrowserProps> = ({
             {selectedFile ? `Selected: ${selectedFile.name}` : 'Select a media file'}
           </div>
           <div className="flex gap-2">
-            <Button onClick={onClose} variant="outline">
+            <button
+              onClick={() => {
+                console.log('🎯 Cancel button clicked')
+                onClose()
+              }}
+              className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-100"
+              style={{ pointerEvents: 'auto' }}
+            >
               Cancel
-            </Button>
-            <Button onClick={() => handleSelect(selectedFile as Media)} disabled={!selectedFile}>
-              <Check className="w-4 h-4 mr-2" />
+            </button>
+            <button
+              onClick={() => {
+                console.log('🎯 Select button clicked', { selectedFile })
+                if (selectedFile) {
+                  handleSelect(selectedFile as Media)
+                } else {
+                  console.log('🎯 No file selected')
+                }
+              }}
+              disabled={!selectedFile}
+              className={`px-4 py-2 rounded flex items-center gap-2 ${
+                selectedFile
+                  ? 'bg-blue-600 text-white hover:bg-blue-700'
+                  : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+              }`}
+              style={{ pointerEvents: 'auto' }}
+            >
+              <Check className="w-4 h-4" />
               Select
-            </Button>
+            </button>
           </div>
         </div>
       </div>

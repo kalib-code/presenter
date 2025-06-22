@@ -33,7 +33,7 @@ interface BackgroundState {
 
 interface BackgroundActions {
   // Slide background management
-  setSlideBackground: (type: 'image' | 'video', source: string, blob?: string) => void
+  setSlideBackground: (type: 'image' | 'video', source: string) => void
   removeSlideBackground: () => void
   setBackgroundOpacity: (opacity: number) => void
   setVideoPlaybackRate: (rate: number) => void
@@ -41,7 +41,7 @@ interface BackgroundActions {
   setVideoMuted: (muted: boolean) => void
 
   // Global background management
-  setGlobalBackground: (type: 'image' | 'video', source: string, blob?: string) => void
+  setGlobalBackground: (type: 'image' | 'video', source: string) => void
   removeGlobalBackground: () => void
   setGlobalBackgroundOpacity: (opacity: number) => void
   setGlobalVideoPlaybackRate: (rate: number) => void
@@ -93,7 +93,7 @@ export const useBackgroundStore = create<BackgroundStore>()(
   subscribeWithSelector((set, get) => ({
     ...initialState,
 
-    setSlideBackground: (type, source, blob) => {
+    setSlideBackground: (type, source) => {
       const state = get()
       const oldState = {
         type: state.backgroundType,
@@ -102,8 +102,8 @@ export const useBackgroundStore = create<BackgroundStore>()(
         blob: state.backgroundVideoBlob
       }
 
-      // Clean up old blob URL if exists
-      if (state.backgroundVideoBlob && state.backgroundVideoBlob !== blob) {
+      // Clean up old blob URL if exists (legacy cleanup)
+      if (state.backgroundVideoBlob) {
         URL.revokeObjectURL(state.backgroundVideoBlob)
       }
 
@@ -111,7 +111,7 @@ export const useBackgroundStore = create<BackgroundStore>()(
         backgroundType: type,
         backgroundImage: type === 'image' ? source : null,
         backgroundVideo: type === 'video' ? source : null,
-        backgroundVideoBlob: type === 'video' ? blob || null : null
+        backgroundVideoBlob: null // No longer using blob URLs
       }
 
       // Update the current slide's background data
@@ -238,7 +238,7 @@ export const useBackgroundStore = create<BackgroundStore>()(
       set({ videoMuted: muted })
     },
 
-    setGlobalBackground: (type, source, blob) => {
+    setGlobalBackground: (type, source) => {
       const state = get()
       const oldState = {
         type: state.globalBackgroundType,
@@ -247,8 +247,8 @@ export const useBackgroundStore = create<BackgroundStore>()(
         blob: state.globalBackgroundVideoBlob
       }
 
-      // Clean up old blob URL if exists
-      if (state.globalBackgroundVideoBlob && state.globalBackgroundVideoBlob !== blob) {
+      // Clean up old blob URL if exists (legacy cleanup)
+      if (state.globalBackgroundVideoBlob) {
         URL.revokeObjectURL(state.globalBackgroundVideoBlob)
       }
 
@@ -256,7 +256,7 @@ export const useBackgroundStore = create<BackgroundStore>()(
         globalBackgroundType: type,
         globalBackgroundImage: type === 'image' ? source : null,
         globalBackgroundVideo: type === 'video' ? source : null,
-        globalBackgroundVideoBlob: type === 'video' ? blob || null : null
+        globalBackgroundVideoBlob: null // No longer using blob URLs
       }
 
       // Create history action
