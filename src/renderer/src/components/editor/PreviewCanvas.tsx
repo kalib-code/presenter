@@ -1,7 +1,8 @@
 import React from 'react'
 import { useCanvasStore } from '@renderer/store/editor-canvas'
 import { useBackgroundStore } from '@renderer/store/editor-background'
-import { SlideRenderer, CANVAS_WIDTH, CANVAS_HEIGHT } from './SlideRenderer'
+import { SlideRenderer } from './SlideRenderer'
+import { CANVAS_WIDTH, CANVAS_HEIGHT } from '@renderer/constants/canvas'
 
 interface PreviewCanvasProps {
   className?: string

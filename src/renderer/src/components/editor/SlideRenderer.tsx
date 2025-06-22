@@ -1,4 +1,6 @@
 import React from 'react'
+import { ScalingConfig, scaleTextSize, screenManager } from '@renderer/utils/screenScaling'
+import { CANVAS_WIDTH, CANVAS_HEIGHT } from '@renderer/constants/canvas'
 
 interface SlideElement {
   id?: string // Optional to match existing data structure
@@ -38,11 +40,11 @@ interface SlideRendererProps {
   isPreview?: boolean // true for editor preview, false for live presentation
   showBlank?: boolean // hide text elements when true
   className?: string
+  scalingConfig?: ScalingConfig // Optional scaling config for projection scaling
+  useProjectionScaling?: boolean // Whether to use projection-aware scaling
 }
 
-// Standard canvas dimensions that both editor and presentation use as reference
-const CANVAS_WIDTH = 960
-const CANVAS_HEIGHT = 540
+// Canvas dimensions imported from constants
 
 export const SlideRenderer: React.FC<SlideRendererProps> = ({
   elements,
@@ -52,12 +54,26 @@ export const SlideRenderer: React.FC<SlideRendererProps> = ({
   containerHeight,
   isPreview = false,
   showBlank = false,
-  className = ''
+  className = '',
+  scalingConfig,
+  useProjectionScaling = false
 }) => {
+  // Get projection scaling config if requested
+  const projectionConfig =
+    useProjectionScaling && !scalingConfig ? screenManager.getCurrentScalingConfig() : scalingConfig
+
   // Calculate scaling factors to adapt from canvas coordinates to container size
-  const scaleX = containerWidth / CANVAS_WIDTH
-  const scaleY = containerHeight / CANVAS_HEIGHT
-  const scale = Math.min(scaleX, scaleY) // Use smaller scale to maintain aspect ratio
+  let scaleX = containerWidth / CANVAS_WIDTH
+  let scaleY = containerHeight / CANVAS_HEIGHT
+  let scale = Math.min(scaleX, scaleY) // Use smaller scale to maintain aspect ratio
+
+  // Override with projection scaling if available
+  if (projectionConfig && useProjectionScaling) {
+    // For projection, use the projection config's scaling
+    scaleX = projectionConfig.scaleX
+    scaleY = projectionConfig.scaleY
+    scale = projectionConfig.uniformScale
+  }
 
   // Calculate offsets to center the scaled canvas
   const scaledCanvasWidth = CANVAS_WIDTH * scale
@@ -174,7 +190,12 @@ export const SlideRenderer: React.FC<SlideRendererProps> = ({
             const scaledTop = element.position.y * scale + offsetY
             const scaledWidth = element.size.width * scale
             const scaledHeight = element.size.height * scale
-            const scaledFontSize = (style.fontSize || 48) * scale
+
+            // Use projection-aware text scaling if available
+            let scaledFontSize = (style.fontSize || 48) * scale
+            if (projectionConfig && useProjectionScaling) {
+              scaledFontSize = scaleTextSize(style.fontSize || 48, projectionConfig)
+            }
 
             return (
               <div
@@ -223,4 +244,4 @@ export const SlideRenderer: React.FC<SlideRendererProps> = ({
   )
 }
 
-export { CANVAS_WIDTH, CANVAS_HEIGHT }
+// Constants are now exported from @renderer/constants/canvas

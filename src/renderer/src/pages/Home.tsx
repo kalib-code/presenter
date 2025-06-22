@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useSetlistStore } from '@renderer/store/setlist'
 import { useSongStore } from '@renderer/store/song'
 import { usePresentationStore } from '@renderer/store/presentation'
+import { screenManager, DisplayInfo } from '@renderer/utils/screenScaling'
 import { Button } from '@renderer/components/ui/button'
 import { Badge } from '@renderer/components/ui/badge'
 import { Separator } from '@renderer/components/ui/separator'
@@ -310,7 +311,9 @@ function renderCardContent(card: ContentCard): JSX.Element {
             fontFamily: card.elementStyles?.fontFamily || 'Arial, sans-serif',
             fontWeight: card.elementStyles?.fontWeight || 'bold',
             fontStyle: card.elementStyles?.fontStyle || 'normal',
-            textAlign: (card.elementStyles?.textAlign as any) || 'center',
+            textAlign:
+              (card.elementStyles?.textAlign as 'center' | 'left' | 'right' | 'justify') ||
+              'center',
             textShadow: card.elementStyles?.textShadow || '1px 1px 2px rgba(0,0,0,0.8)',
             lineHeight: card.elementStyles?.lineHeight || 1.3,
             opacity: card.elementStyles?.opacity || 1,
@@ -387,7 +390,7 @@ function SortableContentCard({
 }
 
 export default function Home(): JSX.Element {
-  const { setlists, loadSetlists, startPresentation, updateSetlist } = useSetlistStore()
+  const { setlists, loadSetlists, updateSetlist } = useSetlistStore()
   const { songs, fetchSongs } = useSongStore()
   const { presentations, loadPresentations } = usePresentationStore()
 
@@ -404,6 +407,15 @@ export default function Home(): JSX.Element {
     currentTitle: ''
   })
 
+  // Screen detection state
+  const [availableDisplays, setAvailableDisplays] = useState<DisplayInfo[]>([])
+  const [currentProjectionDisplay, setCurrentProjectionDisplay] = useState<DisplayInfo | null>(null)
+  const [previewAspectRatio, setPreviewAspectRatio] = useState<number>(16 / 9) // Default 16:9
+  const [windowDimensions, setWindowDimensions] = useState({
+    width: window.innerWidth,
+    height: window.innerHeight
+  })
+
   // Drag and drop sensors
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -417,7 +429,56 @@ export default function Home(): JSX.Element {
     loadSetlists()
     fetchSongs()
     loadPresentations()
+
+    // Initialize screen manager
+    const initializeScreens = async () => {
+      await screenManager.initialize()
+      const displays = screenManager.getDisplays()
+      const projectionDisplay = screenManager.getCurrentProjectionDisplay()
+
+      setAvailableDisplays(displays)
+      setCurrentProjectionDisplay(projectionDisplay)
+
+      if (projectionDisplay) {
+        const aspectRatio = projectionDisplay.workArea.width / projectionDisplay.workArea.height
+        setPreviewAspectRatio(aspectRatio)
+        console.log('📺 [HOME] Initialized screens:', {
+          displaysCount: displays.length,
+          currentDisplay: projectionDisplay.id,
+          aspectRatio: aspectRatio.toFixed(3)
+        })
+      }
+    }
+
+    initializeScreens().catch(console.error)
+
+    // Listen for display changes
+    const unsubscribe = screenManager.onDisplaysChanged((displays) => {
+      console.log('📺 [HOME] Displays changed:', displays.length)
+      setAvailableDisplays(displays)
+      const currentDisplay = screenManager.getCurrentProjectionDisplay()
+      if (currentDisplay) {
+        setCurrentProjectionDisplay(currentDisplay)
+        const aspectRatio = currentDisplay.workArea.width / currentDisplay.workArea.height
+        setPreviewAspectRatio(aspectRatio)
+      }
+    })
+
+    return unsubscribe
   }, [loadSetlists, fetchSongs, loadPresentations])
+
+  // Listen for window resize events to update preview dimensions
+  useEffect(() => {
+    const handleResize = (): void => {
+      setWindowDimensions({
+        width: window.innerWidth,
+        height: window.innerHeight
+      })
+    }
+
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
 
   // Refresh data when window gains focus (to pick up changes made in editor)
   useEffect(() => {
@@ -1166,69 +1227,98 @@ export default function Home(): JSX.Element {
 
           {/* Preview Area */}
           <div className="p-4">
-            <div className="aspect-video bg-black rounded-lg border-2 border-dashed border-gray-300 relative overflow-hidden mb-4">
-              {/* Background Layer */}
-              {selectedItem &&
-                (() => {
-                  // Get the current song data for background
-                  const currentSong =
-                    selectedItem.type === 'song'
-                      ? songs.find((s) => s.id === selectedItem.referenceId)
-                      : null
+            {(() => {
+              // Calculate live preview dimensions based on current projection display and window size
+              const availableWidth = Math.min(300, windowDimensions.width * 0.2) // 20% of window width, max 300px
+              const maxHeight = Math.min(200, windowDimensions.height * 0.25) // 25% of window height, max 200px
 
-                  // Get global background from song
-                  const globalBackground = currentSong?.globalBackground
+              // Use dynamic aspect ratio if available, fallback to 16:9
+              const targetAspectRatio = currentProjectionDisplay
+                ? currentProjectionDisplay.workArea.width / currentProjectionDisplay.workArea.height
+                : 16 / 9
 
-                  return (
-                    <>
-                      {/* Global Background */}
-                      {globalBackground?.type === 'video' && globalBackground.value && (
-                        <video
-                          className="absolute inset-0 w-full h-full object-cover"
-                          src={globalBackground.value}
-                          autoPlay
-                          loop
-                          muted
-                          playsInline
-                          style={{
-                            opacity: globalBackground.opacity || 1
-                          }}
-                        />
-                      )}
-                      {globalBackground?.type === 'image' && globalBackground.value && (
-                        <div
-                          className="absolute inset-0 w-full h-full bg-cover bg-center bg-no-repeat"
-                          style={{
-                            backgroundImage: `url(${globalBackground.value})`,
-                            opacity: globalBackground.opacity || 1
-                          }}
-                        />
-                      )}
-                    </>
-                  )
-                })()}
+              // Calculate preview dimensions maintaining target aspect ratio
+              let previewWidth = availableWidth
+              let previewHeight = previewWidth / targetAspectRatio
 
-              {/* Content Layer */}
-              <div className="absolute inset-0 flex items-center justify-center">
-                {projectionState.isProjecting && !projectionState.isBlank ? (
-                  <div className="text-white text-center p-4 w-full h-full flex items-center justify-center">
-                    <div className="text-sm whitespace-pre-wrap font-bold drop-shadow-lg max-w-full overflow-hidden">
-                      {projectionState.currentContent}
-                    </div>
+              // If height exceeds max, scale down
+              if (previewHeight > maxHeight) {
+                previewHeight = maxHeight
+                previewWidth = previewHeight * targetAspectRatio
+              }
+
+              return (
+                <div
+                  className="bg-black rounded-lg border-2 border-dashed border-gray-300 relative overflow-hidden mb-4 mx-auto"
+                  style={{
+                    width: previewWidth,
+                    height: previewHeight
+                  }}
+                >
+                  {/* Background Layer */}
+                  {selectedItem &&
+                    (() => {
+                      // Get the current song data for background
+                      const currentSong =
+                        selectedItem.type === 'song'
+                          ? songs.find((s) => s.id === selectedItem.referenceId)
+                          : null
+
+                      // Get global background from song
+                      const globalBackground = currentSong?.globalBackground
+
+                      return (
+                        <>
+                          {/* Global Background */}
+                          {globalBackground?.type === 'video' && globalBackground.value && (
+                            <video
+                              className="absolute inset-0 w-full h-full object-cover"
+                              src={globalBackground.value}
+                              autoPlay
+                              loop
+                              muted
+                              playsInline
+                              style={{
+                                opacity: globalBackground.opacity || 1
+                              }}
+                            />
+                          )}
+                          {globalBackground?.type === 'image' && globalBackground.value && (
+                            <div
+                              className="absolute inset-0 w-full h-full bg-cover bg-center bg-no-repeat"
+                              style={{
+                                backgroundImage: `url(${globalBackground.value})`,
+                                opacity: globalBackground.opacity || 1
+                              }}
+                            />
+                          )}
+                        </>
+                      )
+                    })()}
+
+                  {/* Content Layer */}
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    {projectionState.isProjecting && !projectionState.isBlank ? (
+                      <div className="text-white text-center p-4 w-full h-full flex items-center justify-center">
+                        <div className="text-sm whitespace-pre-wrap font-bold drop-shadow-lg max-w-full overflow-hidden">
+                          {projectionState.currentContent}
+                        </div>
+                      </div>
+                    ) : projectionState.isBlank ? (
+                      <div className="text-gray-500 text-center">
+                        <MonitorOff className="w-8 h-8 mx-auto mb-2" />
+                        <div className="text-sm">Screen Blanked</div>
+                      </div>
+                    ) : (
+                      <div className="text-gray-500 text-center">
+                        <Monitor className="w-8 h-8 mx-auto mb-2" />
+                        <div className="text-sm">No Content</div>
+                      </div>
+                    )}
                   </div>
-                ) : projectionState.isBlank ? (
-                  <div className="text-gray-500 text-center">
-                    <MonitorOff className="w-8 h-8 mx-auto mb-2" />
-                    <div className="text-sm">Screen Blanked</div>
-                  </div>
-                ) : (
-                  <div className="text-gray-500 text-center">
-                    <Monitor className="w-8 h-8 mx-auto mb-2" />
-                    <div className="text-sm">No Content</div>
-                  </div>
-                )}
-              </div>
-            </div>
+                </div>
+              )
+            })()}
 
             {/* Projection Controls */}
             <div className="space-y-3">

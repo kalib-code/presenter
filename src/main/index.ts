@@ -678,40 +678,43 @@ async function initializeDatabases(): Promise<void> {
 function setupAutoUpdater(): void {
   // Configure auto-updater
   autoUpdater.checkForUpdatesAndNotify()
-  
+
   // Auto-updater events
   autoUpdater.on('checking-for-update', () => {
     console.log('Checking for update...')
   })
-  
+
   autoUpdater.on('update-available', (info) => {
     console.log('Update available:', info)
   })
-  
+
   autoUpdater.on('update-not-available', (info) => {
     console.log('Update not available:', info)
   })
-  
+
   autoUpdater.on('error', (err) => {
     console.log('Error in auto-updater:', err)
   })
-  
+
   autoUpdater.on('download-progress', (progressObj) => {
-    let log_message = "Download speed: " + progressObj.bytesPerSecond
+    let log_message = 'Download speed: ' + progressObj.bytesPerSecond
     log_message = log_message + ' - Downloaded ' + progressObj.percent + '%'
-    log_message = log_message + ' (' + progressObj.transferred + "/" + progressObj.total + ')'
+    log_message = log_message + ' (' + progressObj.transferred + '/' + progressObj.total + ')'
     console.log(log_message)
   })
-  
+
   autoUpdater.on('update-downloaded', (info) => {
     console.log('Update downloaded:', info)
     autoUpdater.quitAndInstall()
   })
 }
 
+// Main window reference
+let mainWindow: BrowserWindow | null = null
+
 function createWindow(): void {
   // Create the browser window.
-  const mainWindow = new BrowserWindow({
+  mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     show: false,
@@ -729,12 +732,12 @@ function createWindow(): void {
   })
 
   mainWindow.on('ready-to-show', () => {
-    mainWindow.show()
+    mainWindow?.show()
 
     // Auto-open DevTools in development
     if (is.dev) {
       console.log('Development mode: Opening DevTools')
-      mainWindow.webContents.openDevTools()
+      mainWindow?.webContents.openDevTools()
     }
   })
 
@@ -773,25 +776,58 @@ function createWindow(): void {
 
 // Projection window management
 let projectionWindow: BrowserWindow | null = null
+let currentProjectionDisplay: Electron.Display | null = null
+
+// Screen detection and management
+function getAllDisplays(): Electron.Display[] {
+  return screen.getAllDisplays()
+}
+
+function getProjectionDisplay(): Electron.Display {
+  // If no specific display set, try to find external display first
+  const displays = screen.getAllDisplays()
+  const primaryDisplay = screen.getPrimaryDisplay()
+
+  // Prefer external display over primary if available
+  const externalDisplay = displays.find((display) => display.id !== primaryDisplay.id)
+  const targetDisplay = externalDisplay || primaryDisplay
+
+  console.log(
+    '📺 [SCREEN] Available displays:',
+    displays.map((d) => ({
+      id: d.id,
+      bounds: d.bounds,
+      workArea: d.workArea,
+      scaleFactor: d.scaleFactor,
+      isPrimary: d.id === primaryDisplay.id
+    }))
+  )
+
+  console.log('📺 [SCREEN] Selected projection display:', {
+    id: targetDisplay.id,
+    bounds: targetDisplay.bounds,
+    workArea: targetDisplay.workArea,
+    scaleFactor: targetDisplay.scaleFactor,
+    isPrimary: targetDisplay.id === primaryDisplay.id
+  })
+
+  return targetDisplay
+}
 
 function createProjectionWindow(): BrowserWindow {
   console.log('Creating projection window...')
 
-  // Get primary display
-  const primaryDisplay = screen.getPrimaryDisplay()
-  console.log('Using primary display:', {
-    id: primaryDisplay.id,
-    bounds: primaryDisplay.bounds
-  })
+  // Get the best display for projection
+  currentProjectionDisplay = getProjectionDisplay()
+  const { bounds, workArea } = currentProjectionDisplay
 
-  // Create window on primary display, offset from main window
-  const { width, height } = primaryDisplay.workAreaSize
-  const windowWidth = Math.min(1200, width - 100)
-  const windowHeight = Math.min(800, height - 100)
+  // Use full work area for projection window (can be toggled to fullscreen later)
+  const windowWidth = Math.min(1200, workArea.width - 100)
+  const windowHeight = Math.min(800, workArea.height - 100)
 
   projectionWindow = new BrowserWindow({
-    x: 100,
-    y: 100,
+    x: bounds.x + 100,
+    y: bounds.y + 100,
     width: windowWidth,
     height: windowHeight,
     fullscreen: false,
@@ -892,20 +928,71 @@ app.whenReady().then(() => {
 
   // Initialize databases
   initializeDatabases()
-  
+
   // Setup auto-updater
   setupAutoUpdater()
 
   // IPC test
   ipcMain.handle('ping', () => 'pong')
-  
+
   // Auto-updater IPC handlers
   ipcMain.handle('check-for-updates', async () => {
     return await autoUpdater.checkForUpdatesAndNotify()
   })
-  
+
   ipcMain.handle('quit-and-install', () => {
     autoUpdater.quitAndInstall()
+  })
+
+  // IPC handlers - Screen Detection
+  ipcMain.handle('get-displays', () => {
+    return getAllDisplays()
+  })
+
+  ipcMain.handle('get-projection-display', () => {
+    return currentProjectionDisplay || getProjectionDisplay()
+  })
+
+  ipcMain.handle('set-projection-display', (_event, displayId: number) => {
+    const displays = getAllDisplays()
+    const targetDisplay = displays.find((d) => d.id === displayId)
+    if (targetDisplay) {
+      currentProjectionDisplay = targetDisplay
+      console.log('📺 [SCREEN] Switched projection display to:', {
+        id: targetDisplay.id,
+        bounds: targetDisplay.bounds,
+        workArea: targetDisplay.workArea
+      })
+
+      // Recreate projection window on new display if it exists
+      if (projectionWindow && !projectionWindow.isDestroyed()) {
+        const wasVisible = projectionWindow.isVisible()
+        projectionWindow.close()
+        projectionWindow = createProjectionWindow()
+        if (wasVisible) {
+          projectionWindow.show()
+        }
+      }
+
+      return targetDisplay
+    }
+    return null
+  })
+
+  // Monitor display changes
+  screen.on('display-added', () => {
+    console.log('📺 [SCREEN] Display added, notifying renderer')
+    mainWindow?.webContents.send('displays-changed', getAllDisplays())
+  })
+
+  screen.on('display-removed', () => {
+    console.log('📺 [SCREEN] Display removed, notifying renderer')
+    mainWindow?.webContents.send('displays-changed', getAllDisplays())
+  })
+
+  screen.on('display-metrics-changed', () => {
+    console.log('📺 [SCREEN] Display metrics changed, notifying renderer')
+    mainWindow?.webContents.send('displays-changed', getAllDisplays())
   })
 
   // IPC handlers - Songs

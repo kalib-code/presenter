@@ -70,6 +70,11 @@ export default function Presentation(): JSX.Element {
     currentData: null
   })
 
+  const [windowDimensions, setWindowDimensions] = useState({
+    width: window.innerWidth,
+    height: window.innerHeight
+  })
+
   // Listen for projection updates from main process
   useEffect(() => {
     const handleProjectionUpdate = (_event: unknown, data: ProjectionData): void => {
@@ -136,6 +141,19 @@ export default function Presentation(): JSX.Element {
         ipcRenderer.removeAllListeners('projection-stop')
       }
     }
+  }, [])
+
+  // Listen for window resize events
+  useEffect(() => {
+    const handleResize = (): void => {
+      setWindowDimensions({
+        width: window.innerWidth,
+        height: window.innerHeight
+      })
+    }
+
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
   }, [])
 
   // Render blank screen (background only, no text)
@@ -313,9 +331,7 @@ export default function Presentation(): JSX.Element {
               objectFit: objectFit,
               objectPosition: objectPosition,
               opacity: background.opacity || 1,
-              zIndex: 1,
-              // Add a border for debugging - remove this later
-              border: '2px solid red'
+              zIndex: 1
             }}
             onLoadStart={() => console.log('📺 [PRESENTATION] Video load started')}
             onCanPlay={(e) => {
@@ -356,9 +372,7 @@ export default function Presentation(): JSX.Element {
                   : (backgroundSize as 'cover' | 'contain' | 'fill') || 'cover',
               objectPosition: backgroundPosition,
               opacity: background.opacity || 1,
-              zIndex: 1,
-              // Add a border for debugging - remove this later
-              border: '2px solid blue'
+              zIndex: 1
             }}
             onLoad={() => console.log('📺 [PRESENTATION] Image loaded')}
             onError={(e) => console.error('📺 [PRESENTATION] Image error:', e)}
@@ -378,11 +392,12 @@ export default function Presentation(): JSX.Element {
           elements={currentData.slideData.elements}
           slideBackground={currentData.slideData.slideBackground}
           globalBackground={currentData.slideData.globalBackground}
-          containerWidth={window.innerWidth}
-          containerHeight={window.innerHeight}
+          containerWidth={windowDimensions.width}
+          containerHeight={windowDimensions.height}
           isPreview={false}
           showBlank={presentationState.isBlank}
           className="w-full h-screen"
+          useProjectionScaling={true}
         />
       )
     }
