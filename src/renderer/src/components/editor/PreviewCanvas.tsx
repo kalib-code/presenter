@@ -47,18 +47,51 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
   let slideBackground = undefined
   let globalBackground = undefined
 
+  console.log('🎨 [PREVIEW_CANVAS] Background state:', {
+    slideBackgroundType,
+    slideBackgroundImage: slideBackgroundImage?.substring(0, 50) + '...',
+    slideBackgroundVideo: slideBackgroundVideo?.substring(0, 50) + '...',
+    globalBackgroundType,
+    globalBackgroundImage: globalBackgroundImage?.substring(0, 50) + '...',
+    globalBackgroundVideo: globalBackgroundVideo?.substring(0, 50) + '...'
+  })
+
   if (slideBackgroundType !== 'none') {
+    const value = slideBackgroundType === 'image' 
+      ? slideBackgroundImage 
+      : slideBackgroundType === 'video' 
+        ? slideBackgroundVideo 
+        : ''
+    
+    console.log('🎨 [PREVIEW_CANVAS] Creating slide background:', {
+      type: slideBackgroundType,
+      value: value?.substring(0, 50) + '...',
+      opacity: slideBackgroundOpacity
+    })
+    
     slideBackground = {
       type: slideBackgroundType,
-      value: slideBackgroundVideoBlob || slideBackgroundVideo || slideBackgroundImage || '',
+      value: value || '',
       opacity: slideBackgroundOpacity,
       size: backgroundSize,
       position: backgroundPosition
     }
   } else if (globalBackgroundType !== 'none') {
+    const value = globalBackgroundType === 'image' 
+      ? globalBackgroundImage 
+      : globalBackgroundType === 'video' 
+        ? globalBackgroundVideo 
+        : ''
+        
+    console.log('🎨 [PREVIEW_CANVAS] Creating global background:', {
+      type: globalBackgroundType,
+      value: value?.substring(0, 50) + '...',
+      opacity: globalBackgroundOpacity
+    })
+    
     globalBackground = {
       type: globalBackgroundType,
-      value: globalBackgroundVideoBlob || globalBackgroundVideo || globalBackgroundImage || '',
+      value: value || '',
       opacity: globalBackgroundOpacity,
       size: backgroundSize,
       position: backgroundPosition

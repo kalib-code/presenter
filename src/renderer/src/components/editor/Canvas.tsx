@@ -64,6 +64,11 @@ export const Canvas: React.FC<CanvasProps> = ({ className = '' }) => {
 
   // Resolve slide background image URL
   useEffect(() => {
+    console.log('🎨 [CANVAS] Slide background image effect triggered:', {
+      slideBackgroundImage: slideBackgroundImage || 'null',
+      slideBackgroundType
+    })
+    
     if (slideBackgroundImage) {
       console.log('🎨 [CANVAS] Resolving slide background image:', slideBackgroundImage)
       resolveMediaUrl(slideBackgroundImage)
@@ -76,9 +81,10 @@ export const Canvas: React.FC<CanvasProps> = ({ className = '' }) => {
           setResolvedSlideImageUrl(null)
         })
     } else {
+      console.log('🎨 [CANVAS] No slide background image, clearing resolved URL')
       setResolvedSlideImageUrl(null)
     }
-  }, [slideBackgroundImage])
+  }, [slideBackgroundImage, slideBackgroundType])
 
   // Resolve slide background video URL
   useEffect(() => {
@@ -131,13 +137,15 @@ export const Canvas: React.FC<CanvasProps> = ({ className = '' }) => {
 
   // Debug background state
   useEffect(() => {
-    console.log('🎨 [CANVAS] Background state:', {
+    console.log('🎨 [CANVAS] Background state update:', {
       slideBackgroundType,
-      slideBackgroundImage: slideBackgroundImage?.substring(0, 50) + '...',
-      resolvedSlideImageUrl: resolvedSlideImageUrl?.substring(0, 50) + '...',
+      slideBackgroundImage: slideBackgroundImage || 'null',
+      resolvedSlideImageUrl: resolvedSlideImageUrl || 'null',
       globalBackgroundType,
-      globalBackgroundImage: globalBackgroundImage?.substring(0, 50) + '...',
-      resolvedGlobalImageUrl: resolvedGlobalImageUrl?.substring(0, 50) + '...'
+      globalBackgroundImage: globalBackgroundImage || 'null', 
+      resolvedGlobalImageUrl: resolvedGlobalImageUrl || 'null',
+      willRenderSlideBackground: slideBackgroundType === 'image' && !!resolvedSlideImageUrl,
+      willRenderGlobalBackground: slideBackgroundType === 'none' && globalBackgroundType === 'image' && !!resolvedGlobalImageUrl
     })
   }, [
     slideBackgroundType,
@@ -348,7 +356,11 @@ export const Canvas: React.FC<CanvasProps> = ({ className = '' }) => {
       {/* Canvas */}
       <div
         ref={canvasRef}
-        className="relative bg-slate-900 dark:bg-slate-100 border border-border rounded-lg cursor-default overflow-hidden"
+        className={`relative border border-border rounded-lg cursor-default overflow-hidden ${
+          slideBackgroundType === 'none' && globalBackgroundType === 'none' 
+            ? 'bg-slate-900 dark:bg-slate-100' 
+            : ''
+        }`}
         style={{
           width: canvasSize.width,
           height: canvasSize.height,
@@ -363,19 +375,43 @@ export const Canvas: React.FC<CanvasProps> = ({ className = '' }) => {
           <>
             {/* Slide Background */}
             {slideBackgroundType === 'image' && resolvedSlideImageUrl && (
-              <div
-                className="absolute inset-0 pointer-events-none"
-                style={{
-                  backgroundImage: `url(${resolvedSlideImageUrl})`,
-                  backgroundSize: backgroundSize === 'none' ? 'auto' : backgroundSize,
-                  backgroundPosition: backgroundPosition,
-                  backgroundRepeat: backgroundSize === 'none' ? 'no-repeat' : 'no-repeat',
-                  opacity: slideBackgroundOpacity,
-                  zIndex: 0
-                }}
-                onLoad={() => console.log('🎨 [CANVAS] Slide background image loaded successfully')}
-                onError={() => console.error('🎨 [CANVAS] Slide background image failed to load')}
-              />
+              <>
+                {console.log('🎨 [CANVAS] Rendering slide background div:', {
+                  slideBackgroundType,
+                  resolvedSlideImageUrl: resolvedSlideImageUrl,
+                  backgroundSize,
+                  backgroundPosition,
+                  slideBackgroundOpacity,
+                  urlLength: resolvedSlideImageUrl.length
+                })}
+                <div
+                  className="absolute inset-0 pointer-events-none"
+                  style={{
+                    backgroundImage: `url("${resolvedSlideImageUrl}")`,
+                    backgroundSize: backgroundSize === 'none' ? 'auto' : backgroundSize,
+                    backgroundPosition: backgroundPosition,
+                    backgroundRepeat: 'no-repeat',
+                    opacity: slideBackgroundOpacity,
+                    zIndex: 0,
+                    width: '100%',
+                    height: '100%'
+                  }}
+                  onLoad={() => console.log('🎨 [CANVAS] Slide background image loaded successfully')}
+                  onError={() => console.error('🎨 [CANVAS] Slide background image failed to load')}
+                />
+                {/* Hidden image element to test if the URL loads */}
+                <img
+                  src={resolvedSlideImageUrl}
+                  onLoad={() =>
+                    console.log('🎨 [CANVAS] Slide background image test load successful')
+                  }
+                  onError={(e) =>
+                    console.error('🎨 [CANVAS] Slide background image test load failed:', e)
+                  }
+                  style={{ display: 'none' }}
+                  alt=""
+                />
+              </>
             )}
             {slideBackgroundType === 'image' && !resolvedSlideImageUrl && (
               <div className="absolute inset-0 pointer-events-none bg-red-100 flex items-center justify-center text-red-600 text-sm">
@@ -421,9 +457,11 @@ export const Canvas: React.FC<CanvasProps> = ({ className = '' }) => {
                     backgroundImage: `url("${resolvedGlobalImageUrl}")`,
                     backgroundSize: backgroundSize === 'none' ? 'auto' : backgroundSize,
                     backgroundPosition: backgroundPosition,
-                    backgroundRepeat: backgroundSize === 'none' ? 'no-repeat' : 'no-repeat',
+                    backgroundRepeat: 'no-repeat',
                     opacity: globalBackgroundOpacity,
-                    zIndex: 0
+                    zIndex: 0,
+                    width: '100%',
+                    height: '100%'
                   }}
                 />
                 {/* Hidden image element to test if the URL loads */}

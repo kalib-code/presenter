@@ -321,31 +321,46 @@ export const useSlidesStore = create<SlidesStore>()(
           currentSlideIndex: index
         })
 
-        // Load background for the new slide
+        // Load background for the new slide - direct store update to avoid circular dependency
         const newSlide = updatedSlides[index]
         console.log('🔄 [SLIDES] Loading background for slide', index, ':', newSlide?.background)
         if (newSlide?.background) {
           const { type, value, opacity, playbackRate } = newSlide.background
-          console.log('🔄 [SLIDES] Setting slide background:', {
+          console.log('🔄 [SLIDES] Setting slide background directly:', {
             type,
             value: value.substring(0, 50) + '...',
             opacity
           })
+          // Update background store directly without triggering slide update
           if (type === 'image') {
-            backgroundState.setSlideBackground('image', value)
+            useBackgroundStore.setState({
+              backgroundType: 'image',
+              backgroundImage: value,
+              backgroundVideo: null,
+              backgroundVideoBlob: null,
+              backgroundOpacity: opacity !== undefined ? opacity : 1
+            })
           } else if (type === 'video') {
-            backgroundState.setSlideBackground('video', value)
-          }
-          if (opacity !== undefined) {
-            backgroundState.setBackgroundOpacity(opacity)
+            useBackgroundStore.setState({
+              backgroundType: 'video',
+              backgroundImage: null,
+              backgroundVideo: value,
+              backgroundVideoBlob: null,
+              backgroundOpacity: opacity !== undefined ? opacity : 1
+            })
           }
           if (playbackRate !== undefined) {
-            backgroundState.setVideoPlaybackRate(playbackRate)
+            useBackgroundStore.setState({ videoPlaybackRate: playbackRate })
           }
         } else {
           // Clear slide background if new slide has no background
           console.log('🔄 [SLIDES] No background for slide, clearing background store')
-          backgroundState.removeSlideBackground()
+          useBackgroundStore.setState({
+            backgroundType: 'none',
+            backgroundImage: null,
+            backgroundVideo: null,
+            backgroundVideoBlob: null
+          })
         }
 
         // Load canvas elements for the new slide (use updated slides)

@@ -1191,6 +1191,15 @@ export default function Home(): JSX.Element {
           const slideIndex = parseInt(card.id.split('-slide-')[1]?.split('-')[0] || '0')
           const slide = updatedSong.slides?.[slideIndex]
 
+          console.log('🎯 [PROJECTION] Song slide index parsing:', {
+            cardId: card.id,
+            parsedSlideIndex: slideIndex,
+            totalSlides: updatedSong.slides?.length || 0,
+            foundSlide: !!slide,
+            slideBackground: slide?.background,
+            originalCardSlideBackground: card.slideBackground
+          })
+
           if (slide) {
             // Update the card with fresh background data
             card = {
@@ -1205,6 +1214,8 @@ export default function Home(): JSX.Element {
               hasGlobalBackground: !!card.globalBackground,
               globalBackground: card.globalBackground
             })
+          } else {
+            console.warn('🎯 [PROJECTION] Could not find slide for index:', slideIndex, 'in song:', updatedSong.name)
           }
         }
       }
@@ -1221,6 +1232,15 @@ export default function Home(): JSX.Element {
           const slideIndex = parseInt(card.id.split('-slide-')[1]?.split('-')[0] || '0')
           const slide = updatedPresentation.slides?.[slideIndex]
 
+          console.log('🎯 [PROJECTION] Presentation slide index parsing:', {
+            cardId: card.id,
+            parsedSlideIndex: slideIndex,
+            totalSlides: updatedPresentation.slides?.length || 0,
+            foundSlide: !!slide,
+            slideBackground: slide?.background,
+            originalCardSlideBackground: card.slideBackground
+          })
+
           if (slide) {
             // Update the card with fresh background data
             card = {
@@ -1235,6 +1255,8 @@ export default function Home(): JSX.Element {
               hasGlobalBackground: !!card.globalBackground,
               globalBackground: card.globalBackground
             })
+          } else {
+            console.warn('🎯 [PROJECTION] Could not find slide for index:', slideIndex, 'in presentation:', updatedPresentation.name)
           }
         }
       }

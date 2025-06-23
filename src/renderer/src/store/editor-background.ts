@@ -131,7 +131,11 @@ export const useBackgroundStore = create<BackgroundStore>()(
             opacity: state.backgroundOpacity,
             playbackRate: state.videoPlaybackRate
           }
-          slidesState.updateSlideBackground(currentIndex, backgroundData)
+          // Update slide background without triggering setCurrentSlide
+          const updatedSlides = slidesState.slides.map((slide, i) =>
+            i === currentIndex ? { ...slide, background: backgroundData } : slide
+          )
+          useSlidesStore.setState({ slides: updatedSlides })
         })
         .catch(console.error)
 
@@ -184,7 +188,11 @@ export const useBackgroundStore = create<BackgroundStore>()(
         .then(({ useSlidesStore }) => {
           const slidesState = useSlidesStore.getState()
           const currentIndex = slidesState.currentSlideIndex
-          slidesState.updateSlideBackground(currentIndex, undefined)
+          // Update slide background without triggering setCurrentSlide
+          const updatedSlides = slidesState.slides.map((slide, i) =>
+            i === currentIndex ? { ...slide, background: undefined } : slide
+          )
+          useSlidesStore.setState({ slides: updatedSlides })
         })
         .catch(console.error)
 
