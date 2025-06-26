@@ -15,16 +15,12 @@ interface DateTimePickerProps {
 export const DateTimePicker: React.FC<DateTimePickerProps> = ({
   date,
   onDateChange,
-  placeholder = "Select date and time",
-  className = ""
+  placeholder = 'Select date and time',
+  className = ''
 }) => {
   const [isOpen, setIsOpen] = useState(false)
-  const [selectedDate, setSelectedDate] = useState<string>(
-    date ? format(date, 'yyyy-MM-dd') : ''
-  )
-  const [selectedTime, setSelectedTime] = useState<string>(
-    date ? format(date, 'HH:mm') : ''
-  )
+  const [selectedDate, setSelectedDate] = useState<string>(date ? format(date, 'yyyy-MM-dd') : '')
+  const [selectedTime, setSelectedTime] = useState<string>(date ? format(date, 'HH:mm') : '')
 
   const handleDateChange = (dateStr: string) => {
     setSelectedDate(dateStr)
@@ -56,9 +52,9 @@ export const DateTimePicker: React.FC<DateTimePickerProps> = ({
 
   const formatDisplayValue = () => {
     if (!date) return placeholder
-    
+
     try {
-      return format(date, 'MMM dd, yyyy \'at\' h:mm a')
+      return format(date, "MMM dd, yyyy 'at' h:mm a")
     } catch {
       return placeholder
     }
@@ -75,19 +71,17 @@ export const DateTimePicker: React.FC<DateTimePickerProps> = ({
           {formatDisplayValue()}
         </Button>
       </PopoverTrigger>
-      
+
       <PopoverContent className="w-80 p-0" align="start">
         <div className="p-4 space-y-4">
           <div className="flex items-center gap-2 pb-2 border-b">
             <Calendar className="w-4 h-4" />
             <span className="font-medium">Select Date & Time</span>
           </div>
-          
+
           <div className="space-y-3">
             <div>
-              <label className="text-sm font-medium text-muted-foreground block mb-1">
-                Date
-              </label>
+              <label className="text-sm font-medium text-muted-foreground block mb-1">Date</label>
               <Input
                 type="date"
                 value={selectedDate}
@@ -95,7 +89,7 @@ export const DateTimePicker: React.FC<DateTimePickerProps> = ({
                 className="w-full"
               />
             </div>
-            
+
             <div>
               <label className="text-sm font-medium text-muted-foreground block mb-1 flex items-center gap-1">
                 <Clock className="w-3 h-3" />
@@ -109,21 +103,13 @@ export const DateTimePicker: React.FC<DateTimePickerProps> = ({
               />
             </div>
           </div>
-          
+
           <div className="flex justify-between pt-2 border-t">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={clearDateTime}
-            >
+            <Button variant="outline" size="sm" onClick={clearDateTime}>
               Clear
             </Button>
-            
-            <Button
-              size="sm"
-              onClick={() => setIsOpen(false)}
-              disabled={!selectedDate}
-            >
+
+            <Button size="sm" onClick={() => setIsOpen(false)} disabled={!selectedDate}>
               Done
             </Button>
           </div>

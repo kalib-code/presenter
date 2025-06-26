@@ -8,6 +8,7 @@ import { Label } from '@renderer/components/ui/label'
 import { Textarea } from '@renderer/components/ui/textarea'
 import { Separator } from '@renderer/components/ui/separator'
 import { Badge } from '@renderer/components/ui/badge'
+import { Checkbox } from '@renderer/components/ui/checkbox'
 import {
   Dialog,
   DialogContent,
@@ -41,7 +42,15 @@ import {
   Save,
   X,
   Timer,
-  Eye
+  Eye,
+  Copy,
+  CheckSquare,
+  Square,
+  Trash,
+  Move,
+  Video,
+  Image,
+  Volume2
 } from 'lucide-react'
 import {
   DndContext,
@@ -62,6 +71,15 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import type { Setlist, SetlistItem } from '@renderer/types/database'
 import { CountdownConfig } from '@renderer/components/ui/countdown-config'
+import { TimeInput } from '@renderer/components/ui/time-input'
+import { InlineEditableText, InlineEditableNumber } from '@renderer/components/ui/inline-editable'
+import { MediaSelector } from '@renderer/components/ui/media-selector'
+import {
+  parseTimeToSeconds,
+  formatTimeFromSeconds,
+  formatTimeInput,
+  formatTimeAuto
+} from '@renderer/lib/time-utils'
 
 // Sortable Item Component
 interface SortableItemProps {
@@ -71,44 +89,10 @@ interface SortableItemProps {
   onDelete: (itemId: string) => void
   onUpdateDuration: (itemId: string, duration: number) => void
   onUpdateNotes: (itemId: string, notes: string) => void
-}
-
-// Helper functions for time format conversion
-const formatTimeFromSeconds = (totalSeconds: number): string => {
-  const hours = Math.floor(totalSeconds / 3600)
-  const minutes = Math.floor((totalSeconds % 3600) / 60)
-  const seconds = totalSeconds % 60
-
-  return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
-}
-
-const parseTimeToSeconds = (timeString: string): number => {
-  const parts = timeString.split(':')
-  if (parts.length !== 3) return 0
-
-  const hours = parseInt(parts[0]) || 0
-  const minutes = parseInt(parts[1]) || 0
-  const seconds = parseInt(parts[2]) || 0
-
-  return hours * 3600 + minutes * 60 + seconds
-}
-
-// Format time input as user types (auto-add colons)
-const formatTimeInput = (value: string): string => {
-  // Remove all non-digits
-  const digits = value.replace(/\D/g, '')
-
-  // Limit to 6 digits (HHMMSS)
-  const limitedDigits = digits.slice(0, 6)
-
-  // Add colons at appropriate positions
-  if (limitedDigits.length <= 2) {
-    return limitedDigits
-  } else if (limitedDigits.length <= 4) {
-    return `${limitedDigits.slice(0, 2)}:${limitedDigits.slice(2)}`
-  } else {
-    return `${limitedDigits.slice(0, 2)}:${limitedDigits.slice(2, 4)}:${limitedDigits.slice(4)}`
-  }
+  onUpdateTitle: (itemId: string, title: string) => void
+  isSelectMode: boolean
+  isSelected: boolean
+  onToggleSelect: (itemId: string) => void
 }
 
 function SortableItem({
@@ -117,7 +101,11 @@ function SortableItem({
   onEdit,
   onDelete,
   onUpdateDuration,
-  onUpdateNotes
+  onUpdateNotes,
+  onUpdateTitle,
+  isSelectMode,
+  isSelected,
+  onToggleSelect
 }: SortableItemProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: item.id
@@ -137,6 +125,12 @@ function SortableItem({
         return <Presentation className="w-4 h-4 text-green-600" />
       case 'media':
         return <FileImage className="w-4 h-4 text-purple-600" />
+      case 'video':
+        return <Video className="w-4 h-4 text-purple-600" />
+      case 'image':
+        return <Image className="w-4 h-4 text-purple-600" />
+      case 'audio':
+        return <Volume2 className="w-4 h-4 text-purple-600" />
       case 'announcement':
         return <MessageSquare className="w-4 h-4 text-orange-600" />
       case 'countdown':
@@ -154,16 +148,29 @@ function SortableItem({
     <div
       ref={setNodeRef}
       style={style}
-      className="flex items-center gap-3 p-4 bg-card border rounded-lg hover:shadow-sm transition-all"
+      className={`flex items-center gap-3 p-4 bg-card border rounded-lg hover:shadow-sm transition-all ${
+        isSelected ? 'ring-2 ring-primary/50 bg-primary/5' : ''
+      }`}
     >
+      {/* Selection Checkbox */}
+      {isSelectMode && (
+        <Checkbox
+          checked={isSelected}
+          onCheckedChange={() => onToggleSelect(item.id)}
+          className="flex-shrink-0"
+        />
+      )}
+
       {/* Drag Handle */}
-      <div
-        {...attributes}
-        {...listeners}
-        className="cursor-grab active:cursor-grabbing p-1 text-muted-foreground hover:text-foreground"
-      >
-        <GripVertical className="w-4 h-4" />
-      </div>
+      {!isSelectMode && (
+        <div
+          {...attributes}
+          {...listeners}
+          className="cursor-grab active:cursor-grabbing p-1 text-muted-foreground hover:text-foreground"
+        >
+          <GripVertical className="w-4 h-4" />
+        </div>
+      )}
 
       {/* Item Info */}
       <div className="flex items-center gap-3 flex-1">
@@ -175,7 +182,13 @@ function SortableItem({
         </div>
 
         <div className="flex-1">
-          <div className="font-medium">{item.title}</div>
+          <InlineEditableText
+            value={item.title}
+            onSave={(title) => onUpdateTitle(item.id, title)}
+            className="font-medium"
+            placeholder="Item title..."
+            showEditIcon={true}
+          />
           <div className="text-sm text-muted-foreground">
             {item.type.charAt(0).toUpperCase() + item.type.slice(1)}
           </div>
@@ -185,24 +198,27 @@ function SortableItem({
       {/* Duration */}
       <div className="flex items-center gap-2">
         <Clock className="w-3 h-3 text-muted-foreground" />
-        <button
-          onClick={() => onEdit(item)}
-          className="text-sm font-mono hover:text-primary hover:underline cursor-pointer transition-colors"
-          title="Click to edit duration"
-        >
-          {formatDuration(item.duration || 0)}
-        </button>
+        <InlineEditableNumber
+          value={item.duration || 0}
+          onSave={(duration) => onUpdateDuration(item.id, duration)}
+          formatter={formatDuration}
+          parser={parseTimeToSeconds}
+          className="text-sm"
+          placeholder="0:00:00"
+          min={0}
+        />
       </div>
 
       {/* Notes */}
       <div className="flex items-center gap-2 min-w-0 max-w-[200px]">
-        <button
-          onClick={() => onEdit(item)}
-          className="text-sm text-muted-foreground truncate hover:text-primary cursor-pointer transition-colors text-left"
-          title="Click to edit notes"
-        >
-          {item.notes || 'Click to add notes'}
-        </button>
+        <InlineEditableText
+          value={item.notes || ''}
+          onSave={(notes) => onUpdateNotes(item.id, notes)}
+          className="text-sm text-muted-foreground truncate"
+          emptyText="Click to add notes"
+          placeholder="Add notes..."
+          maxLength={200}
+        />
       </div>
 
       {/* Actions */}
@@ -234,6 +250,7 @@ export default function Setlist(): JSX.Element {
     isLoading,
     error,
     createSetlist,
+    duplicateSetlist,
     updateSetlist,
     deleteSetlist,
     startPresentation,
@@ -241,7 +258,8 @@ export default function Setlist(): JSX.Element {
     removeItem,
     reorderItems,
     updateItem,
-    loadSetlists
+    loadSetlists,
+    getRecentItems
   } = useSetlistStore()
 
   const { songs, fetchSongs } = useSongStore()
@@ -267,6 +285,16 @@ export default function Setlist(): JSX.Element {
   // Countdown configuration modal state
   const [isCountdownConfigOpen, setIsCountdownConfigOpen] = useState(false)
   const [pendingCountdownTitle, setPendingCountdownTitle] = useState('')
+
+  // Media selector modal state
+  const [isMediaSelectorOpen, setIsMediaSelectorOpen] = useState(false)
+  const [mediaSelectorType, setMediaSelectorType] = useState<'video' | 'image' | 'audio' | 'any'>(
+    'any'
+  )
+
+  // Bulk selection state
+  const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set())
+  const [isSelectMode, setIsSelectMode] = useState(false)
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -341,6 +369,10 @@ export default function Setlist(): JSX.Element {
     }
   }
 
+  const handleDuplicateSetlist = async (setlist: Setlist): Promise<void> => {
+    await duplicateSetlist(setlist.id)
+  }
+
   const handleViewSetlist = (setlist: Setlist): void => {
     setSelectedSetlist(setlist)
     setViewMode('detail')
@@ -354,7 +386,15 @@ export default function Setlist(): JSX.Element {
   }
 
   const handleAddItem = async (
-    type: 'song' | 'presentation' | 'media' | 'announcement' | 'countdown',
+    type:
+      | 'song'
+      | 'presentation'
+      | 'media'
+      | 'announcement'
+      | 'countdown'
+      | 'video'
+      | 'image'
+      | 'audio',
     itemId: string,
     title: string
   ): Promise<void> => {
@@ -469,6 +509,66 @@ export default function Setlist(): JSX.Element {
     }
   }
 
+  const handleUpdateItemTitle = async (itemId: string, title: string): Promise<void> => {
+    if (!selectedSetlist) return
+
+    await updateItem(selectedSetlist.id, itemId, { title })
+
+    // Get the fresh state directly from the store
+    const freshSetlists = useSetlistStore.getState().setlists
+    const updatedSetlist = freshSetlists.find((s) => s.id === selectedSetlist.id)
+    if (updatedSetlist) {
+      setSelectedSetlist(updatedSetlist)
+    }
+  }
+
+  // Bulk selection handlers
+  const handleToggleSelectMode = () => {
+    setIsSelectMode(!isSelectMode)
+    setSelectedItemIds(new Set())
+  }
+
+  const handleToggleSelectItem = (itemId: string) => {
+    const newSelection = new Set(selectedItemIds)
+    if (newSelection.has(itemId)) {
+      newSelection.delete(itemId)
+    } else {
+      newSelection.add(itemId)
+    }
+    setSelectedItemIds(newSelection)
+  }
+
+  const handleSelectAll = () => {
+    if (!selectedSetlist) return
+    setSelectedItemIds(new Set(selectedSetlist.items.map((item) => item.id)))
+  }
+
+  const handleDeselectAll = () => {
+    setSelectedItemIds(new Set())
+  }
+
+  const handleBulkDelete = async () => {
+    if (!selectedSetlist || selectedItemIds.size === 0) return
+
+    if (confirm(`Are you sure you want to delete ${selectedItemIds.size} selected items?`)) {
+      const updatedItems = selectedSetlist.items
+        .filter((item) => !selectedItemIds.has(item.id))
+        .map((item, index) => ({ ...item, order: index }))
+
+      await updateSetlist(selectedSetlist.id, { items: updatedItems })
+
+      // Get the fresh state directly from the store
+      const freshSetlists = useSetlistStore.getState().setlists
+      const updatedSetlist = freshSetlists.find((s) => s.id === selectedSetlist.id)
+      if (updatedSetlist) {
+        setSelectedSetlist(updatedSetlist)
+      }
+
+      setSelectedItemIds(new Set())
+      setIsSelectMode(false)
+    }
+  }
+
   const handleDragEnd = async (event: DragEndEvent): Promise<void> => {
     const { active, over } = event
 
@@ -500,6 +600,12 @@ export default function Setlist(): JSX.Element {
         return <Presentation className="w-4 h-4" />
       case 'media':
         return <FileImage className="w-4 h-4" />
+      case 'video':
+        return <Video className="w-4 h-4" />
+      case 'image':
+        return <Image className="w-4 h-4" />
+      case 'audio':
+        return <Volume2 className="w-4 h-4" />
       case 'announcement':
         return <MessageSquare className="w-4 h-4" />
       case 'countdown':
@@ -600,6 +706,37 @@ export default function Setlist(): JSX.Element {
     }
   }
 
+  const handleAddMediaItem = async (
+    mediaItem: Omit<SetlistItem, 'id' | 'order'>
+  ): Promise<void> => {
+    if (!selectedSetlist) {
+      console.error('❌ No selected setlist when trying to add media')
+      return
+    }
+
+    console.log('➕ Adding media item to setlist:', {
+      mediaItem,
+      setlistId: selectedSetlist.id
+    })
+
+    // Wait for the addItem operation to complete
+    await addItem(selectedSetlist.id, mediaItem)
+    setIsMediaSelectorOpen(false)
+
+    // Get the fresh state directly from the store
+    const freshSetlists = useSetlistStore.getState().setlists
+    const updatedSetlist = freshSetlists.find((s) => s.id === selectedSetlist.id)
+    if (updatedSetlist) {
+      setSelectedSetlist(updatedSetlist)
+      console.log('📊 After adding media - Updated setlist items:', updatedSetlist.items.length)
+    }
+  }
+
+  const handleOpenMediaSelector = (mediaType: 'video' | 'image' | 'audio' | 'any' = 'any') => {
+    setMediaSelectorType(mediaType)
+    setIsMediaSelectorOpen(true)
+  }
+
   if (isLoading) {
     return (
       <div className="p-6 flex items-center justify-center">
@@ -650,6 +787,17 @@ export default function Setlist(): JSX.Element {
                   <Plus className="w-4 h-4 mr-2" />
                   Add Item
                 </Button>
+                <Button
+                  variant={isSelectMode ? 'default' : 'outline'}
+                  onClick={handleToggleSelectMode}
+                >
+                  {isSelectMode ? (
+                    <CheckSquare className="w-4 h-4 mr-2" />
+                  ) : (
+                    <Square className="w-4 h-4 mr-2" />
+                  )}
+                  {isSelectMode ? 'Exit Select' : 'Select Items'}
+                </Button>
                 <Button onClick={() => startPresentation(selectedSetlist)}>
                   <Play className="w-4 h-4 mr-2" />
                   Start Presentation
@@ -671,6 +819,10 @@ export default function Setlist(): JSX.Element {
                     >
                       <Edit className="w-4 h-4 mr-2" />
                       Edit Setlist
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleDuplicateSetlist(selectedSetlist)}>
+                      <Copy className="w-4 h-4 mr-2" />
+                      Duplicate Setlist
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
@@ -720,9 +872,47 @@ export default function Setlist(): JSX.Element {
             <div className="flex items-center justify-between border-b pb-4">
               <h2 className="text-xl font-semibold">Items</h2>
               <div className="text-sm text-muted-foreground">
-                Drag and drop to reorder • Click to edit inline
+                {isSelectMode
+                  ? 'Select items for bulk operations'
+                  : 'Drag and drop to reorder • Click to edit inline'}
               </div>
             </div>
+
+            {/* Bulk Actions Bar */}
+            {isSelectMode && (
+              <div className="flex items-center justify-between p-3 bg-muted rounded-lg border">
+                <div className="flex items-center gap-4">
+                  <span className="text-sm font-medium">{selectedItemIds.size} selected</span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleSelectAll}
+                    disabled={selectedItemIds.size === selectedSetlist.items.length}
+                  >
+                    Select All
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleDeselectAll}
+                    disabled={selectedItemIds.size === 0}
+                  >
+                    Deselect All
+                  </Button>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={handleBulkDelete}
+                    disabled={selectedItemIds.size === 0}
+                  >
+                    <Trash className="w-4 h-4 mr-2" />
+                    Delete ({selectedItemIds.size})
+                  </Button>
+                </div>
+              </div>
+            )}
 
             {selectedSetlist.items.length === 0 ? (
               <div className="border rounded-lg border-dashed">
@@ -757,6 +947,10 @@ export default function Setlist(): JSX.Element {
                           onDelete={handleRemoveItem}
                           onUpdateDuration={handleUpdateItemDuration}
                           onUpdateNotes={handleUpdateItemNotes}
+                          onUpdateTitle={handleUpdateItemTitle}
+                          isSelectMode={isSelectMode}
+                          isSelected={selectedItemIds.has(item.id)}
+                          onToggleSelect={handleToggleSelectItem}
                         />
                       ))}
                   </div>
@@ -934,6 +1128,10 @@ export default function Setlist(): JSX.Element {
                               <Edit className="w-4 h-4 mr-2" />
                               Edit
                             </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleDuplicateSetlist(setlist)}>
+                              <Copy className="w-4 h-4 mr-2" />
+                              Duplicate
+                            </DropdownMenuItem>
                             <DropdownMenuItem
                               onClick={() => handleDeleteSetlist(setlist)}
                               className="text-red-600"
@@ -1020,233 +1218,458 @@ export default function Setlist(): JSX.Element {
               <Button onClick={() => setIsAddItemModalOpen(false)}>Close</Button>
             </div>
           ) : (
-            <div className="flex flex-col space-y-4 py-4 min-h-0">
-              {/* Search and Filter Controls */}
-              <div className="flex gap-4">
-                <div className="flex-1 relative">
+            <div className="flex h-[60vh] gap-6">
+              {/* Left Sidebar - Categories */}
+              <div className="w-64 flex flex-col space-y-2">
+                <div className="relative mb-4">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
                   <Input
-                    placeholder="Search songs, presentations..."
+                    placeholder="Search all content..."
                     value={addItemSearchTerm}
                     onChange={(e) => setAddItemSearchTerm(e.target.value)}
                     className="pl-10"
                   />
                 </div>
-                <div className="flex gap-2">
+
+                {/* Category Cards */}
+                <div className="space-y-2">
                   <Button
-                    variant={selectedItemType === 'all' ? 'default' : 'outline'}
-                    size="sm"
+                    variant={selectedItemType === 'all' ? 'default' : 'ghost'}
+                    className="w-full justify-start h-auto p-3"
                     onClick={() => setSelectedItemType('all')}
                   >
-                    All
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+                        <span className="text-white font-bold text-sm">All</span>
+                      </div>
+                      <div className="text-left">
+                        <div className="font-medium">All Items</div>
+                        <div className="text-xs text-muted-foreground">Show everything</div>
+                      </div>
+                    </div>
                   </Button>
+
                   <Button
-                    variant={selectedItemType === 'song' ? 'default' : 'outline'}
-                    size="sm"
+                    variant={selectedItemType === 'song' ? 'default' : 'ghost'}
+                    className="w-full justify-start h-auto p-3"
                     onClick={() => setSelectedItemType('song')}
                   >
-                    <Music className="w-4 h-4 mr-1" />
-                    Songs
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
+                        <Music className="w-4 h-4 text-white" />
+                      </div>
+                      <div className="text-left">
+                        <div className="font-medium">Songs</div>
+                        <div className="text-xs text-muted-foreground">
+                          {songs.length} available
+                        </div>
+                      </div>
+                    </div>
                   </Button>
+
                   <Button
-                    variant={selectedItemType === 'presentation' ? 'default' : 'outline'}
-                    size="sm"
+                    variant={selectedItemType === 'presentation' ? 'default' : 'ghost'}
+                    className="w-full justify-start h-auto p-3"
                     onClick={() => setSelectedItemType('presentation')}
                   >
-                    <Presentation className="w-4 h-4 mr-1" />
-                    Presentations
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center">
+                        <Presentation className="w-4 h-4 text-white" />
+                      </div>
+                      <div className="text-left">
+                        <div className="font-medium">Presentations</div>
+                        <div className="text-xs text-muted-foreground">
+                          {presentations.length} available
+                        </div>
+                      </div>
+                    </div>
                   </Button>
-                  <Button
-                    variant={selectedItemType === 'countdown' ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => setSelectedItemType('countdown')}
-                  >
-                    <Timer className="w-4 h-4 mr-1" />
-                    Countdown
-                  </Button>
-                  <Button
-                    variant={selectedItemType === 'announcement' ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => setSelectedItemType('announcement')}
-                  >
-                    <MessageSquare className="w-4 h-4 mr-1" />
-                    Announcements
-                  </Button>
+
+                  <div className="border-t pt-2 mt-4">
+                    <p className="text-xs font-semibold text-muted-foreground mb-2 px-3">MEDIA</p>
+
+                    <Button
+                      variant="ghost"
+                      className="w-full justify-start h-auto p-3"
+                      onClick={() => handleOpenMediaSelector('video')}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-red-500 to-red-600 flex items-center justify-center">
+                          <Video className="w-4 h-4 text-white" />
+                        </div>
+                        <div className="text-left">
+                          <div className="font-medium">Video</div>
+                          <div className="text-xs text-muted-foreground">Add from library</div>
+                        </div>
+                      </div>
+                    </Button>
+
+                    <Button
+                      variant="ghost"
+                      className="w-full justify-start h-auto p-3"
+                      onClick={() => handleOpenMediaSelector('image')}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-yellow-500 to-orange-600 flex items-center justify-center">
+                          <Image className="w-4 h-4 text-white" />
+                        </div>
+                        <div className="text-left">
+                          <div className="font-medium">Image</div>
+                          <div className="text-xs text-muted-foreground">Add from library</div>
+                        </div>
+                      </div>
+                    </Button>
+
+                    <Button
+                      variant="ghost"
+                      className="w-full justify-start h-auto p-3"
+                      onClick={() => handleOpenMediaSelector('audio')}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center">
+                          <Volume2 className="w-4 h-4 text-white" />
+                        </div>
+                        <div className="text-left">
+                          <div className="font-medium">Audio</div>
+                          <div className="text-xs text-muted-foreground">Add from library</div>
+                        </div>
+                      </div>
+                    </Button>
+                  </div>
+
+                  <div className="border-t pt-2 mt-4">
+                    <p className="text-xs font-semibold text-muted-foreground mb-2 px-3">
+                      UTILITIES
+                    </p>
+
+                    <Button
+                      variant={selectedItemType === 'countdown' ? 'default' : 'ghost'}
+                      className="w-full justify-start h-auto p-3"
+                      onClick={() => setSelectedItemType('countdown')}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-red-500 to-pink-600 flex items-center justify-center">
+                          <Timer className="w-4 h-4 text-white" />
+                        </div>
+                        <div className="text-left">
+                          <div className="font-medium">Countdown</div>
+                          <div className="text-xs text-muted-foreground">Timer & events</div>
+                        </div>
+                      </div>
+                    </Button>
+
+                    <Button
+                      variant={selectedItemType === 'announcement' ? 'default' : 'ghost'}
+                      className="w-full justify-start h-auto p-3"
+                      onClick={() => setSelectedItemType('announcement')}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-orange-500 to-amber-600 flex items-center justify-center">
+                          <MessageSquare className="w-4 h-4 text-white" />
+                        </div>
+                        <div className="text-left">
+                          <div className="font-medium">Announcement</div>
+                          <div className="text-xs text-muted-foreground">Custom messages</div>
+                        </div>
+                      </div>
+                    </Button>
+                  </div>
                 </div>
               </div>
 
-              {/* Items List */}
-              <div className="flex-1 min-h-0 border rounded-lg">
-                <div className="h-96 overflow-y-auto p-4">
-                  <div className="space-y-2">
-                    {/* Songs */}
-                    {(selectedItemType === 'all' || selectedItemType === 'song') &&
-                      songs
-                        .filter(
-                          (song) =>
-                            song.name.toLowerCase().includes(addItemSearchTerm.toLowerCase()) ||
-                            song.artist?.toLowerCase().includes(addItemSearchTerm.toLowerCase()) ||
-                            song.tags.some((tag) =>
-                              tag.toLowerCase().includes(addItemSearchTerm.toLowerCase())
-                            )
-                        )
-                        .map((song) => (
-                          <div
-                            key={`song-${song.id}`}
-                            className="flex items-center justify-between p-3 border rounded-lg hover:bg-accent cursor-pointer transition-colors"
-                            onClick={() => handleAddItem('song', song.id, song.name)}
-                          >
-                            <div className="flex items-center space-x-3">
-                              <div className="p-2 bg-blue-100 dark:bg-blue-900 rounded">
-                                <Music className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                              </div>
-                              <div>
-                                <div className="font-medium">{song.name}</div>
-                                {song.artist && (
-                                  <div className="text-sm text-muted-foreground">{song.artist}</div>
-                                )}
-                                {song.tags.length > 0 && (
-                                  <div className="flex gap-1 mt-1">
-                                    {song.tags.slice(0, 3).map((tag) => (
-                                      <span
-                                        key={tag}
-                                        className="text-xs bg-secondary px-2 py-1 rounded"
+              {/* Right Content Area */}
+              <div className="flex-1 flex flex-col min-h-0">
+                {/* Header */}
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h3 className="text-lg font-semibold">
+                      {selectedItemType === 'all'
+                        ? 'All Items'
+                        : selectedItemType === 'song'
+                          ? 'Songs'
+                          : selectedItemType === 'presentation'
+                            ? 'Presentations'
+                            : selectedItemType === 'countdown'
+                              ? 'Countdown Timers'
+                              : selectedItemType === 'announcement'
+                                ? 'Announcements'
+                                : 'Items'}
+                    </h3>
+                    <p className="text-sm text-muted-foreground">
+                      {selectedItemType === 'all'
+                        ? 'Browse all available content'
+                        : selectedItemType === 'song'
+                          ? 'Select a song to add to your setlist'
+                          : selectedItemType === 'presentation'
+                            ? 'Choose a presentation to include'
+                            : selectedItemType === 'countdown'
+                              ? 'Add timer elements for transitions'
+                              : selectedItemType === 'announcement'
+                                ? 'Create custom announcements'
+                                : 'Available items'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Content Grid */}
+                <div className="flex-1 overflow-y-auto">
+                  <div className="space-y-6">
+                    <div className="space-y-4">
+                      {/* Recent Items Section */}
+                      {getRecentItems().length > 0 &&
+                        (selectedItemType === 'all' ||
+                          getRecentItems().some((item) => item.type === selectedItemType)) && (
+                          <div className="space-y-4">
+                            <div className="flex items-center gap-2">
+                              <h4 className="text-sm font-semibold text-primary flex items-center gap-2">
+                                <Clock className="w-4 h-4" />
+                                Recently Used
+                              </h4>
+                              <div className="flex-1 h-px bg-border"></div>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              {getRecentItems()
+                                .filter(
+                                  (item) =>
+                                    selectedItemType === 'all' || item.type === selectedItemType
+                                )
+                                .slice(0, 4)
+                                .map((recentItem, index) => (
+                                  <div
+                                    key={`recent-${recentItem.type}-${recentItem.referenceId}-${index}`}
+                                    className="group relative overflow-hidden rounded-xl border bg-card p-4 hover:shadow-md transition-all duration-200 cursor-pointer hover:border-primary/50"
+                                    onClick={() =>
+                                      handleAddItem(
+                                        recentItem.type,
+                                        recentItem.referenceId,
+                                        recentItem.title
+                                      )
+                                    }
+                                  >
+                                    <div className="flex items-start gap-3">
+                                      <div
+                                        className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                                          recentItem.type === 'song'
+                                            ? 'bg-gradient-to-br from-blue-500 to-blue-600'
+                                            : recentItem.type === 'presentation'
+                                              ? 'bg-gradient-to-br from-green-500 to-green-600'
+                                              : recentItem.type === 'countdown'
+                                                ? 'bg-gradient-to-br from-red-500 to-pink-600'
+                                                : recentItem.type === 'video'
+                                                  ? 'bg-gradient-to-br from-red-500 to-red-600'
+                                                  : recentItem.type === 'image'
+                                                    ? 'bg-gradient-to-br from-yellow-500 to-orange-600'
+                                                    : recentItem.type === 'audio'
+                                                      ? 'bg-gradient-to-br from-purple-500 to-purple-600'
+                                                      : 'bg-gradient-to-br from-orange-500 to-amber-600'
+                                        }`}
                                       >
-                                        {tag}
-                                      </span>
-                                    ))}
-                                    {song.tags.length > 3 && (
-                                      <span className="text-xs text-muted-foreground">
-                                        +{song.tags.length - 3} more
-                                      </span>
+                                        <span className="text-white">
+                                          {getItemIcon(recentItem.type)}
+                                        </span>
+                                      </div>
+                                      <div className="flex-1 min-w-0">
+                                        <h5 className="font-medium truncate">{recentItem.title}</h5>
+                                        <p className="text-xs text-muted-foreground capitalize mt-1">
+                                          {recentItem.type}
+                                        </p>
+                                      </div>
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        className="opacity-0 group-hover:opacity-100 transition-opacity"
+                                      >
+                                        <Plus className="w-4 h-4" />
+                                      </Button>
+                                    </div>
+                                  </div>
+                                ))}
+                            </div>
+                          </div>
+                        )}
+
+                      <div className="space-y-2">
+                        {/* Songs */}
+                        {(selectedItemType === 'all' || selectedItemType === 'song') &&
+                          songs
+                            .filter(
+                              (song) =>
+                                song.name.toLowerCase().includes(addItemSearchTerm.toLowerCase()) ||
+                                song.artist
+                                  ?.toLowerCase()
+                                  .includes(addItemSearchTerm.toLowerCase()) ||
+                                song.tags.some((tag) =>
+                                  tag.toLowerCase().includes(addItemSearchTerm.toLowerCase())
+                                )
+                            )
+                            .map((song) => (
+                              <div
+                                key={`song-${song.id}`}
+                                className="flex items-center justify-between p-3 border rounded-lg hover:bg-accent cursor-pointer transition-colors"
+                                onClick={() => handleAddItem('song', song.id, song.name)}
+                              >
+                                <div className="flex items-center space-x-3">
+                                  <div className="p-2 bg-blue-100 dark:bg-blue-900 rounded">
+                                    <Music className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                                  </div>
+                                  <div>
+                                    <div className="font-medium">{song.name}</div>
+                                    {song.artist && (
+                                      <div className="text-sm text-muted-foreground">
+                                        {song.artist}
+                                      </div>
+                                    )}
+                                    {song.tags.length > 0 && (
+                                      <div className="flex gap-1 mt-1">
+                                        {song.tags.slice(0, 3).map((tag) => (
+                                          <span
+                                            key={tag}
+                                            className="text-xs bg-secondary px-2 py-1 rounded"
+                                          >
+                                            {tag}
+                                          </span>
+                                        ))}
+                                        {song.tags.length > 3 && (
+                                          <span className="text-xs text-muted-foreground">
+                                            +{song.tags.length - 3} more
+                                          </span>
+                                        )}
+                                      </div>
                                     )}
                                   </div>
-                                )}
+                                </div>
+                                <Button size="sm" variant="ghost">
+                                  <Plus className="w-4 h-4" />
+                                </Button>
                               </div>
-                            </div>
-                            <Button size="sm" variant="ghost">
-                              <Plus className="w-4 h-4" />
-                            </Button>
-                          </div>
-                        ))}
+                            ))}
 
-                    {/* Presentations */}
-                    {(selectedItemType === 'all' || selectedItemType === 'presentation') &&
-                      presentations
-                        .filter(
-                          (presentation) =>
-                            presentation.name
-                              .toLowerCase()
-                              .includes(addItemSearchTerm.toLowerCase()) ||
-                            presentation.tags.some((tag) =>
-                              tag.toLowerCase().includes(addItemSearchTerm.toLowerCase())
+                        {/* Presentations */}
+                        {(selectedItemType === 'all' || selectedItemType === 'presentation') &&
+                          presentations
+                            .filter(
+                              (presentation) =>
+                                presentation.name
+                                  .toLowerCase()
+                                  .includes(addItemSearchTerm.toLowerCase()) ||
+                                presentation.tags.some((tag) =>
+                                  tag.toLowerCase().includes(addItemSearchTerm.toLowerCase())
+                                )
                             )
-                        )
-                        .map((presentation) => (
-                          <div
-                            key={`presentation-${presentation.id}`}
-                            className="flex items-center justify-between p-3 border rounded-lg hover:bg-accent cursor-pointer transition-colors"
-                            onClick={() =>
-                              handleAddItem('presentation', presentation.id, presentation.name)
-                            }
-                          >
-                            <div className="flex items-center space-x-3">
-                              <div className="p-2 bg-green-100 dark:bg-green-900 rounded">
-                                <Presentation className="w-4 h-4 text-green-600 dark:text-green-400" />
+                            .map((presentation) => (
+                              <div
+                                key={`presentation-${presentation.id}`}
+                                className="flex items-center justify-between p-3 border rounded-lg hover:bg-accent cursor-pointer transition-colors"
+                                onClick={() =>
+                                  handleAddItem('presentation', presentation.id, presentation.name)
+                                }
+                              >
+                                <div className="flex items-center space-x-3">
+                                  <div className="p-2 bg-green-100 dark:bg-green-900 rounded">
+                                    <Presentation className="w-4 h-4 text-green-600 dark:text-green-400" />
+                                  </div>
+                                  <div>
+                                    <div className="font-medium">{presentation.name}</div>
+                                    <div className="text-xs text-muted-foreground mt-1">
+                                      {presentation.slides.length} slides • {presentation.type}
+                                    </div>
+                                  </div>
+                                </div>
+                                <Button size="sm" variant="ghost">
+                                  <Plus className="w-4 h-4" />
+                                </Button>
                               </div>
-                              <div>
-                                <div className="font-medium">{presentation.name}</div>
-                                <div className="text-xs text-muted-foreground mt-1">
-                                  {presentation.slides.length} slides • {presentation.type}
+                            ))}
+
+                        {/* Countdown Timer Option */}
+                        {(selectedItemType === 'all' || selectedItemType === 'countdown') &&
+                          (!addItemSearchTerm ||
+                            'countdown'.includes(addItemSearchTerm.toLowerCase()) ||
+                            'timer'.includes(addItemSearchTerm.toLowerCase()) ||
+                            'countdown timer'.includes(addItemSearchTerm.toLowerCase())) && (
+                            <div
+                              className="flex items-center justify-between p-3 border rounded-lg hover:bg-accent cursor-pointer transition-colors border-dashed"
+                              onClick={() => {
+                                setPendingCountdownTitle('Countdown Timer')
+                                setIsCountdownConfigOpen(true)
+                              }}
+                            >
+                              <div className="flex items-center space-x-3">
+                                <div className="p-2 bg-red-100 dark:bg-red-900 rounded">
+                                  <Timer className="w-4 h-4 text-red-600 dark:text-red-400" />
+                                </div>
+                                <div>
+                                  <div className="font-medium">Countdown Timer</div>
+                                  <div className="text-sm text-muted-foreground">
+                                    Add a countdown timer for events or transitions
+                                  </div>
                                 </div>
                               </div>
+                              <Button size="sm" variant="ghost">
+                                <Plus className="w-4 h-4" />
+                              </Button>
                             </div>
-                            <Button size="sm" variant="ghost">
-                              <Plus className="w-4 h-4" />
-                            </Button>
-                          </div>
-                        ))}
+                          )}
 
-                    {/* Countdown Timer Option */}
-                    {(selectedItemType === 'all' || selectedItemType === 'countdown') &&
-                      (!addItemSearchTerm ||
-                        'countdown'.includes(addItemSearchTerm.toLowerCase()) ||
-                        'timer'.includes(addItemSearchTerm.toLowerCase()) ||
-                        'countdown timer'.includes(addItemSearchTerm.toLowerCase())) && (
-                        <div
-                          className="flex items-center justify-between p-3 border rounded-lg hover:bg-accent cursor-pointer transition-colors border-dashed"
-                          onClick={() => {
-                            setPendingCountdownTitle('Countdown Timer')
-                            setIsCountdownConfigOpen(true)
-                          }}
-                        >
-                          <div className="flex items-center space-x-3">
-                            <div className="p-2 bg-red-100 dark:bg-red-900 rounded">
-                              <Timer className="w-4 h-4 text-red-600 dark:text-red-400" />
-                            </div>
-                            <div>
-                              <div className="font-medium">Countdown Timer</div>
-                              <div className="text-sm text-muted-foreground">
-                                Add a countdown timer for events or transitions
+                        {/* Announcement Option */}
+                        {(selectedItemType === 'all' || selectedItemType === 'announcement') &&
+                          (!addItemSearchTerm ||
+                            'announcement'.includes(addItemSearchTerm.toLowerCase()) ||
+                            'new announcement'.includes(addItemSearchTerm.toLowerCase())) && (
+                            <div
+                              className="flex items-center justify-between p-3 border rounded-lg hover:bg-accent cursor-pointer transition-colors border-dashed"
+                              onClick={() =>
+                                handleAddItem('announcement', 'new', 'New Announcement')
+                              }
+                            >
+                              <div className="flex items-center space-x-3">
+                                <div className="p-2 bg-orange-100 dark:bg-orange-900 rounded">
+                                  <MessageSquare className="w-4 h-4 text-orange-600 dark:text-orange-400" />
+                                </div>
+                                <div>
+                                  <div className="font-medium">New Announcement</div>
+                                  <div className="text-sm text-muted-foreground">
+                                    Add a custom announcement or message
+                                  </div>
+                                </div>
                               </div>
+                              <Button size="sm" variant="ghost">
+                                <Plus className="w-4 h-4" />
+                              </Button>
                             </div>
+                          )}
+
+                        {/* No Results */}
+                        {addItemSearchTerm &&
+                          songs.filter((song) =>
+                            song.name.toLowerCase().includes(addItemSearchTerm.toLowerCase())
+                          ).length === 0 &&
+                          presentations.filter((presentation) =>
+                            presentation.name
+                              .toLowerCase()
+                              .includes(addItemSearchTerm.toLowerCase())
+                          ).length === 0 &&
+                          !'announcement'.includes(addItemSearchTerm.toLowerCase()) && (
+                            <div className="text-center py-8 text-muted-foreground">
+                              <Search className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                              <p>No items match your search.</p>
+                              <p className="text-sm">Try different keywords or clear the search.</p>
+                            </div>
+                          )}
+
+                        {/* Empty State */}
+                        {!addItemSearchTerm && songs.length === 0 && presentations.length === 0 && (
+                          <div className="text-center py-8 text-muted-foreground">
+                            <Music className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                            <p>No songs or presentations available.</p>
+                            <p className="text-sm">
+                              Create some content first to add to your setlist.
+                            </p>
                           </div>
-                          <Button size="sm" variant="ghost">
-                            <Plus className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      )}
-
-                    {/* Announcement Option */}
-                    {(selectedItemType === 'all' || selectedItemType === 'announcement') &&
-                      (!addItemSearchTerm ||
-                        'announcement'.includes(addItemSearchTerm.toLowerCase()) ||
-                        'new announcement'.includes(addItemSearchTerm.toLowerCase())) && (
-                        <div
-                          className="flex items-center justify-between p-3 border rounded-lg hover:bg-accent cursor-pointer transition-colors border-dashed"
-                          onClick={() => handleAddItem('announcement', 'new', 'New Announcement')}
-                        >
-                          <div className="flex items-center space-x-3">
-                            <div className="p-2 bg-orange-100 dark:bg-orange-900 rounded">
-                              <MessageSquare className="w-4 h-4 text-orange-600 dark:text-orange-400" />
-                            </div>
-                            <div>
-                              <div className="font-medium">New Announcement</div>
-                              <div className="text-sm text-muted-foreground">
-                                Add a custom announcement or message
-                              </div>
-                            </div>
-                          </div>
-                          <Button size="sm" variant="ghost">
-                            <Plus className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      )}
-
-                    {/* No Results */}
-                    {addItemSearchTerm &&
-                      songs.filter((song) =>
-                        song.name.toLowerCase().includes(addItemSearchTerm.toLowerCase())
-                      ).length === 0 &&
-                      presentations.filter((presentation) =>
-                        presentation.name.toLowerCase().includes(addItemSearchTerm.toLowerCase())
-                      ).length === 0 &&
-                      !'announcement'.includes(addItemSearchTerm.toLowerCase()) && (
-                        <div className="text-center py-8 text-muted-foreground">
-                          <Search className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                          <p>No items match your search.</p>
-                          <p className="text-sm">Try different keywords or clear the search.</p>
-                        </div>
-                      )}
-
-                    {/* Empty State */}
-                    {!addItemSearchTerm && songs.length === 0 && presentations.length === 0 && (
-                      <div className="text-center py-8 text-muted-foreground">
-                        <Music className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                        <p>No songs or presentations available.</p>
-                        <p className="text-sm">Create some content first to add to your setlist.</p>
+                        )}
                       </div>
-                    )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1312,19 +1735,15 @@ export default function Setlist(): JSX.Element {
 
             {/* Duration */}
             <div className="space-y-2">
-              <Label htmlFor="edit-duration">Duration (HH:MM:SS)</Label>
-              <Input
+              <Label htmlFor="edit-duration">Duration</Label>
+              <TimeInput
                 id="edit-duration"
-                type="text"
-                value={editItemDuration}
-                onChange={(e) => setEditItemDuration(formatTimeInput(e.target.value))}
-                placeholder="00:05:30"
-                maxLength={8}
-                className="font-mono"
+                value={editingItem?.duration || 0}
+                onChange={(seconds) => setEditItemDuration(formatTimeFromSeconds(seconds))}
+                placeholder="e.g., 5min, 3:30, 1h30m"
               />
               <div className="text-xs text-muted-foreground">
-                Enter duration in hours:minutes:seconds format (e.g., 00:05:30 for 5 minutes 30
-                seconds)
+                Enter duration in flexible formats: 5min, 3:30, 1h30m, or 00:05:30
               </div>
             </div>
 
@@ -1370,6 +1789,14 @@ export default function Setlist(): JSX.Element {
           setPendingCountdownTitle('')
         }}
         onSave={handleSaveCountdownConfig}
+      />
+
+      {/* Media Selector Modal */}
+      <MediaSelector
+        isOpen={isMediaSelectorOpen}
+        onClose={() => setIsMediaSelectorOpen(false)}
+        onAddMedia={handleAddMediaItem}
+        mediaType={mediaSelectorType}
       />
     </>
   )

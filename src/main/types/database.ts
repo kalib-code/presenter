@@ -36,12 +36,19 @@ export interface Slide {
   notes?: string
 }
 
+export type SlideElementContent = 
+  | { type: 'text'; text: string }
+  | { type: 'image'; url: string; alt?: string }
+  | { type: 'video'; url: string; autoplay?: boolean; loop?: boolean }
+  | { type: 'audio'; url: string; autoplay?: boolean; loop?: boolean }
+  | { type: 'shape'; shape: 'rectangle' | 'circle' | 'triangle'; fill?: string }
+
 export interface SlideElement {
   id: string
   type: 'text' | 'image' | 'video' | 'audio' | 'shape'
   position: { x: number; y: number }
   size: { width: number; height: number }
-  content: any
+  content: SlideElementContent
   style: ElementStyle
   zIndex: number
 }

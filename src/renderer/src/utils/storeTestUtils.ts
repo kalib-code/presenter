@@ -10,7 +10,7 @@ import { usePersistenceStore } from '@renderer/store/editor-persistence'
  */
 
 // Initial state snapshots for comparison
-const getInitialBackgroundState = () => ({
+const getInitialBackgroundState = (): object => ({
   backgroundType: 'none',
   backgroundImage: null,
   backgroundVideo: null,
@@ -30,39 +30,6 @@ const getInitialBackgroundState = () => ({
   backgroundSize: 'cover',
   backgroundPosition: 'center',
   isBackgroundPanelOpen: false
-})
-
-const getInitialCanvasState = () => ({
-  elements: [],
-  selectedElementId: null,
-  isDragging: false,
-  draggedElementId: null,
-  dragOffset: { x: 0, y: 0 },
-  isResizing: false,
-  resizeHandle: null,
-  canvasSize: { width: 960, height: 540 },
-  safeArea: { top: 40, right: 60, bottom: 40, left: 60 }
-})
-
-const getInitialMetaState = () => ({
-  mode: 'song',
-  action: 'create',
-  itemId: undefined,
-  title: '',
-  artist: '',
-  tags: [],
-  isLoading: false,
-  isSaving: false,
-  lastSaved: undefined,
-  hasUnsavedChanges: false
-})
-
-const getInitialHistoryState = () => ({
-  actions: [],
-  currentIndex: -1,
-  maxHistorySize: 50,
-  isUndoing: false,
-  isRedoing: false
 })
 
 /**

@@ -2,18 +2,28 @@ import React, { useState, useCallback } from 'react'
 import { Input } from '@renderer/components/ui/input'
 import { Label } from '@renderer/components/ui/label'
 import { Textarea } from '@renderer/components/ui/textarea'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@renderer/components/ui/select'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from '@renderer/components/ui/select'
 import { TagsInput } from '@renderer/components/ui/tags-input'
 import { Button } from '@renderer/components/ui/button'
 import { Separator } from '@renderer/components/ui/separator'
 import { Badge } from '@renderer/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@renderer/components/ui/card'
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@renderer/components/ui/collapsible'
-import { 
-  Music, 
-  User, 
-  Calendar, 
-  Clock, 
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger
+} from '@renderer/components/ui/collapsible'
+import {
+  Music,
+  User,
+  Calendar,
+  Clock,
   Hash,
   ChevronDown,
   ChevronRight,
@@ -30,7 +40,7 @@ interface SongMetadataProps {
   onTitleChange: (value: string) => void
   artist: string
   onArtistChange: (value: string) => void
-  
+
   // Extended Song Information
   album?: string
   onAlbumChange?: (value: string) => void
@@ -38,7 +48,7 @@ interface SongMetadataProps {
   onYearChange?: (value: number | undefined) => void
   genre?: string
   onGenreChange?: (value: string) => void
-  
+
   // Musical Information
   tempo?: number
   onTempoChange?: (value: number | undefined) => void
@@ -46,7 +56,7 @@ interface SongMetadataProps {
   onKeyChange?: (value: string) => void
   duration?: number
   onDurationChange?: (value: number | undefined) => void
-  
+
   // Additional Metadata
   tags: string[]
   onTagsChange: (tags: string[]) => void
@@ -56,11 +66,11 @@ interface SongMetadataProps {
   onPublisherChange?: (value: string) => void
   language?: string
   onLanguageChange?: (value: string) => void
-  
+
   // Performance Notes
   notes?: string
   onNotesChange?: (value: string) => void
-  
+
   className?: string
 }
 
@@ -99,20 +109,67 @@ export const SongMetadata: React.FC<SongMetadataProps> = ({
 
   // Common music genres for quick selection
   const commonGenres = [
-    'Contemporary Christian', 'Worship', 'Gospel', 'Hymn', 'Praise',
-    'Rock', 'Pop', 'Country', 'Folk', 'Jazz', 'Blues', 'Classical'
+    'Contemporary Christian',
+    'Worship',
+    'Gospel',
+    'Hymn',
+    'Praise',
+    'Rock',
+    'Pop',
+    'Country',
+    'Folk',
+    'Jazz',
+    'Blues',
+    'Classical'
   ]
 
   // Common music keys
   const musicKeys = [
-    'C', 'C#', 'Db', 'D', 'D#', 'Eb', 'E', 'F', 'F#', 'Gb', 'G', 'G#', 'Ab', 'A', 'A#', 'Bb', 'B',
-    'Am', 'A#m', 'Bbm', 'Bm', 'Cm', 'C#m', 'Dm', 'D#m', 'Ebm', 'Em', 'Fm', 'F#m', 'Gm', 'G#m'
+    'C',
+    'C#',
+    'Db',
+    'D',
+    'D#',
+    'Eb',
+    'E',
+    'F',
+    'F#',
+    'Gb',
+    'G',
+    'G#',
+    'Ab',
+    'A',
+    'A#',
+    'Bb',
+    'B',
+    'Am',
+    'A#m',
+    'Bbm',
+    'Bm',
+    'Cm',
+    'C#m',
+    'Dm',
+    'D#m',
+    'Ebm',
+    'Em',
+    'Fm',
+    'F#m',
+    'Gm',
+    'G#m'
   ]
 
   // Common languages
   const languages = [
-    'English', 'Spanish', 'French', 'German', 'Italian', 'Portuguese', 
-    'Chinese', 'Japanese', 'Korean', 'Other'
+    'English',
+    'Spanish',
+    'French',
+    'German',
+    'Italian',
+    'Portuguese',
+    'Chinese',
+    'Japanese',
+    'Korean',
+    'Other'
   ]
 
   const formatDuration = useCallback((seconds: number): string => {
@@ -154,7 +211,7 @@ export const SongMetadata: React.FC<SongMetadataProps> = ({
                 className="font-medium"
               />
             </div>
-            
+
             <div className="space-y-2">
               <Label htmlFor="song-artist" className="flex items-center gap-2">
                 <User className="w-4 h-4" />
@@ -191,10 +248,14 @@ export const SongMetadata: React.FC<SongMetadataProps> = ({
               <Disc3 className="w-4 h-4" />
               Album & Publication Details
             </span>
-            {showAdvanced ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+            {showAdvanced ? (
+              <ChevronDown className="w-4 h-4" />
+            ) : (
+              <ChevronRight className="w-4 h-4" />
+            )}
           </Button>
         </CollapsibleTrigger>
-        
+
         <CollapsibleContent className="mt-4">
           <Card>
             <CardContent className="pt-6 space-y-4">
@@ -208,7 +269,7 @@ export const SongMetadata: React.FC<SongMetadataProps> = ({
                     placeholder="Album name"
                   />
                 </div>
-                
+
                 <div className="space-y-2">
                   <Label htmlFor="song-year" className="flex items-center gap-2">
                     <Calendar className="w-4 h-4" />
@@ -218,7 +279,9 @@ export const SongMetadata: React.FC<SongMetadataProps> = ({
                     id="song-year"
                     type="number"
                     value={year || ''}
-                    onChange={(e) => onYearChange?.(e.target.value ? parseInt(e.target.value) : undefined)}
+                    onChange={(e) =>
+                      onYearChange?.(e.target.value ? parseInt(e.target.value) : undefined)
+                    }
                     placeholder="YYYY"
                     min="1900"
                     max={new Date().getFullYear() + 5}
@@ -235,7 +298,9 @@ export const SongMetadata: React.FC<SongMetadataProps> = ({
                     </SelectTrigger>
                     <SelectContent>
                       {commonGenres.map((g) => (
-                        <SelectItem key={g} value={g}>{g}</SelectItem>
+                        <SelectItem key={g} value={g}>
+                          {g}
+                        </SelectItem>
                       ))}
                       <SelectItem value="custom">Other...</SelectItem>
                     </SelectContent>
@@ -244,13 +309,18 @@ export const SongMetadata: React.FC<SongMetadataProps> = ({
 
                 <div className="space-y-2">
                   <Label htmlFor="song-language">Language</Label>
-                  <Select value={language || ''} onValueChange={(value) => onLanguageChange?.(value)}>
+                  <Select
+                    value={language || ''}
+                    onValueChange={(value) => onLanguageChange?.(value)}
+                  >
                     <SelectTrigger>
                       <SelectValue placeholder="Select language" />
                     </SelectTrigger>
                     <SelectContent>
                       {languages.map((lang) => (
-                        <SelectItem key={lang} value={lang}>{lang}</SelectItem>
+                        <SelectItem key={lang} value={lang}>
+                          {lang}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -269,10 +339,14 @@ export const SongMetadata: React.FC<SongMetadataProps> = ({
               <Volume2 className="w-4 h-4" />
               Musical Details
             </span>
-            {showMusical ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+            {showMusical ? (
+              <ChevronDown className="w-4 h-4" />
+            ) : (
+              <ChevronRight className="w-4 h-4" />
+            )}
           </Button>
         </CollapsibleTrigger>
-        
+
         <CollapsibleContent className="mt-4">
           <Card>
             <CardContent className="pt-6 space-y-4">
@@ -286,13 +360,15 @@ export const SongMetadata: React.FC<SongMetadataProps> = ({
                     id="song-tempo"
                     type="number"
                     value={tempo || ''}
-                    onChange={(e) => onTempoChange?.(e.target.value ? parseInt(e.target.value) : undefined)}
+                    onChange={(e) =>
+                      onTempoChange?.(e.target.value ? parseInt(e.target.value) : undefined)
+                    }
                     placeholder="120"
                     min="40"
                     max="200"
                   />
                 </div>
-                
+
                 <div className="space-y-2">
                   <Label htmlFor="song-key">Key</Label>
                   <Select value={key || ''} onValueChange={(value) => onKeyChange?.(value)}>
@@ -301,7 +377,9 @@ export const SongMetadata: React.FC<SongMetadataProps> = ({
                     </SelectTrigger>
                     <SelectContent>
                       {musicKeys.map((k) => (
-                        <SelectItem key={k} value={k}>{k}</SelectItem>
+                        <SelectItem key={k} value={k}>
+                          {k}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -345,10 +423,14 @@ export const SongMetadata: React.FC<SongMetadataProps> = ({
               <Copyright className="w-4 h-4" />
               Copyright & Licensing
             </span>
-            {showCopyright ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+            {showCopyright ? (
+              <ChevronDown className="w-4 h-4" />
+            ) : (
+              <ChevronRight className="w-4 h-4" />
+            )}
           </Button>
         </CollapsibleTrigger>
-        
+
         <CollapsibleContent className="mt-4">
           <Card>
             <CardContent className="pt-6 space-y-4">
@@ -361,7 +443,7 @@ export const SongMetadata: React.FC<SongMetadataProps> = ({
                   placeholder="© 2024 Example Music Publishing"
                 />
               </div>
-              
+
               <div className="space-y-2">
                 <Label htmlFor="song-publisher">Publisher</Label>
                 <Input

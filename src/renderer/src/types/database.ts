@@ -135,7 +135,15 @@ export interface Setlist extends BaseEntity {
 
 export interface SetlistItem {
   id: string
-  type: 'song' | 'presentation' | 'media' | 'announcement' | 'countdown'
+  type:
+    | 'song'
+    | 'presentation'
+    | 'media'
+    | 'announcement'
+    | 'countdown'
+    | 'video'
+    | 'image'
+    | 'audio'
   referenceId: string
   title: string
   duration?: number
@@ -145,6 +153,30 @@ export interface SetlistItem {
   // Countdown-specific properties
   countdownDuration?: number // Duration in seconds for countdown timers
   countdownMessage?: string // Message to display during countdown
+  // Media-specific properties
+  mediaConfig?: {
+    url?: string // File path or URL for media
+    autoplay?: boolean // Whether to auto-play the media
+    loop?: boolean // Whether to loop the media
+    volume?: number // Volume level (0-1)
+    startTime?: number // Start time in seconds
+    endTime?: number // End time in seconds
+    controls?: boolean // Show media controls
+    muted?: boolean // Start muted
+    thumbnail?: string // Thumbnail image for videos
+    mediaType?: 'video' | 'image' | 'audio' // Specific media type
+    aspectRatio?: '16:9' | '4:3' | '1:1' | 'auto' // Aspect ratio for display
+    objectFit?: 'cover' | 'contain' | 'fill' | 'scale-down' // How to fit media
+    // Background audio support for images and videos
+    backgroundAudio?: {
+      url?: string // Audio file path or URL
+      volume?: number // Background audio volume (0-1)
+      loop?: boolean // Whether to loop background audio
+      autoplay?: boolean // Whether to auto-play background audio
+      fadeIn?: number // Fade in duration in seconds
+      fadeOut?: number // Fade out duration in seconds
+    }
+  }
   // Enhanced countdown customization
   countdownConfig?: {
     title?: string // Custom title for the countdown

@@ -57,18 +57,19 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
   })
 
   if (slideBackgroundType !== 'none') {
-    const value = slideBackgroundType === 'image' 
-      ? slideBackgroundImage 
-      : slideBackgroundType === 'video' 
-        ? slideBackgroundVideo 
-        : ''
-    
+    const value =
+      slideBackgroundType === 'image'
+        ? slideBackgroundImage
+        : slideBackgroundType === 'video'
+          ? slideBackgroundVideo
+          : ''
+
     console.log('🎨 [PREVIEW_CANVAS] Creating slide background:', {
       type: slideBackgroundType,
       value: value?.substring(0, 50) + '...',
       opacity: slideBackgroundOpacity
     })
-    
+
     slideBackground = {
       type: slideBackgroundType,
       value: value || '',
@@ -77,18 +78,19 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
       position: backgroundPosition
     }
   } else if (globalBackgroundType !== 'none') {
-    const value = globalBackgroundType === 'image' 
-      ? globalBackgroundImage 
-      : globalBackgroundType === 'video' 
-        ? globalBackgroundVideo 
-        : ''
-        
+    const value =
+      globalBackgroundType === 'image'
+        ? globalBackgroundImage
+        : globalBackgroundType === 'video'
+          ? globalBackgroundVideo
+          : ''
+
     console.log('🎨 [PREVIEW_CANVAS] Creating global background:', {
       type: globalBackgroundType,
       value: value?.substring(0, 50) + '...',
       opacity: globalBackgroundOpacity
     })
-    
+
     globalBackground = {
       type: globalBackgroundType,
       value: value || '',

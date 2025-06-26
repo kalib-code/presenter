@@ -210,7 +210,9 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ className = ''
                   <SelectContent>
                     {customFonts.length > 0 && (
                       <>
-                        <div className="px-2 py-1 text-xs font-medium text-muted-foreground">Custom</div>
+                        <div className="px-2 py-1 text-xs font-medium text-muted-foreground">
+                          Custom
+                        </div>
                         {customFonts.map((font, index) => (
                           <SelectItem
                             key={`${font.id}-${index}`}
@@ -223,7 +225,9 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ className = ''
                         <div className="border-t border-border my-1" />
                       </>
                     )}
-                    <div className="px-2 py-1 text-xs font-medium text-muted-foreground">Popular</div>
+                    <div className="px-2 py-1 text-xs font-medium text-muted-foreground">
+                      Popular
+                    </div>
                     <SelectItem value="Arial">Arial</SelectItem>
                     <SelectItem value="Helvetica">Helvetica</SelectItem>
                     <SelectItem value="Times New Roman">Times New Roman</SelectItem>
@@ -231,7 +235,9 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ className = ''
                     <SelectItem value="Verdana">Verdana</SelectItem>
                     <SelectItem value="Impact">Impact</SelectItem>
                     <div className="border-t border-border my-1" />
-                    <div className="px-2 py-1 text-xs font-medium text-muted-foreground">System</div>
+                    <div className="px-2 py-1 text-xs font-medium text-muted-foreground">
+                      System
+                    </div>
                     <SelectItem value="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen-Sans, Ubuntu, Cantarell, 'Helvetica Neue', sans-serif">
                       Default Sans
                     </SelectItem>
@@ -253,7 +259,9 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ className = ''
                     <Input
                       type="number"
                       value={selectedElement.style.fontSize}
-                      onChange={(e) => handleStyleUpdate({ fontSize: parseInt(e.target.value) || 16 })}
+                      onChange={(e) =>
+                        handleStyleUpdate({ fontSize: parseInt(e.target.value) || 16 })
+                      }
                       className="h-8 text-center"
                       min={8}
                       max={120}
@@ -284,7 +292,8 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ className = ''
                     <Button
                       onClick={() =>
                         handleStyleUpdate({
-                          fontStyle: selectedElement.style.fontStyle === 'italic' ? 'normal' : 'italic'
+                          fontStyle:
+                            selectedElement.style.fontStyle === 'italic' ? 'normal' : 'italic'
                         })
                       }
                       variant={selectedElement.style.fontStyle === 'italic' ? 'default' : 'outline'}
@@ -343,12 +352,18 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ className = ''
                     </div>
                   </div>
                 </div>
-                
+
                 {/* Quick Color Swatches */}
                 <div className="grid grid-cols-8 gap-1">
                   {[
-                    '#FFFFFF', '#000000', '#FF0000', '#00FF00', 
-                    '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF'
+                    '#FFFFFF',
+                    '#000000',
+                    '#FF0000',
+                    '#00FF00',
+                    '#0000FF',
+                    '#FFFF00',
+                    '#FF00FF',
+                    '#00FFFF'
                   ].map((color) => (
                     <button
                       key={color}
@@ -402,13 +417,15 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ className = ''
                     </div>
                   </div>
                 </summary>
-                
+
                 <div className="space-y-3 mt-2">
                   {/* Line Height */}
                   <div>
                     <div className="flex items-center justify-between mb-1">
                       <Label className="text-xs text-muted-foreground">Line Height</Label>
-                      <span className="text-xs text-muted-foreground">{selectedElement.style.lineHeight}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {selectedElement.style.lineHeight}
+                      </span>
                     </div>
                     <Slider
                       value={[selectedElement.style.lineHeight]}
@@ -433,7 +450,9 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ className = ''
                         No Shadow
                       </Button>
                       <Button
-                        onClick={() => handleStyleUpdate({ textShadow: '2px 2px 4px rgba(0,0,0,0.5)' })}
+                        onClick={() =>
+                          handleStyleUpdate({ textShadow: '2px 2px 4px rgba(0,0,0,0.5)' })
+                        }
                         variant="outline"
                         size="sm"
                         className="h-7 text-xs"
@@ -443,7 +462,8 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ className = ''
                       <Button
                         onClick={() =>
                           handleStyleUpdate({
-                            textShadow: '1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000'
+                            textShadow:
+                              '1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000'
                           })
                         }
                         variant="outline"
@@ -474,7 +494,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ className = ''
                 </div>
               </details>
             </div>
-            
+
             <Separator />
           </>
         )}
@@ -540,11 +560,13 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ className = ''
               className="w-full"
             />
           </div>
-          
+
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <Label className="text-sm font-medium">Rotation</Label>
-              <span className="text-xs text-muted-foreground">{selectedElement.rotation || 0}°</span>
+              <span className="text-xs text-muted-foreground">
+                {selectedElement.rotation || 0}°
+              </span>
             </div>
             <Slider
               value={[selectedElement.rotation || 0]}

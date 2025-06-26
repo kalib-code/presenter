@@ -1,18 +1,10 @@
-import React, { useCallback, useRef, useState } from 'react'
+import React, { useCallback, useState } from 'react'
 import { Button } from '@renderer/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@renderer/components/ui/popover'
 import { Switch } from '@renderer/components/ui/switch'
 import { Slider } from '@renderer/components/ui/slider'
 import { Separator } from '@renderer/components/ui/separator'
-import { 
-  Image, 
-  Video, 
-  Trash2, 
-  Globe, 
-  Monitor, 
-  Settings, 
-  Palette
-} from 'lucide-react'
+import { Image, Video, Trash2, Globe, Monitor, Settings, Palette } from 'lucide-react'
 import { useBackgroundStore } from '@renderer/store/editor-background'
 import { MediaBrowser } from './MediaBrowser'
 import type { Media } from '@renderer/types/database'
@@ -61,21 +53,24 @@ export const BackgroundSettings: React.FC<BackgroundSettingsProps> = ({ classNam
   const backgroundPosition = useBackgroundStore((state) => state.backgroundPosition)
 
   // Handle media selection from browser
-  const handleMediaSelect = useCallback(async (file: Media & { mediaReference?: string }) => {
-    try {
-      const mediaReference = file.mediaReference || `media://${file.filename}`
-      
-      if (file.type === 'image' || file.type === 'video') {
-        if (mediaBrowserIsGlobal) {
-          setGlobalBackground(file.type, mediaReference)
-        } else {
-          setSlideBackground(file.type, mediaReference)
+  const handleMediaSelect = useCallback(
+    async (file: Media & { mediaReference?: string }) => {
+      try {
+        const mediaReference = file.mediaReference || `media://${file.filename}`
+
+        if (file.type === 'image' || file.type === 'video') {
+          if (mediaBrowserIsGlobal) {
+            setGlobalBackground(file.type, mediaReference)
+          } else {
+            setSlideBackground(file.type, mediaReference)
+          }
         }
+      } catch (error) {
+        console.error('Failed to set media background:', error)
       }
-    } catch (error) {
-      console.error('Failed to set media background:', error)
-    }
-  }, [mediaBrowserIsGlobal, setGlobalBackground, setSlideBackground])
+    },
+    [mediaBrowserIsGlobal, setGlobalBackground, setSlideBackground]
+  )
 
   // Open media browser
   const openMediaBrowser = useCallback((type: 'image' | 'video', isGlobal: boolean) => {
@@ -83,7 +78,6 @@ export const BackgroundSettings: React.FC<BackgroundSettingsProps> = ({ classNam
     setMediaBrowserIsGlobal(isGlobal)
     setMediaBrowserOpen(true)
   }, [])
-
 
   // Check if any background is active
   const hasBackground = slideBackgroundType !== 'none' || globalBackgroundType !== 'none'
@@ -99,12 +93,10 @@ export const BackgroundSettings: React.FC<BackgroundSettingsProps> = ({ classNam
           >
             <Palette className="w-4 h-4 mr-2" />
             Background
-            {hasBackground && (
-              <div className="w-2 h-2 bg-green-400 rounded-full ml-1" />
-            )}
+            {hasBackground && <div className="w-2 h-2 bg-green-400 rounded-full ml-1" />}
           </Button>
         </PopoverTrigger>
-        
+
         <PopoverContent className="w-96 p-0" align="start">
           <div className="p-4">
             <h3 className="font-semibold mb-4 flex items-center gap-2">

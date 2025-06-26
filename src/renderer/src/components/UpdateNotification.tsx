@@ -2,11 +2,11 @@ import { useState, useEffect } from 'react'
 import { Button } from './ui/button'
 import { toast } from './ui/toast'
 
-export function UpdateNotification() {
+export function UpdateNotification(): JSX.Element {
   const [updateAvailable, setUpdateAvailable] = useState(false)
   const [checking, setChecking] = useState(false)
 
-  const checkForUpdates = async () => {
+  const checkForUpdates = async (): Promise<void> => {
     try {
       setChecking(true)
       const result = await window.electron.checkForUpdates()
@@ -38,7 +38,7 @@ export function UpdateNotification() {
     }
   }
 
-  const installUpdate = async () => {
+  const installUpdate = async (): Promise<void> => {
     try {
       await window.electron.quitAndInstall()
     } catch (error) {

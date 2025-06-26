@@ -14,14 +14,35 @@ interface SetlistState {
   countdownTime: number // in seconds
   countdownActive: boolean
 
+  // Recent items tracking
+  recentItems: Array<{
+    type:
+      | 'song'
+      | 'presentation'
+      | 'media'
+      | 'announcement'
+      | 'countdown'
+      | 'video'
+      | 'image'
+      | 'audio'
+    referenceId: string
+    title: string
+    usedAt: number
+  }>
+
   // Actions
   loadSetlists: () => Promise<void>
   createSetlist: (
     data: Omit<Setlist, 'id' | 'createdAt' | 'updatedAt' | 'version'>
   ) => Promise<void>
+  duplicateSetlist: (id: string, newName?: string) => Promise<void>
   updateSetlist: (id: string, data: Partial<Setlist>) => Promise<void>
   deleteSetlist: (id: string) => Promise<void>
   setCurrentSetlist: (setlist: Setlist | null) => void
+
+  // Recent items
+  addToRecentItems: (type: string, referenceId: string, title: string) => void
+  getRecentItems: () => SetlistState['recentItems']
 
   // Item management
   addItem: (setlistId: string, item: Omit<SetlistItem, 'id' | 'order'>) => Promise<void>
@@ -56,9 +77,12 @@ export const useSetlistStore = create<SetlistState>()(
     countdownTime: 0,
     countdownActive: false,
 
+    // Recent items tracking
+    recentItems: [],
+
     loadSetlists: async () => {
       try {
-        set({ loading: true, error: null })
+        set({ isLoading: true, error: null })
         console.log('📋 [STORE] Loading setlists...')
         const setlists = await window.electron?.invoke('list-setlists')
         console.log('📋 [STORE] Setlists loaded:', setlists?.length || 0)
@@ -83,33 +107,70 @@ export const useSetlistStore = create<SetlistState>()(
             })
           })
         }
-        set({ setlists: setlists || [], loading: false })
+        set({ setlists: setlists || [], isLoading: false })
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to load setlists'
         console.error('📋 [STORE] Error loading setlists:', error)
-        set({ error: errorMessage, loading: false })
+        set({ error: errorMessage, isLoading: false })
       }
     },
 
     createSetlist: async (data) => {
       try {
-        set({ loading: true, error: null })
+        set({ isLoading: true, error: null })
         console.log('📋 [STORE] Creating setlist:', data.name)
         const setlists = await window.electron?.invoke('create-setlist', data)
         console.log('📋 [STORE] Setlist created, total setlists:', setlists?.length || 0)
-        set({ setlists: setlists || [], loading: false })
+        set({ setlists: setlists || [], isLoading: false })
         return setlists || []
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to create setlist'
         console.error('📋 [STORE] Error creating setlist:', error)
-        set({ error: errorMessage, loading: false })
+        set({ error: errorMessage, isLoading: false })
+        throw error
+      }
+    },
+
+    duplicateSetlist: async (id, newName) => {
+      try {
+        set({ isLoading: true, error: null })
+        const state = get()
+        const originalSetlist = state.setlists.find((s) => s.id === id)
+
+        if (!originalSetlist) {
+          throw new Error('Setlist not found')
+        }
+
+        console.log('📋 [STORE] Duplicating setlist:', originalSetlist.name)
+
+        const duplicateData = {
+          name: newName || `Copy of ${originalSetlist.name}`,
+          description: originalSetlist.description,
+          items: originalSetlist.items.map((item) => ({
+            ...item,
+            id: Date.now().toString() + Math.random().toString(36).slice(2)
+          })),
+          tags: [...originalSetlist.tags],
+          isPublic: originalSetlist.isPublic,
+          estimatedDuration: originalSetlist.estimatedDuration,
+          createdBy: 'user'
+        }
+
+        const setlists = await window.electron?.invoke('create-setlist', duplicateData)
+        console.log('📋 [STORE] Setlist duplicated, total setlists:', setlists?.length || 0)
+        set({ setlists: setlists || [], isLoading: false })
+        return setlists || []
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to duplicate setlist'
+        console.error('📋 [STORE] Error duplicating setlist:', error)
+        set({ error: errorMessage, isLoading: false })
         throw error
       }
     },
 
     updateSetlist: async (id, data) => {
       try {
-        set({ loading: true, error: null })
+        set({ isLoading: true, error: null })
         console.log('📋 [STORE] Updating setlist:', id, 'with data keys:', Object.keys(data))
         if (data.items) {
           console.log('📋 [STORE] Updating', data.items.length, 'items')
@@ -126,28 +187,28 @@ export const useSetlistStore = create<SetlistState>()(
         }
         const setlists = await window.electron?.invoke('update-setlist', id, data)
         console.log('📋 [STORE] Setlist updated, total setlists:', setlists?.length || 0)
-        set({ setlists: setlists || [], loading: false })
+        set({ setlists: setlists || [], isLoading: false })
         return setlists || []
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to update setlist'
         console.error('📋 [STORE] Error updating setlist:', error)
-        set({ error: errorMessage, loading: false })
+        set({ error: errorMessage, isLoading: false })
         throw error
       }
     },
 
     deleteSetlist: async (id) => {
       try {
-        set({ loading: true, error: null })
+        set({ isLoading: true, error: null })
         console.log('📋 [STORE] Deleting setlist:', id)
         const setlists = await window.electron?.invoke('delete-setlist', id)
         console.log('📋 [STORE] Setlist deleted, remaining setlists:', setlists?.length || 0)
-        set({ setlists: setlists || [], loading: false })
+        set({ setlists: setlists || [], isLoading: false })
         return setlists || []
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to delete setlist'
         console.error('📋 [STORE] Error deleting setlist:', error)
-        set({ error: errorMessage, loading: false })
+        set({ error: errorMessage, isLoading: false })
         throw error
       }
     },
@@ -157,6 +218,40 @@ export const useSetlistStore = create<SetlistState>()(
       if (!setlist) {
         set({ isPresenting: false, currentItemIndex: 0 })
       }
+    },
+
+    // Recent items tracking
+    addToRecentItems: (type, referenceId, title) => {
+      const state = get()
+      const newItem = {
+        type: type as
+          | 'song'
+          | 'presentation'
+          | 'media'
+          | 'announcement'
+          | 'countdown'
+          | 'video'
+          | 'image'
+          | 'audio',
+        referenceId,
+        title,
+        usedAt: Date.now()
+      }
+
+      // Remove existing entry if it exists
+      const filteredItems = state.recentItems.filter(
+        (item) => !(item.type === type && item.referenceId === referenceId)
+      )
+
+      // Add new item at the beginning and limit to 10 items
+      const updatedItems = [newItem, ...filteredItems].slice(0, 10)
+
+      set({ recentItems: updatedItems })
+    },
+
+    getRecentItems: () => {
+      const state = get()
+      return state.recentItems.sort((a, b) => b.usedAt - a.usedAt)
     },
 
     // Item management
@@ -193,6 +288,11 @@ export const useSetlistStore = create<SetlistState>()(
       console.log('➕ Adding item to setlist')
       await get().updateSetlist(setlistId, { items: updatedItems })
       console.log('✅ Setlist updated')
+
+      // Track this item as recently used (but not for countdown/announcement items without refs)
+      if (item.referenceId && item.referenceId !== 'new') {
+        get().addToRecentItems(item.type, item.referenceId, item.title)
+      }
 
       // Refresh setlist data to ensure UI shows the new item
       await get().loadSetlists()

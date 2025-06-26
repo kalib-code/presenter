@@ -7,7 +7,7 @@ const api = {}
 // Expose IPC invoke for renderer
 const customElectronAPI = {
   ...electronAPI,
-  invoke: (channel: string, ...args: any[]) => ipcRenderer.invoke(channel, ...args),
+  invoke: (channel: string, ...args: unknown[]) => ipcRenderer.invoke(channel, ...args),
   // Auto-updater APIs
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
   quitAndInstall: () => ipcRenderer.invoke('quit-and-install')

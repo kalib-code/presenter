@@ -308,7 +308,7 @@ export const useBackgroundStore = create<BackgroundStore>()(
 
       set(newState)
       console.log('🌍 [BACKGROUND_STORE] Global background state after set call')
-      
+
       // Verify the state was actually updated
       const updatedState = get()
       console.log('🌍 [BACKGROUND_STORE] Verified global state after update:', {
@@ -316,7 +316,7 @@ export const useBackgroundStore = create<BackgroundStore>()(
         globalBackgroundImage: updatedState.globalBackgroundImage?.substring(0, 50) + '...',
         hasGlobalImage: !!updatedState.globalBackgroundImage
       })
-      
+
       useHistoryStore.getState().pushAction(historyAction)
     },
 

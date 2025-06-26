@@ -1215,7 +1215,12 @@ export default function Home(): JSX.Element {
               globalBackground: card.globalBackground
             })
           } else {
-            console.warn('🎯 [PROJECTION] Could not find slide for index:', slideIndex, 'in song:', updatedSong.name)
+            console.warn(
+              '🎯 [PROJECTION] Could not find slide for index:',
+              slideIndex,
+              'in song:',
+              updatedSong.name
+            )
           }
         }
       }
@@ -1256,7 +1261,12 @@ export default function Home(): JSX.Element {
               globalBackground: card.globalBackground
             })
           } else {
-            console.warn('🎯 [PROJECTION] Could not find slide for index:', slideIndex, 'in presentation:', updatedPresentation.name)
+            console.warn(
+              '🎯 [PROJECTION] Could not find slide for index:',
+              slideIndex,
+              'in presentation:',
+              updatedPresentation.name
+            )
           }
         }
       }

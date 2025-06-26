@@ -1,12 +1,12 @@
-import React, { useCallback, useState, useRef } from 'react'
+import React, { useCallback, useState } from 'react'
 import {
   useAlignmentStore,
   useGuides,
   useShowGuides,
-  useGuideColor,
   useGuideOpacity,
   useSmartGuides,
-  useShowSmartGuides
+  useShowSmartGuides,
+  AlignmentGuide
 } from '@renderer/store/editor-alignment'
 
 interface GuidesOverlayProps {
@@ -22,7 +22,6 @@ export const GuidesOverlay: React.FC<GuidesOverlayProps> = ({
 }) => {
   const guides = useGuides()
   const showGuides = useShowGuides()
-  const guideColor = useGuideColor()
   const guideOpacity = useGuideOpacity()
   const smartGuides = useSmartGuides()
   const showSmartGuides = useShowSmartGuides()
@@ -48,7 +47,7 @@ export const GuidesOverlay: React.FC<GuidesOverlayProps> = ({
     [removeGuide]
   )
 
-  const handleGuideMouseDown = useCallback((e: React.MouseEvent, guide: any) => {
+  const handleGuideMouseDown = useCallback((e: React.MouseEvent, guide: AlignmentGuide) => {
     e.preventDefault()
     e.stopPropagation()
 

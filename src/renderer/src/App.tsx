@@ -24,25 +24,25 @@ function App(): JSX.Element {
 
   // Initialize app on startup
   useEffect(() => {
-    const initialize = async () => {
+    const initialize = async (): Promise<void> => {
       try {
         console.log('🚀 [APP] Starting app initialization...')
-        
+
         // Initialize settings first
         console.log('🚀 [APP] Initializing settings...')
         await initializeSettings()
         console.log('✅ [APP] Settings initialized')
-        
+
         // Initialize persistence store after settings are loaded
         console.log('🚀 [APP] Initializing persistence store...')
         initializePersistence()
         console.log('✅ [APP] Persistence store initialized')
-        
+
         // Load custom fonts
         console.log('🚀 [APP] Loading custom fonts...')
         await loadAllCustomFonts()
         console.log('✅ [APP] Custom fonts loaded')
-        
+
         console.log('✅ [APP] App initialization completed')
       } catch (error) {
         console.error('❌ [APP] App initialization failed:', error)

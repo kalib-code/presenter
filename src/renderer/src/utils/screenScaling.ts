@@ -162,8 +162,6 @@ export function getAspectRatioStrategy(targetAspectRatio: number): {
   description: string
 } {
   const ratio16_9 = 16 / 9 // 1.778
-  const ratio4_3 = 4 / 3 // 1.333
-  const ratioUltrawide = 21 / 9 // 2.333
 
   if (Math.abs(targetAspectRatio - ratio16_9) < 0.1) {
     return {

@@ -12,6 +12,8 @@ interface SettingsState {
   error?: string
 }
 
+type SettingValue = string | number | boolean | object
+
 interface SettingsActions {
   // App settings
   setTheme: (theme: AppSettings['theme']) => Promise<void>
@@ -45,10 +47,12 @@ interface SettingsActions {
   clearSettings: () => Promise<void>
 
   // Helper methods
-  loadSettingsByCategory: (category: 'app' | 'editor' | 'presentation') => Promise<Record<string, any>>
-  saveAppSetting: (key: string, value: any) => Promise<void>
-  saveEditorSetting: (key: string, value: any) => Promise<void>
-  savePresentationSetting: (key: string, value: any) => Promise<void>
+  loadSettingsByCategory: (
+    category: 'app' | 'editor' | 'presentation'
+  ) => Promise<Record<string, SettingValue>>
+  saveAppSetting: (key: string, value: SettingValue) => Promise<void>
+  saveEditorSetting: (key: string, value: SettingValue) => Promise<void>
+  savePresentationSetting: (key: string, value: SettingValue) => Promise<void>
   saveAllAppSettings: (appSettings: AppSettings) => Promise<void>
   saveAllEditorSettings: (editorSettings: EditorSettings) => Promise<void>
   saveAllPresentationSettings: (presentationSettings: PresentationSettings) => Promise<void>
@@ -114,7 +118,7 @@ export const useSettingsStore = create<SettingsStore>()(
       const newAppSettings = { ...state.app, autoSave }
       set({ app: newAppSettings })
       console.log('🔧 [SETTINGS] Updated app settings in store:', newAppSettings)
-      
+
       console.log('🔧 [SETTINGS] Saving autoSave to database...')
       await get().saveAppSetting('autoSave', autoSave)
       console.log('🔧 [SETTINGS] AutoSave saved to database successfully')
@@ -250,9 +254,9 @@ export const useSettingsStore = create<SettingsStore>()(
         const hasAutoSaveSetting = 'autoSave' in appSettings
         console.log('🔧 [SETTINGS] Has autoSave setting:', hasAutoSaveSetting)
         console.log('🔧 [SETTINGS] AutoSave value from DB:', appSettings.autoSave)
-        
+
         // Force autosave to true if it's undefined or doesn't exist
-        let finalAppSettings = { ...defaultAppSettings, ...appSettings }
+        const finalAppSettings = { ...defaultAppSettings, ...appSettings }
         if (!hasAutoSaveSetting || appSettings.autoSave === undefined) {
           console.log('🔧 [SETTINGS] AutoSave not found or undefined, forcing to true')
           finalAppSettings.autoSave = true
@@ -341,8 +345,8 @@ export const useSettingsStore = create<SettingsStore>()(
       console.log(`🔧 [SETTINGS] Loading settings for category: ${category}`)
       const settings = await db.settings.getByCategory(category)
       console.log(`🔧 [SETTINGS] Raw settings from database for ${category}:`, settings)
-      
-      const result: Record<string, any> = {}
+
+      const result: Record<string, SettingValue> = {}
 
       for (const setting of settings) {
         const key = setting.id.replace(`${category}.`, '')
@@ -354,15 +358,15 @@ export const useSettingsStore = create<SettingsStore>()(
       return result
     },
 
-    saveAppSetting: async (key: string, value: any) => {
+    saveAppSetting: async (key: string, value: SettingValue) => {
       await db.settings.setValue(`app.${key}`, value, 'app')
     },
 
-    saveEditorSetting: async (key: string, value: any) => {
+    saveEditorSetting: async (key: string, value: SettingValue) => {
       await db.settings.setValue(`editor.${key}`, value, 'editor')
     },
 
-    savePresentationSetting: async (key: string, value: any) => {
+    savePresentationSetting: async (key: string, value: SettingValue) => {
       await db.settings.setValue(`presentation.${key}`, value, 'presentation')
     },
 

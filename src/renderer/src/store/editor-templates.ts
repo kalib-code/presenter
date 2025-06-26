@@ -397,9 +397,7 @@ export const useTemplateStore = create<TemplateStore>()(
     updateTemplate: (id, updates) => {
       set((state) => ({
         templates: state.templates.map((template) =>
-          template.id === id
-            ? { ...template, ...updates, updatedAt: Date.now() }
-            : template
+          template.id === id ? { ...template, ...updates, updatedAt: Date.now() } : template
         )
       }))
     },

@@ -4,7 +4,6 @@ import { Input } from '@renderer/components/ui/input'
 import { Label } from '@renderer/components/ui/label'
 import { Slider } from '@renderer/components/ui/slider'
 import { Switch } from '@renderer/components/ui/switch'
-import { Separator } from '@renderer/components/ui/separator'
 import { Popover, PopoverContent, PopoverTrigger } from '@renderer/components/ui/popover'
 import {
   useAlignmentStore,
@@ -14,8 +13,6 @@ import {
   useGridBoxesX,
   useGridBoxesY,
   useGridVisible,
-  useGridColor,
-  useGridOpacity,
   useSnapToGrid,
   useSnapToElements,
   useSnapToGuides,
@@ -24,7 +21,7 @@ import {
   useShowRulers,
   useShowGuides
 } from '@renderer/store/editor-alignment'
-import { Grid3X3, Settings, Ruler, Settings2, Eye, EyeOff, Target, Magnet } from 'lucide-react'
+import { Grid3X3, Settings, Ruler, Eye, Target, Magnet } from 'lucide-react'
 
 interface AlignmentSettingsProps {
   className?: string
@@ -40,8 +37,6 @@ export const AlignmentSettings: React.FC<AlignmentSettingsProps> = ({ className 
     setGridMode,
     setGridBoxes,
     setGridVisible,
-    setGridColor,
-    setGridOpacity,
     setSnapToGrid,
     setSnapToElements,
     setSnapToGuides,
@@ -49,8 +44,7 @@ export const AlignmentSettings: React.FC<AlignmentSettingsProps> = ({ className 
     setSnapTolerance,
     setShowRulers,
     setShowGuides,
-    clearGuides,
-    resetToDefaults
+    clearGuides
   } = useAlignmentStore()
 
   // Current values using primitive selectors
@@ -60,8 +54,6 @@ export const AlignmentSettings: React.FC<AlignmentSettingsProps> = ({ className 
   const gridBoxesX = useGridBoxesX()
   const gridBoxesY = useGridBoxesY()
   const gridVisible = useGridVisible()
-  const gridColor = useGridColor()
-  const gridOpacity = useGridOpacity()
   const snapToGrid = useSnapToGrid()
   const snapToElements = useSnapToElements()
   const snapToGuides = useSnapToGuides()
@@ -98,7 +90,7 @@ export const AlignmentSettings: React.FC<AlignmentSettingsProps> = ({ className 
                 <Grid3X3 className="w-4 h-4 text-blue-600" />
                 <Label className="text-sm font-medium">Grid</Label>
               </div>
-              
+
               <div className="bg-muted/30 p-2 rounded space-y-2">
                 <div className="flex items-center justify-between">
                   <Label className="text-xs">Enable</Label>
@@ -112,7 +104,7 @@ export const AlignmentSettings: React.FC<AlignmentSettingsProps> = ({ className 
                     disabled={!gridEnabled}
                   />
                 </div>
-                
+
                 {gridEnabled && (
                   <>
                     <div className="flex gap-1">
@@ -181,7 +173,7 @@ export const AlignmentSettings: React.FC<AlignmentSettingsProps> = ({ className 
                 <Magnet className="w-4 h-4 text-green-600" />
                 <Label className="text-sm font-medium">Snap To</Label>
               </div>
-              
+
               <div className="bg-muted/30 p-2 rounded grid grid-cols-2 gap-2">
                 <div className="flex items-center justify-between">
                   <Label className="text-xs">Grid</Label>
@@ -203,7 +195,7 @@ export const AlignmentSettings: React.FC<AlignmentSettingsProps> = ({ className 
                   <Label className="text-xs">Center</Label>
                   <Switch checked={snapToCenter} onCheckedChange={setSnapToCenter} />
                 </div>
-                
+
                 <div className="col-span-2">
                   <div className="flex items-center gap-2">
                     <Label className="text-xs w-16">Tolerance:</Label>
@@ -227,7 +219,7 @@ export const AlignmentSettings: React.FC<AlignmentSettingsProps> = ({ className 
                 <Eye className="w-4 h-4 text-purple-600" />
                 <Label className="text-sm font-medium">Display</Label>
               </div>
-              
+
               <div className="bg-muted/30 p-2 rounded space-y-2">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -243,7 +235,12 @@ export const AlignmentSettings: React.FC<AlignmentSettingsProps> = ({ className 
                   </div>
                   <Switch checked={showGuides} onCheckedChange={setShowGuides} />
                 </div>
-                <Button onClick={clearGuides} variant="outline" size="sm" className="w-full h-6 text-xs">
+                <Button
+                  onClick={clearGuides}
+                  variant="outline"
+                  size="sm"
+                  className="w-full h-6 text-xs"
+                >
                   Clear Guides
                 </Button>
               </div>

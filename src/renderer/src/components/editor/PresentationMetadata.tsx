@@ -2,18 +2,28 @@ import React, { useState, useCallback } from 'react'
 import { Input } from '@renderer/components/ui/input'
 import { Label } from '@renderer/components/ui/label'
 import { Textarea } from '@renderer/components/ui/textarea'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@renderer/components/ui/select'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from '@renderer/components/ui/select'
 import { TagsInput } from '@renderer/components/ui/tags-input'
 import { Button } from '@renderer/components/ui/button'
 import { Badge } from '@renderer/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@renderer/components/ui/card'
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@renderer/components/ui/collapsible'
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger
+} from '@renderer/components/ui/collapsible'
 import { DateTimePicker } from '@renderer/components/ui/date-time-picker'
-import { 
-  Presentation, 
-  User, 
-  Calendar, 
-  Clock, 
+import {
+  Presentation,
+  User,
+  Calendar,
+  Clock,
   Hash,
   ChevronDown,
   ChevronRight,
@@ -35,7 +45,7 @@ interface PresentationMetadataProps {
   onSpeakerChange?: (value: string) => void
   type: 'scripture' | 'announcement' | 'custom' | 'sermon' | 'teaching' | 'testimony' | 'prayer'
   onTypeChange: (value: string) => void
-  
+
   // Event Context
   serviceDate?: Date
   onServiceDateChange?: (value: Date | undefined) => void
@@ -43,7 +53,7 @@ interface PresentationMetadataProps {
   onOccasionChange?: (value: string) => void
   location?: string
   onLocationChange?: (value: string) => void
-  
+
   // Content Information
   description?: string
   onDescriptionChange?: (value: string) => void
@@ -51,11 +61,11 @@ interface PresentationMetadataProps {
   onScriptureChange?: (value: string) => void
   topic?: string
   onTopicChange?: (value: string) => void
-  
+
   // Duration and Timing
   estimatedDuration?: number
   onEstimatedDurationChange?: (value: number | undefined) => void
-  
+
   // Additional Metadata
   tags: string[]
   onTagsChange: (tags: string[]) => void
@@ -63,11 +73,11 @@ interface PresentationMetadataProps {
   onAudienceChange?: (value: string) => void
   language?: string
   onLanguageChange?: (value: string) => void
-  
+
   // Preparation Notes
   notes?: string
   onNotesChange?: (value: string) => void
-  
+
   className?: string
 }
 
@@ -108,10 +118,20 @@ export const PresentationMetadata: React.FC<PresentationMetadataProps> = ({
 
   // Presentation types with icons and descriptions
   const presentationTypes = [
-    { value: 'scripture', label: 'Scripture Reading', icon: BookOpen, description: 'Biblical text presentation' },
+    {
+      value: 'scripture',
+      label: 'Scripture Reading',
+      icon: BookOpen,
+      description: 'Biblical text presentation'
+    },
     { value: 'sermon', label: 'Sermon', icon: User, description: 'Main teaching message' },
     { value: 'teaching', label: 'Teaching', icon: Target, description: 'Educational content' },
-    { value: 'announcement', label: 'Announcement', icon: Megaphone, description: 'Church announcements' },
+    {
+      value: 'announcement',
+      label: 'Announcement',
+      icon: Megaphone,
+      description: 'Church announcements'
+    },
     { value: 'testimony', label: 'Testimony', icon: Star, description: 'Personal testimony' },
     { value: 'prayer', label: 'Prayer', icon: Users, description: 'Prayer or liturgy' },
     { value: 'custom', label: 'Custom', icon: Settings, description: 'Other presentation type' }
@@ -119,23 +139,51 @@ export const PresentationMetadata: React.FC<PresentationMetadataProps> = ({
 
   // Common occasions
   const commonOccasions = [
-    'Sunday Service', 'Wednesday Service', 'Prayer Meeting', 'Bible Study',
-    'Easter Service', 'Christmas Service', 'Baptism', 'Communion',
-    'Youth Service', 'Children\'s Service', 'Special Event', 'Conference',
-    'Wedding', 'Funeral', 'Dedication', 'Other'
+    'Sunday Service',
+    'Wednesday Service',
+    'Prayer Meeting',
+    'Bible Study',
+    'Easter Service',
+    'Christmas Service',
+    'Baptism',
+    'Communion',
+    'Youth Service',
+    "Children's Service",
+    'Special Event',
+    'Conference',
+    'Wedding',
+    'Funeral',
+    'Dedication',
+    'Other'
   ]
 
   // Audience types
   const audienceTypes = [
-    'General Congregation', 'Youth', 'Children', 'Adults Only',
-    'Seniors', 'Small Group', 'Leadership', 'Visitors',
-    'New Members', 'Mixed Age', 'Other'
+    'General Congregation',
+    'Youth',
+    'Children',
+    'Adults Only',
+    'Seniors',
+    'Small Group',
+    'Leadership',
+    'Visitors',
+    'New Members',
+    'Mixed Age',
+    'Other'
   ]
 
   // Languages
   const languages = [
-    'English', 'Spanish', 'French', 'German', 'Italian', 'Portuguese', 
-    'Chinese', 'Japanese', 'Korean', 'Other'
+    'English',
+    'Spanish',
+    'French',
+    'German',
+    'Italian',
+    'Portuguese',
+    'Chinese',
+    'Japanese',
+    'Korean',
+    'Other'
   ]
 
   const formatDuration = useCallback((minutes: number): string => {
@@ -148,7 +196,10 @@ export const PresentationMetadata: React.FC<PresentationMetadataProps> = ({
   }, [])
 
   const getTypeInfo = (typeValue: string) => {
-    return presentationTypes.find(t => t.value === typeValue) || presentationTypes[presentationTypes.length - 1]
+    return (
+      presentationTypes.find((t) => t.value === typeValue) ||
+      presentationTypes[presentationTypes.length - 1]
+    )
   }
 
   const currentType = getTypeInfo(type)
@@ -205,7 +256,7 @@ export const PresentationMetadata: React.FC<PresentationMetadataProps> = ({
                 </SelectContent>
               </Select>
             </div>
-            
+
             <div className="space-y-2">
               <Label htmlFor="presentation-speaker" className="flex items-center gap-2">
                 <User className="w-4 h-4" />
@@ -242,10 +293,14 @@ export const PresentationMetadata: React.FC<PresentationMetadataProps> = ({
               <Calendar className="w-4 h-4" />
               Event Context
             </span>
-            {showEventDetails ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+            {showEventDetails ? (
+              <ChevronDown className="w-4 h-4" />
+            ) : (
+              <ChevronRight className="w-4 h-4" />
+            )}
           </Button>
         </CollapsibleTrigger>
-        
+
         <CollapsibleContent className="mt-4">
           <Card>
             <CardContent className="pt-6 space-y-4">
@@ -261,16 +316,21 @@ export const PresentationMetadata: React.FC<PresentationMetadataProps> = ({
                     placeholder="Select date and time"
                   />
                 </div>
-                
+
                 <div className="space-y-2">
                   <Label htmlFor="presentation-occasion">Occasion</Label>
-                  <Select value={occasion || ''} onValueChange={(value) => onOccasionChange?.(value)}>
+                  <Select
+                    value={occasion || ''}
+                    onValueChange={(value) => onOccasionChange?.(value)}
+                  >
                     <SelectTrigger>
                       <SelectValue placeholder="Select occasion" />
                     </SelectTrigger>
                     <SelectContent>
                       {commonOccasions.map((occ) => (
-                        <SelectItem key={occ} value={occ}>{occ}</SelectItem>
+                        <SelectItem key={occ} value={occ}>
+                          {occ}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -301,7 +361,11 @@ export const PresentationMetadata: React.FC<PresentationMetadataProps> = ({
                       id="estimated-duration"
                       type="number"
                       value={estimatedDuration || ''}
-                      onChange={(e) => onEstimatedDurationChange?.(e.target.value ? parseInt(e.target.value) : undefined)}
+                      onChange={(e) =>
+                        onEstimatedDurationChange?.(
+                          e.target.value ? parseInt(e.target.value) : undefined
+                        )
+                      }
                       placeholder="30"
                       min="1"
                       max="300"
@@ -327,10 +391,14 @@ export const PresentationMetadata: React.FC<PresentationMetadataProps> = ({
               <BookOpen className="w-4 h-4" />
               Content Details
             </span>
-            {showContentDetails ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+            {showContentDetails ? (
+              <ChevronDown className="w-4 h-4" />
+            ) : (
+              <ChevronRight className="w-4 h-4" />
+            )}
           </Button>
         </CollapsibleTrigger>
-        
+
         <CollapsibleContent className="mt-4">
           <Card>
             <CardContent className="pt-6 space-y-4">
@@ -355,7 +423,7 @@ export const PresentationMetadata: React.FC<PresentationMetadataProps> = ({
                     placeholder="e.g., John 3:16, Romans 8:28-30"
                   />
                 </div>
-                
+
                 <div className="space-y-2">
                   <Label htmlFor="presentation-topic">Main Topic / Theme</Label>
                   <Input
@@ -386,10 +454,14 @@ export const PresentationMetadata: React.FC<PresentationMetadataProps> = ({
               <Settings className="w-4 h-4" />
               Advanced Settings
             </span>
-            {showAdvanced ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+            {showAdvanced ? (
+              <ChevronDown className="w-4 h-4" />
+            ) : (
+              <ChevronRight className="w-4 h-4" />
+            )}
           </Button>
         </CollapsibleTrigger>
-        
+
         <CollapsibleContent className="mt-4">
           <Card>
             <CardContent className="pt-6 space-y-4">
@@ -399,13 +471,18 @@ export const PresentationMetadata: React.FC<PresentationMetadataProps> = ({
                     <Users className="w-4 h-4" />
                     Target Audience
                   </Label>
-                  <Select value={audience || ''} onValueChange={(value) => onAudienceChange?.(value)}>
+                  <Select
+                    value={audience || ''}
+                    onValueChange={(value) => onAudienceChange?.(value)}
+                  >
                     <SelectTrigger>
                       <SelectValue placeholder="Select audience" />
                     </SelectTrigger>
                     <SelectContent>
                       {audienceTypes.map((aud) => (
-                        <SelectItem key={aud} value={aud}>{aud}</SelectItem>
+                        <SelectItem key={aud} value={aud}>
+                          {aud}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -413,13 +490,18 @@ export const PresentationMetadata: React.FC<PresentationMetadataProps> = ({
 
                 <div className="space-y-2">
                   <Label htmlFor="presentation-language">Language</Label>
-                  <Select value={language || ''} onValueChange={(value) => onLanguageChange?.(value)}>
+                  <Select
+                    value={language || ''}
+                    onValueChange={(value) => onLanguageChange?.(value)}
+                  >
                     <SelectTrigger>
                       <SelectValue placeholder="Select language" />
                     </SelectTrigger>
                     <SelectContent>
                       {languages.map((lang) => (
-                        <SelectItem key={lang} value={lang}>{lang}</SelectItem>
+                        <SelectItem key={lang} value={lang}>
+                          {lang}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>

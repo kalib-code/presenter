@@ -573,7 +573,7 @@ async function deleteSlide(id: string): Promise<Slide[]> {
 }
 
 // Image CRUD operations
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+
 async function seedImages(): Promise<void> {
   const keys = Array.from(imageDb.getKeys({ limit: 1 }))
   if (keys.length > 0) return

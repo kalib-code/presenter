@@ -125,7 +125,7 @@ export function getStyleDifferences(
     const presetValue = presetStyle[key as keyof ElementStyle]
 
     if (elementValue !== presetValue) {
-      differences[key as keyof ElementStyle] = elementValue as any
+      differences[key as keyof ElementStyle] = elementValue
     }
   }
 
@@ -161,7 +161,7 @@ export function getBackgroundDifferences(
     const globalValue = globalBackground[key as keyof Background]
 
     if (slideValue !== globalValue) {
-      differences[key as keyof Background] = slideValue as any
+      differences[key as keyof Background] = slideValue
     }
   }
 

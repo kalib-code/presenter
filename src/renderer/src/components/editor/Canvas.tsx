@@ -68,7 +68,7 @@ export const Canvas: React.FC<CanvasProps> = ({ className = '' }) => {
       slideBackgroundImage: slideBackgroundImage || 'null',
       slideBackgroundType
     })
-    
+
     if (slideBackgroundImage) {
       console.log('🎨 [CANVAS] Resolving slide background image:', slideBackgroundImage)
       resolveMediaUrl(slideBackgroundImage)
@@ -142,10 +142,13 @@ export const Canvas: React.FC<CanvasProps> = ({ className = '' }) => {
       slideBackgroundImage: slideBackgroundImage || 'null',
       resolvedSlideImageUrl: resolvedSlideImageUrl || 'null',
       globalBackgroundType,
-      globalBackgroundImage: globalBackgroundImage || 'null', 
+      globalBackgroundImage: globalBackgroundImage || 'null',
       resolvedGlobalImageUrl: resolvedGlobalImageUrl || 'null',
       willRenderSlideBackground: slideBackgroundType === 'image' && !!resolvedSlideImageUrl,
-      willRenderGlobalBackground: slideBackgroundType === 'none' && globalBackgroundType === 'image' && !!resolvedGlobalImageUrl
+      willRenderGlobalBackground:
+        slideBackgroundType === 'none' &&
+        globalBackgroundType === 'image' &&
+        !!resolvedGlobalImageUrl
     })
   }, [
     slideBackgroundType,
@@ -357,8 +360,8 @@ export const Canvas: React.FC<CanvasProps> = ({ className = '' }) => {
       <div
         ref={canvasRef}
         className={`relative border border-border rounded-lg cursor-default overflow-hidden ${
-          slideBackgroundType === 'none' && globalBackgroundType === 'none' 
-            ? 'bg-slate-900 dark:bg-slate-100' 
+          slideBackgroundType === 'none' && globalBackgroundType === 'none'
+            ? 'bg-slate-900 dark:bg-slate-100'
             : ''
         }`}
         style={{
@@ -396,7 +399,9 @@ export const Canvas: React.FC<CanvasProps> = ({ className = '' }) => {
                     width: '100%',
                     height: '100%'
                   }}
-                  onLoad={() => console.log('🎨 [CANVAS] Slide background image loaded successfully')}
+                  onLoad={() =>
+                    console.log('🎨 [CANVAS] Slide background image loaded successfully')
+                  }
                   onError={() => console.error('🎨 [CANVAS] Slide background image failed to load')}
                 />
                 {/* Hidden image element to test if the URL loads */}

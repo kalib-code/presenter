@@ -84,7 +84,7 @@ export default function EditorV2(): JSX.Element {
   const redo = useHistoryStore((state) => state.redo)
 
   const { autoSaveEnabled } = useSaveStatus()
-  
+
   // Debug autosave status
   useEffect(() => {
     console.log('🎛️ [EDITOR] AutoSave status changed:', { autoSaveEnabled })

@@ -13,7 +13,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@renderer/components/u
 import { useTemplateStore, SlideTemplate } from '@renderer/store/editor-templates'
 import { useCanvasStore } from '@renderer/store/editor-canvas'
 import { useSlidesStore } from '@renderer/store/editor-slides'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@renderer/components/ui/card'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle
+} from '@renderer/components/ui/card'
 import { Search, FileText, Music, Megaphone, Presentation, Plus, Trash2 } from 'lucide-react'
 
 interface TemplateSelectorProps {
@@ -63,10 +69,10 @@ export const TemplateSelector: React.FC<TemplateSelectorProps> = ({ isOpen, onCl
     const elements = applyTemplate(template.id)
     if (elements.length > 0) {
       setElements(elements)
-      
+
       // Update the current slide with the new elements
       // Convert EditorElement back to SlideElement for slide storage
-      const slideElements = elements.map(element => ({
+      const slideElements = elements.map((element) => ({
         id: element.id,
         type: element.type,
         position: element.position,
@@ -86,12 +92,12 @@ export const TemplateSelector: React.FC<TemplateSelectorProps> = ({ isOpen, onCl
         },
         zIndex: element.zIndex || 0
       }))
-      
+
       updateSlide(currentSlideIndex, {
         elements: slideElements,
         title: template.name.includes('Title') ? 'New ' + template.name : undefined
       })
-      
+
       onClose()
     }
   }
@@ -152,7 +158,8 @@ export const TemplateSelector: React.FC<TemplateSelectorProps> = ({ isOpen, onCl
         <DialogHeader>
           <DialogTitle>Choose a Slide Template</DialogTitle>
           <DialogDescription>
-            Select a pre-designed template to quickly create your slide, or create a new template from your current slide.
+            Select a pre-designed template to quickly create your slide, or create a new template
+            from your current slide.
           </DialogDescription>
         </DialogHeader>
 
@@ -193,7 +200,9 @@ export const TemplateSelector: React.FC<TemplateSelectorProps> = ({ isOpen, onCl
               <div className="max-h-96 overflow-y-auto">
                 {filteredTemplates.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
-                    {searchQuery ? 'No templates found matching your search.' : 'No templates in this category.'}
+                    {searchQuery
+                      ? 'No templates found matching your search.'
+                      : 'No templates in this category.'}
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -259,7 +268,8 @@ export const TemplateSelector: React.FC<TemplateSelectorProps> = ({ isOpen, onCl
                             )}
                           </div>
                           <div className="text-xs text-muted-foreground">
-                            {template.elements.length} element{template.elements.length !== 1 ? 's' : ''}
+                            {template.elements.length} element
+                            {template.elements.length !== 1 ? 's' : ''}
                           </div>
                         </CardContent>
                       </Card>

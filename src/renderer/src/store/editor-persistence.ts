@@ -51,7 +51,7 @@ type PersistenceStore = PersistenceState &
 
 const initialState: PersistenceState = {
   autoSaveEnabled: true, // Default value, will be synced from settings store later
-  autoSaveInterval: 30000, // Default value, will be synced from settings store later  
+  autoSaveInterval: 30000, // Default value, will be synced from settings store later
   lastAutoSave: undefined,
   isSaving: false,
   saveError: undefined,
@@ -87,7 +87,7 @@ export const usePersistenceStore = create<PersistenceStore>()(
 
       set({ autoSaveEnabled: true, autoSaveInterval: interval })
       console.log('🎛️ [PERSISTENCE] AutoSave enabled in persistence store with interval:', interval)
-      
+
       // Update settings store
       useSettingsStore.getState().setAutoSave(true)
       if (interval !== useSettingsStore.getState().app.autoSaveInterval) {
@@ -102,7 +102,7 @@ export const usePersistenceStore = create<PersistenceStore>()(
       }
       set({ autoSaveEnabled: false })
       console.log('🎛️ [PERSISTENCE] AutoSave disabled in persistence store')
-      
+
       // Update settings store
       useSettingsStore.getState().setAutoSave(false)
     },
@@ -768,7 +768,7 @@ export const usePersistenceStore = create<PersistenceStore>()(
 
     initialize: () => {
       console.log('🎛️ [PERSISTENCE] Initializing persistence store...')
-      
+
       // Sync with settings store first
       const settingsState = useSettingsStore.getState()
       console.log('🎛️ [PERSISTENCE] Settings state when initializing:', {
@@ -776,7 +776,7 @@ export const usePersistenceStore = create<PersistenceStore>()(
         autoSaveInterval: settingsState.app.autoSaveInterval,
         isLoaded: settingsState.isLoaded
       })
-      
+
       // Wait for settings to be loaded if they haven't been loaded yet
       const waitForSettingsAndSync = () => {
         const currentSettingsState = useSettingsStore.getState()
@@ -786,12 +786,15 @@ export const usePersistenceStore = create<PersistenceStore>()(
             autoSaveEnabled: currentSettingsState.app.autoSave,
             autoSaveInterval: currentSettingsState.app.autoSaveInterval
           })
-          
+
           // Set up auto-save if enabled
           const state = get()
           console.log('🎛️ [PERSISTENCE] After sync - autoSaveEnabled:', state.autoSaveEnabled)
           if (state.autoSaveEnabled) {
-            console.log('🎛️ [PERSISTENCE] Enabling auto-save with interval:', state.autoSaveInterval)
+            console.log(
+              '🎛️ [PERSISTENCE] Enabling auto-save with interval:',
+              state.autoSaveInterval
+            )
             get().enableAutoSave(state.autoSaveInterval)
           } else {
             console.log('🎛️ [PERSISTENCE] Auto-save is disabled, not starting timer')
@@ -802,7 +805,7 @@ export const usePersistenceStore = create<PersistenceStore>()(
           setTimeout(waitForSettingsAndSync, 100)
         }
       }
-      
+
       waitForSettingsAndSync()
 
       // Subscribe to changes that should trigger unsaved state

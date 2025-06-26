@@ -9,8 +9,7 @@ import {
   FileImage,
   Video,
   Headphones,
-  FileText,
-  Monitor
+  FileText
 } from 'lucide-react'
 import { NavUser } from '@renderer/components/nav-user'
 import { Link, useLocation } from 'react-router-dom'
