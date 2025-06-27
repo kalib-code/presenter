@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import { SlideRenderer } from '@renderer/components/editor/SlideRenderer'
 import { BackgroundRenderer } from '@renderer/components/editor/BackgroundRenderer'
+import { resolutionManager, getCurrentProjectionResolution, getCurrentTextScale } from '@renderer/utils/resolutionManager'
+import { scaleTextSizeEnhanced } from '@renderer/utils/screenScaling'
+import { Resolution } from '@renderer/types/resolution'
 
 // Direct IPC access (nodeIntegration enabled for presentation window)
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -99,6 +102,55 @@ export default function Presentation(): JSX.Element {
     width: window.innerWidth,
     height: window.innerHeight
   })
+
+  const [currentResolution, setCurrentResolution] = useState<Resolution | null>(null)
+  const [isResolutionReady, setIsResolutionReady] = useState(false)
+
+  // Helper function to calculate optimal text size based on current resolution
+  const getOptimalTextSize = (baseSize: number): string => {
+    // Early return if resolution isn't ready yet
+    if (!isResolutionReady) {
+      return `${baseSize}px`
+    }
+
+    try {
+      const resolution = getCurrentProjectionResolution()
+      if (resolution) {
+        const scaledSize = scaleTextSizeEnhanced(baseSize, resolution, 1, 'projection')
+        return `${Math.round(scaledSize)}px`
+      }
+    } catch (error) {
+      console.warn('📺 [PRESENTATION] Failed to calculate optimal text size:', error)
+    }
+    
+    // Fallback based on window dimensions
+    const scale = Math.min(windowDimensions.width / 1920, windowDimensions.height / 1080)
+    return `${Math.round(baseSize * scale)}px`
+  }
+
+  // Initialize resolution manager for presentation window
+  useEffect(() => {
+    const initializeResolution = async (): Promise<void> => {
+      try {
+        await resolutionManager.initialize()
+        const resolution = getCurrentProjectionResolution()
+        
+        setCurrentResolution(resolution)
+        setIsResolutionReady(true)
+        
+        console.log('📺 [PRESENTATION] Resolution initialized:', {
+          resolution: resolution ? `${resolution.width}x${resolution.height}` : 'none',
+          category: resolution?.category,
+          textScale: getCurrentTextScale()
+        })
+      } catch (error) {
+        console.error('📺 [PRESENTATION] Failed to initialize resolution:', error)
+        setIsResolutionReady(true) // Continue without resolution support
+      }
+    }
+
+    initializeResolution()
+  }, [])
 
   // Listen for projection updates from main process
   useEffect(() => {
@@ -207,7 +259,11 @@ export default function Presentation(): JSX.Element {
 
     return (
       <div className="w-full h-screen relative overflow-hidden bg-black">
-        <BackgroundRenderer background={background} />
+        <BackgroundRenderer 
+          background={background} 
+          useProjectionQuality={true}
+          key={background ? `${background.type}-${background.value}-${JSON.stringify(background)}` : 'no-background'}
+        />
         {/* No text elements - just background */}
       </div>
     )
@@ -272,7 +328,11 @@ export default function Presentation(): JSX.Element {
       console.log('📺 [PRESENTATION] Rendering countdown with CountdownDisplay')
       return (
         <div className="w-full h-screen flex items-center justify-center bg-black">
-          <BackgroundRenderer background={background} />
+          <BackgroundRenderer 
+          background={background} 
+          useProjectionQuality={true}
+          key={background ? `${background.type}-${background.value}-${JSON.stringify(background)}` : 'no-background'}
+        />
           {!presentationState.isBlank && (
             <div className="relative z-10 w-full h-full">
               <CountdownDisplay content={currentData.content} slideData={currentData.slideData} />
@@ -326,20 +386,46 @@ export default function Presentation(): JSX.Element {
     return (
       <div className="w-full h-screen flex items-center justify-center bg-black">
         {console.log('📺 [PRESENTATION] Rendering BackgroundRenderer with:', background)}
-        <BackgroundRenderer background={background} />
+        <BackgroundRenderer 
+          background={background} 
+          useProjectionQuality={true}
+          key={background ? `${background.type}-${background.value}-${JSON.stringify(background)}` : 'no-background'}
+        />
 
-        {/* Only render text content if not in blank mode */}
+        {/* Only render text content if not in blank mode - with resolution-aware sizing */}
         {!presentationState.isBlank && (
           <div className="relative z-10 text-center max-w-4xl mx-auto px-8">
             {currentData.type === 'announcement' ? (
               <div className="bg-black bg-opacity-30 rounded-2xl p-16">
-                <h1 className="text-6xl font-bold mb-8 text-white text-shadow-lg">Announcement</h1>
-                <div className="text-4xl leading-relaxed text-white text-shadow-md">
+                <h1 
+                  className="font-bold mb-8 text-white"
+                  style={{ 
+                    fontSize: getOptimalTextSize(72),
+                    textShadow: '2px 2px 4px rgba(0,0,0,0.8)'
+                  }}
+                >
+                  Announcement
+                </h1>
+                <div 
+                  className="leading-relaxed text-white"
+                  style={{ 
+                    fontSize: getOptimalTextSize(48),
+                    textShadow: '2px 2px 4px rgba(0,0,0,0.6)',
+                    lineHeight: 1.4
+                  }}
+                >
                   {currentData.content}
                 </div>
               </div>
             ) : (
-              <div className="text-5xl leading-relaxed text-white text-shadow-lg font-bold whitespace-pre-line">
+              <div 
+                className="leading-relaxed text-white font-bold whitespace-pre-line"
+                style={{ 
+                  fontSize: getOptimalTextSize(60),
+                  textShadow: '2px 2px 4px rgba(0,0,0,0.8)',
+                  lineHeight: 1.3
+                }}
+              >
                 {currentData.content}
               </div>
             )}
@@ -353,8 +439,18 @@ export default function Presentation(): JSX.Element {
   return (
     <div className="w-full h-screen bg-black flex items-center justify-center">
       <div className="text-center text-white">
-        <h1 className="text-6xl font-bold mb-8 opacity-80">Projection Ready</h1>
-        <p className="text-2xl opacity-60">Waiting for content...</p>
+        <h1 
+          className="font-bold mb-8 opacity-80"
+          style={{ fontSize: getOptimalTextSize(72) }}
+        >
+          Projection Ready
+        </h1>
+        <p 
+          className="opacity-60"
+          style={{ fontSize: getOptimalTextSize(32) }}
+        >
+          Waiting for content...
+        </p>
       </div>
     </div>
   )
@@ -437,46 +533,95 @@ function CountdownDisplay({
   const minutes = Math.floor(timeLeft / 60)
   const seconds = timeLeft % 60
 
-  // Size classes for responsive design
-  const getCounterSizeClass = (size?: string): string => {
+  // Dynamic size calculation based on resolution
+  const getCounterSize = (size?: string): string => {
+    let baseSize: number
     switch (size) {
       case 'small':
-        return 'text-6xl'
+        baseSize = 72
+        break
       case 'medium':
-        return 'text-8xl'
+        baseSize = 96
+        break
       case 'large':
-        return 'text-9xl'
+        baseSize = 144
+        break
       case 'extra-large':
-        return 'text-[12rem]'
+        baseSize = 192
+        break
       default:
-        return 'text-9xl'
+        baseSize = 144
     }
+
+    try {
+      const resolution = getCurrentProjectionResolution()
+      if (resolution) {
+        const scaledSize = scaleTextSizeEnhanced(baseSize, resolution, 1, 'projection')
+        return `${Math.round(scaledSize)}px`
+      }
+    } catch (error) {
+      console.warn('📺 [COUNTDOWN] Failed to calculate counter size:', error)
+    }
+    
+    return `${baseSize}px`
   }
 
-  const getTitleSizeClass = (size?: string): string => {
+  const getTitleSize = (size?: string): string => {
+    let baseSize: number
     switch (size) {
       case 'small':
-        return 'text-3xl'
+        baseSize = 32
+        break
       case 'medium':
-        return 'text-5xl'
+        baseSize = 48
+        break
       case 'large':
-        return 'text-7xl'
+        baseSize = 64
+        break
       default:
-        return 'text-5xl'
+        baseSize = 48
     }
+
+    try {
+      const resolution = getCurrentProjectionResolution()
+      if (resolution) {
+        const scaledSize = scaleTextSizeEnhanced(baseSize, resolution, 1, 'projection')
+        return `${Math.round(scaledSize)}px`
+      }
+    } catch (error) {
+      console.warn('📺 [COUNTDOWN] Failed to calculate title size:', error)
+    }
+    
+    return `${baseSize}px`
   }
 
-  const getMessageSizeClass = (size?: string): string => {
+  const getMessageSize = (size?: string): string => {
+    let baseSize: number
     switch (size) {
       case 'small':
-        return 'text-xl'
+        baseSize = 20
+        break
       case 'medium':
-        return 'text-3xl'
+        baseSize = 32
+        break
       case 'large':
-        return 'text-5xl'
+        baseSize = 48
+        break
       default:
-        return 'text-3xl'
+        baseSize = 32
     }
+
+    try {
+      const resolution = getCurrentProjectionResolution()
+      if (resolution) {
+        const scaledSize = scaleTextSizeEnhanced(baseSize, resolution, 1, 'projection')
+        return `${Math.round(scaledSize)}px`
+      }
+    } catch (error) {
+      console.warn('📺 [COUNTDOWN] Failed to calculate message size:', error)
+    }
+    
+    return `${baseSize}px`
   }
 
   // Default background for countdown if none specified
@@ -492,8 +637,9 @@ function CountdownDisplay({
 
       <div className="relative z-10 text-center max-w-4xl mx-auto px-8">
         <h1
-          className={`font-bold mb-12 ${getTitleSizeClass(styling?.titleSize)}`}
+          className="font-bold mb-12"
           style={{
+            fontSize: getTitleSize(styling?.titleSize),
             color: styling?.titleColor || '#FFFFFF',
             textShadow: styling?.textShadow !== false ? '2px 2px 4px rgba(0,0,0,0.8)' : 'none'
           }}
@@ -502,10 +648,9 @@ function CountdownDisplay({
         </h1>
 
         <div
-          className={`font-bold font-mono mb-8 ${getCounterSizeClass(styling?.counterSize)} ${
-            timeLeft <= 0 ? 'animate-pulse' : ''
-          }`}
+          className={`font-bold font-mono mb-8 ${timeLeft <= 0 ? 'animate-pulse' : ''}`}
           style={{
+            fontSize: getCounterSize(styling?.counterSize),
             color: timeLeft <= 0 ? '#FCA5A5' : styling?.counterColor || '#FFFFFF',
             textShadow: styling?.textShadow !== false ? '2px 2px 4px rgba(0,0,0,0.8)' : 'none'
           }}
@@ -514,8 +659,8 @@ function CountdownDisplay({
         </div>
 
         <div
-          className={`${getMessageSizeClass(styling?.messageSize)}`}
           style={{
+            fontSize: getMessageSize(styling?.messageSize),
             color: styling?.messageColor || '#FFFFFF',
             textShadow: styling?.textShadow !== false ? '2px 2px 4px rgba(0,0,0,0.8)' : 'none'
           }}

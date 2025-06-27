@@ -2,10 +2,11 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useSetlistStore } from '@renderer/store/setlist'
 import { useSongStore } from '@renderer/store/song'
 import { usePresentationStore } from '@renderer/store/presentation'
-import { screenManager, DisplayInfo } from '@renderer/utils/screenScaling'
+import { screenManager, DisplayInfo, scaleTextSizeEnhanced } from '@renderer/utils/screenScaling'
 import { resolveMediaUrl, isMediaReference } from '@renderer/utils/mediaUtils'
-import { CANVAS_WIDTH, CANVAS_HEIGHT } from '@renderer/constants/canvas'
+import { CANVAS_WIDTH, CANVAS_HEIGHT, getPreviewCanvasDimensions } from '@renderer/constants/canvas'
 import { BackgroundRenderer } from '@renderer/components/editor/BackgroundRenderer'
+import { resolutionManager, getCurrentProjectionResolution } from '@renderer/utils/resolutionManager'
 import { Button } from '@renderer/components/ui/button'
 import { Badge } from '@renderer/components/ui/badge'
 import { Separator } from '@renderer/components/ui/separator'
@@ -308,6 +309,55 @@ function PreviewMediaElement({
   return null
 }
 
+// Helper function to calculate optimal preview text size based on current projection resolution
+function getOptimalPreviewTextSize(): string {
+  try {
+    // Get current projection resolution
+    const projectionResolution = getCurrentProjectionResolution()
+    
+    if (projectionResolution) {
+      // Base text size for preview cards (smaller than projection)
+      const baseSize = 48 // Base size for 1080p projection
+      
+      // Calculate optimal size for current resolution with preview context
+      const optimalSize = scaleTextSizeEnhanced(
+        baseSize, 
+        projectionResolution, 
+        1, // DPI scale (will be handled by screenManager)
+        'preview'
+      )
+      
+      // Scale down for preview card size (cards are much smaller than full screen)
+      const previewScale = 0.3 // Preview cards are roughly 30% of full screen
+      const finalSize = Math.max(optimalSize * previewScale, 10) // Minimum 10px
+      
+      console.log('🎯 [PREVIEW-TEXT] Calculated optimal text size:', {
+        projectionResolution: `${projectionResolution.width}x${projectionResolution.height}`,
+        category: projectionResolution.category,
+        baseSize,
+        optimalSize,
+        finalSize: Math.round(finalSize)
+      })
+      
+      return `${Math.round(finalSize)}px`
+    }
+  } catch (error) {
+    console.warn('🎯 [PREVIEW-TEXT] Failed to calculate optimal text size, using fallback:', error)
+  }
+  
+  // Fallback to responsive size based on screen manager
+  try {
+    const fallbackSize = screenManager.getOptimalTextSize(48, 'preview')
+    const scaledSize = Math.max(fallbackSize * 0.3, 10)
+    return `${Math.round(scaledSize)}px`
+  } catch (error) {
+    console.warn('🎯 [PREVIEW-TEXT] Screen manager fallback failed, using fixed size:', error)
+  }
+  
+  // Final fallback
+  return '15px'
+}
+
 // Function to render card content as projection preview (16:9 aspect ratio)
 function renderCardContent(card: ContentCard): JSX.Element {
   console.log(
@@ -391,6 +441,7 @@ function renderCardContent(card: ContentCard): JSX.Element {
             }
           }
           preview={true}
+          key={`countdown-${background?.type || 'gradient'}-${background?.value || 'default'}`}
         />
 
         {/* Content overlay */}
@@ -443,18 +494,22 @@ function renderCardContent(card: ContentCard): JSX.Element {
             value: background.value?.substring(0, 100) + '...',
             cardTitle: card.title
           })
-          return <BackgroundRenderer background={background} preview={true} />
+          return <BackgroundRenderer 
+            background={background} 
+            preview={true} 
+            key={`${card.id}-${background.type}-${background.value}`}
+          />
         }
 
         return null
       })()}
 
-      {/* Simplified content rendering - just show text content centered */}
+      {/* Resolution-aware content rendering with proper text scaling */}
       <div className="absolute inset-0 flex items-center justify-center p-4" style={{ zIndex: 10 }}>
         <div
           className="text-center drop-shadow-lg whitespace-pre-line overflow-hidden w-full"
           style={{
-            fontSize: '15px',
+            fontSize: getOptimalPreviewTextSize(),
             color: '#FFFFFF',
             fontFamily: 'Arial, sans-serif',
             fontWeight: 'bold',
@@ -577,18 +632,26 @@ export default function Home(): JSX.Element {
     fetchSongs()
     loadPresentations()
 
-    // Initialize screen manager
+    // Initialize screen manager and resolution manager
     const initializeScreens = async (): Promise<void> => {
-      await screenManager.initialize()
+      // Initialize both managers
+      await Promise.all([
+        screenManager.initialize(),
+        resolutionManager.initialize()
+      ])
+      
       const displays = screenManager.getDisplays()
       const projectionDisplay = screenManager.getCurrentProjectionDisplay()
+      const resolutionState = resolutionManager.getState()
 
       setCurrentProjectionDisplay(projectionDisplay)
 
       if (projectionDisplay) {
-        console.log('📺 [HOME] Initialized screens:', {
+        console.log('📺 [HOME] Initialized screens and resolution support:', {
           displaysCount: displays.length,
-          currentDisplay: projectionDisplay.id
+          currentDisplay: projectionDisplay.id,
+          resolutionCategory: resolutionState.currentProjectionDisplay?.resolution.category,
+          textScale: resolutionState.currentProjectionDisplay?.scalingConfig.textScale
         })
       }
     }
@@ -2123,7 +2186,11 @@ export default function Home(): JSX.Element {
                           previewMode: false
                         })
 
-                        return <BackgroundRenderer background={background} preview={false} />
+                        return <BackgroundRenderer 
+                          background={background} 
+                          preview={false} 
+                          key={`live-preview-${background?.type || 'none'}-${background?.value || 'none'}-${selectedCard.id}`}
+                        />
                       })()}
 
                       {/* Content Layer */}

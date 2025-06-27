@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react'
-import { ScalingConfig, scaleTextSize, screenManager } from '@renderer/utils/screenScaling'
+import { ScalingConfig, scaleTextSize, scaleTextSizeEnhanced, screenManager } from '@renderer/utils/screenScaling'
 import { resolveMediaUrl, isMediaReference } from '@renderer/utils/mediaUtils'
-import { CANVAS_WIDTH, CANVAS_HEIGHT } from '@renderer/constants/canvas'
+import { CANVAS_WIDTH, CANVAS_HEIGHT, BASE_CANVAS_WIDTH, BASE_CANVAS_HEIGHT, getCanvasDimensionsForResolution, getProjectionCanvasDimensions } from '@renderer/constants/canvas'
 import { BackgroundRenderer } from './BackgroundRenderer'
+import { resolutionManager, getCurrentProjectionResolution } from '@renderer/utils/resolutionManager'
+import { Resolution } from '@renderer/types/resolution'
 
 // Helper function to generate placeholder for missing media
 const generatePlaceholderForElement = (content: string): string => {
@@ -273,34 +275,59 @@ export const SlideRenderer: React.FC<SlideRendererProps> = ({
   scalingConfig,
   useProjectionScaling = false
 }) => {
-  // Get projection scaling config if requested
+  // Get enhanced projection scaling config with multi-resolution support
   const projectionConfig =
     useProjectionScaling && !scalingConfig ? screenManager.getCurrentScalingConfig() : scalingConfig
 
+  // Get current projection resolution for enhanced scaling
+  const currentResolution = useProjectionScaling ? getCurrentProjectionResolution() : null
+  
+  // Determine canvas dimensions based on resolution and context
+  let canvasWidth = CANVAS_WIDTH   // Legacy fallback
+  let canvasHeight = CANVAS_HEIGHT  // Legacy fallback
+  
+  if (useProjectionScaling && currentResolution) {
+    // Use resolution-aware canvas dimensions for projection
+    const projectionCanvas = getProjectionCanvasDimensions(containerWidth, containerHeight)
+    canvasWidth = projectionCanvas.width
+    canvasHeight = projectionCanvas.height
+    
+    console.log('🎨 [SLIDE_RENDERER] Using projection canvas dimensions:', {
+      resolution: `${currentResolution.width}x${currentResolution.height}`,
+      category: currentResolution.category,
+      canvasSize: `${canvasWidth}x${canvasHeight}`,
+      containerSize: `${containerWidth}x${containerHeight}`
+    })
+  } else if (isPreview) {
+    // Use legacy canvas dimensions for preview
+    canvasWidth = CANVAS_WIDTH
+    canvasHeight = CANVAS_HEIGHT
+  }
+
   // Calculate scaling factors to adapt from canvas coordinates to container size
-  let scaleX = containerWidth / CANVAS_WIDTH
-  let scaleY = containerHeight / CANVAS_HEIGHT
+  let scaleX = containerWidth / canvasWidth
+  let scaleY = containerHeight / canvasHeight
   let scale = Math.min(scaleX, scaleY) // Use smaller scale to maintain aspect ratio
 
-  // Override with projection scaling if available
+  // Override with projection scaling if available and using projection mode
   if (projectionConfig && useProjectionScaling) {
-    // For projection, use the projection config's scaling
+    // For projection, use the enhanced projection config's scaling
     scaleX = projectionConfig.scaleX
     scaleY = projectionConfig.scaleY
     scale = projectionConfig.uniformScale
   }
 
   // Calculate offsets to center the scaled canvas
-  const scaledCanvasWidth = CANVAS_WIDTH * scale
-  const scaledCanvasHeight = CANVAS_HEIGHT * scale
+  const scaledCanvasWidth = canvasWidth * scale
+  const scaledCanvasHeight = canvasHeight * scale
   const offsetX = (containerWidth - scaledCanvasWidth) / 2
   const offsetY = (containerHeight - scaledCanvasHeight) / 2
 
-  // Debug logging for preview mode
-  if (isPreview) {
-    console.log('🎨 [SLIDE_RENDERER] Scaling calculation:', {
+  // Enhanced debug logging
+  if (isPreview || useProjectionScaling) {
+    console.log('🎨 [SLIDE_RENDERER] Enhanced scaling calculation:', {
       containerSize: `${containerWidth}x${containerHeight}`,
-      canvasSize: `${CANVAS_WIDTH}x${CANVAS_HEIGHT}`,
+      canvasSize: `${canvasWidth}x${canvasHeight}`,
       scaleFactors: {
         scaleX: scaleX.toFixed(3),
         scaleY: scaleY.toFixed(3),
@@ -308,7 +335,11 @@ export const SlideRenderer: React.FC<SlideRendererProps> = ({
       },
       scaledCanvas: `${scaledCanvasWidth.toFixed(0)}x${scaledCanvasHeight.toFixed(0)}`,
       offsets: { x: offsetX.toFixed(0), y: offsetY.toFixed(0) },
-      elementsCount: elements.length
+      elementsCount: elements.length,
+      projectionMode: useProjectionScaling,
+      currentResolution: currentResolution?.commonName,
+      resolutionCategory: currentResolution?.category,
+      isPreview
     })
   }
 
@@ -348,9 +379,27 @@ export const SlideRenderer: React.FC<SlideRendererProps> = ({
           if (element.type === 'text') {
             const style = element.style || {}
 
-            // Use projection-aware text scaling if available
+            // Use enhanced resolution-aware text scaling
             let scaledFontSize = (style.fontSize || 48) * scale
-            if (projectionConfig && useProjectionScaling) {
+            
+            if (useProjectionScaling && currentResolution) {
+              // Use enhanced multi-resolution text scaling
+              const context = isPreview ? 'preview' : 'projection'
+              scaledFontSize = scaleTextSizeEnhanced(
+                style.fontSize || 48, 
+                currentResolution, 
+                1, // DPI will be handled by resolution manager
+                context
+              )
+              
+              console.log('🔤 [SLIDE_RENDERER] Enhanced text scaling:', {
+                originalSize: style.fontSize || 48,
+                scaledSize: scaledFontSize,
+                resolution: currentResolution.category,
+                context
+              })
+            } else if (projectionConfig && useProjectionScaling) {
+              // Fallback to legacy scaling
               scaledFontSize = scaleTextSize(style.fontSize || 48, projectionConfig)
             }
 
@@ -404,10 +453,15 @@ export const SlideRenderer: React.FC<SlideRendererProps> = ({
           return null
         })}
 
-      {/* Show canvas dimensions for preview mode */}
+      {/* Show canvas dimensions for preview mode with enhanced info */}
       {isPreview && (
         <div className="absolute bottom-2 right-2 text-xs text-slate-400 bg-slate-800/80 px-2 py-1 rounded">
-          {CANVAS_WIDTH} × {CANVAS_HEIGHT} (scaled {(scale * 100).toFixed(0)}%)
+          <div>{canvasWidth} × {canvasHeight} (scaled {(scale * 100).toFixed(0)}%)</div>
+          {currentResolution && (
+            <div className="text-[10px] opacity-75">
+              Target: {currentResolution.commonName} ({currentResolution.category})
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -1,12 +1,30 @@
 /**
- * Screen Scaling Utilities for Presenter Application
+ * Enhanced Screen Scaling Utilities for Multi-Resolution Support
  *
  * Handles:
- * - Screen resolution detection and management
+ * - Multi-resolution scaling (4K, 2K, ultra-wide, legacy)
  * - Consistent scaling between preview and projection
- * - Text scaling based on screen height (16:9 optimized)
+ * - Resolution-aware text scaling with DPI support
  * - Real-time updates when displays change
+ * - Performance optimization per resolution tier
  */
+
+import { 
+  Resolution, 
+  ResolutionCategory, 
+  ScalingConfiguration,
+  ResolutionProfile,
+  RESOLUTION_PROFILES,
+  findBestMatchResolution,
+  calculateOptimalTextSize
+} from '@renderer/types/resolution'
+import { 
+  BASE_CANVAS_WIDTH, 
+  BASE_CANVAS_HEIGHT, 
+  getCanvasDimensionsForResolution,
+  getProjectionCanvasDimensions,
+  getTextScaleFactor
+} from '@renderer/constants/canvas'
 
 export interface DisplayInfo {
   id: number
@@ -26,51 +44,74 @@ export interface DisplayInfo {
   isPrimary?: boolean
 }
 
-export interface ScalingConfig {
-  // Base design canvas size (fixed design canvas - 16:9)
+// Enhanced scaling config with multi-resolution support
+export interface ScalingConfig extends ScalingConfiguration {
+  // Legacy compatibility
   baseWidth: number
   baseHeight: number
-
-  // Target projection screen
   targetWidth: number
   targetHeight: number
-
-  // Scaling factors
-  scaleX: number
-  scaleY: number
-  uniformScale: number
-
-  // Aspect ratio info
   baseAspectRatio: number
   targetAspectRatio: number
-
-  // Text scaling (based on height for readability)
   textScaleFactor: number
+  
+  // Enhanced multi-resolution properties
+  resolution: Resolution
+  resolutionProfile: ResolutionProfile
+  canvasDimensions: {
+    width: number
+    height: number
+    scale: number
+  }
+  performanceLevel: 'ultra' | 'high' | 'balanced' | 'performance' | 'legacy'
+  recommendedSettings: {
+    backgroundQuality: 'ultra' | 'high' | 'medium' | 'low'
+    renderingPipeline: 'gpu' | 'cpu' | 'hybrid'
+    enableOptimizations: boolean
+  }
 }
 
-// Base design canvas - 16:9 optimized for most projectors/TVs
-const BASE_DESIGN_WIDTH = 1920
-const BASE_DESIGN_HEIGHT = 1080
+// Base design canvas - Full HD as reference
+const BASE_DESIGN_WIDTH = BASE_CANVAS_WIDTH  // 1920
+const BASE_DESIGN_HEIGHT = BASE_CANVAS_HEIGHT // 1080
 
 /**
- * Calculate scaling configuration for target display
+ * Calculate enhanced scaling configuration for target display with multi-resolution support
  */
 export function calculateScaling(targetDisplay: DisplayInfo): ScalingConfig {
   const { width: targetWidth, height: targetHeight } = targetDisplay.workArea
+  const dpiScale = targetDisplay.scaleFactor || 1
 
+  // Find best matching resolution
+  const resolution = findBestMatchResolution(targetWidth, targetHeight)
+  const resolutionProfile = RESOLUTION_PROFILES[resolution.category]
+  
+  // Get canvas dimensions for this resolution
+  const canvasDimensions = getCanvasDimensionsForResolution(resolution)
+  
+  // Calculate scaling factors
   const scaleX = targetWidth / BASE_DESIGN_WIDTH
   const scaleY = targetHeight / BASE_DESIGN_HEIGHT
-
-  // Use the smaller scale factor to maintain aspect ratio
   const uniformScale = Math.min(scaleX, scaleY)
 
   const baseAspectRatio = BASE_DESIGN_WIDTH / BASE_DESIGN_HEIGHT
   const targetAspectRatio = targetWidth / targetHeight
 
-  // Text scaling prioritizes readability - base on height
-  const textScaleFactor = targetHeight / BASE_DESIGN_HEIGHT
+  // Enhanced text scaling with DPI support
+  const textScaleFactor = resolutionProfile.textScale * dpiScale
+  
+  // Determine aspect ratio strategy
+  let aspectRatioStrategy: ScalingConfiguration['aspectRatioStrategy']
+  if (Math.abs(targetAspectRatio - baseAspectRatio) < 0.1) {
+    aspectRatioStrategy = 'stretch'
+  } else if (targetAspectRatio < baseAspectRatio) {
+    aspectRatioStrategy = 'pillarbox'
+  } else {
+    aspectRatioStrategy = 'letterbox'
+  }
 
   return {
+    // Legacy compatibility
     baseWidth: BASE_DESIGN_WIDTH,
     baseHeight: BASE_DESIGN_HEIGHT,
     targetWidth,
@@ -80,19 +121,87 @@ export function calculateScaling(targetDisplay: DisplayInfo): ScalingConfig {
     uniformScale,
     baseAspectRatio,
     targetAspectRatio,
-    textScaleFactor
+    textScaleFactor,
+    
+    // ScalingConfiguration interface
+    baseResolution: {
+      width: BASE_DESIGN_WIDTH,
+      height: BASE_DESIGN_HEIGHT,
+      aspectRatio: baseAspectRatio,
+      category: '1080p' as ResolutionCategory,
+      name: 'Base Design Canvas',
+      commonName: 'Base'
+    },
+    targetResolution: resolution,
+    textScale: textScaleFactor,
+    aspectRatioStrategy,
+    dpiScale,
+    
+    // Enhanced properties
+    resolution,
+    resolutionProfile,
+    canvasDimensions,
+    performanceLevel: resolutionProfile.performanceLevel,
+    recommendedSettings: resolutionProfile.recommendedSettings
   }
 }
 
 /**
- * Scale text size based on target screen height
+ * Scale text size based on target screen with multi-resolution support
  */
 export function scaleTextSize(originalSize: number, config: ScalingConfig): number {
-  // Scale based on height for consistent readability
-  const scaledSize = originalSize * config.textScaleFactor
+  // Use enhanced text scaling that considers resolution category and DPI
+  const scaledSize = calculateOptimalTextSize(originalSize, config.resolution, config.dpiScale)
+  
+  // Ensure minimum readable size based on resolution category
+  const minSize = getMinimumTextSize(config.resolution.category)
+  return Math.max(scaledSize, minSize)
+}
 
-  // Ensure minimum readable size
-  return Math.max(scaledSize, 12)
+/**
+ * Get minimum text size for resolution category
+ */
+function getMinimumTextSize(category: ResolutionCategory): number {
+  const minimums = {
+    '8k': 16,
+    '4k': 12,
+    '2k': 10,
+    '1080p': 8,
+    'hd': 6,
+    'legacy': 4
+  }
+  return minimums[category]
+}
+
+/**
+ * Scale text size with resolution-aware calculation (new enhanced version)
+ */
+export function scaleTextSizeEnhanced(
+  originalSize: number, 
+  targetResolution: Resolution,
+  dpiScale: number = 1,
+  context: 'preview' | 'projection' | 'editor' = 'projection'
+): number {
+  const baseScale = getTextScaleFactor(targetResolution.category)
+  
+  // Apply context-specific modifiers
+  let contextModifier = 1
+  switch (context) {
+    case 'preview':
+      contextModifier = 0.6 // Smaller for preview panels
+      break
+    case 'editor':
+      contextModifier = 0.8 // Slightly smaller for editor
+      break
+    case 'projection':
+      contextModifier = 1.0 // Full scale for projection
+      break
+  }
+  
+  const scaledSize = originalSize * baseScale * dpiScale * contextModifier
+  const minSize = getMinimumTextSize(targetResolution.category)
+  
+  return Math.max(scaledSize, minSize)
 }
 
 /**
@@ -248,12 +357,13 @@ export function generateProjectionStyles(config: ScalingConfig): React.CSSProper
 }
 
 /**
- * Real-time screen detection utilities
+ * Enhanced screen detection utilities with multi-resolution support
  */
 export class ScreenManager {
   private displays: DisplayInfo[] = []
   private currentProjectionDisplay: DisplayInfo | null = null
   private listeners: Array<(displays: DisplayInfo[]) => void> = []
+  private currentScalingConfig: ScalingConfig | null = null
 
   async initialize(): Promise<void> {
     try {
@@ -262,13 +372,23 @@ export class ScreenManager {
       this.currentProjectionDisplay =
         (await window.electron?.ipcRenderer.invoke('get-projection-display')) || null
 
+      // Calculate initial scaling config
+      if (this.currentProjectionDisplay) {
+        this.currentScalingConfig = calculateScaling(this.currentProjectionDisplay)
+      }
+
       // Listen for display changes
       window.electron?.ipcRenderer.on('displays-changed', (_event, displays: DisplayInfo[]) => {
         this.displays = displays
+        this.updateScalingConfig()
         this.notifyListeners()
       })
 
-      console.log('📺 [SCREEN-MANAGER] Initialized with displays:', this.displays)
+      console.log('📺 [SCREEN-MANAGER] Initialized with enhanced resolution support:', {
+        displays: this.displays.length,
+        currentResolution: this.currentScalingConfig?.resolution.commonName,
+        performanceLevel: this.currentScalingConfig?.performanceLevel
+      })
     } catch (error) {
       console.error('📺 [SCREEN-MANAGER] Failed to initialize:', error)
     }
@@ -287,7 +407,14 @@ export class ScreenManager {
       const display = await window.electron?.ipcRenderer.invoke('set-projection-display', displayId)
       if (display) {
         this.currentProjectionDisplay = display
+        this.updateScalingConfig()
         this.notifyListeners()
+        
+        console.log('📺 [SCREEN-MANAGER] Projection display changed:', {
+          resolution: `${display.workArea.width}x${display.workArea.height}`,
+          category: this.currentScalingConfig?.resolution.category,
+          textScale: this.currentScalingConfig?.textScale
+        })
       }
       return display
     } catch (error) {
@@ -312,10 +439,57 @@ export class ScreenManager {
     this.listeners.forEach((listener) => listener(this.displays))
   }
 
-  getCurrentScalingConfig(): ScalingConfig | null {
-    if (!this.currentProjectionDisplay) return null
+  private updateScalingConfig(): void {
+    if (this.currentProjectionDisplay) {
+      this.currentScalingConfig = calculateScaling(this.currentProjectionDisplay)
+    }
+  }
 
-    return calculateScaling(this.currentProjectionDisplay)
+  getCurrentScalingConfig(): ScalingConfig | null {
+    return this.currentScalingConfig
+  }
+
+  // Enhanced methods for multi-resolution support
+  getCurrentResolution(): Resolution | null {
+    return this.currentScalingConfig?.resolution || null
+  }
+
+  getCurrentResolutionCategory(): ResolutionCategory {
+    return this.currentScalingConfig?.resolution.category || '1080p'
+  }
+
+  getCurrentTextScale(): number {
+    return this.currentScalingConfig?.textScale || 1
+  }
+
+  getOptimalTextSize(baseSize: number, context: 'preview' | 'projection' | 'editor' = 'projection'): number {
+    const resolution = this.getCurrentResolution()
+    if (!resolution) return baseSize
+
+    const dpiScale = this.currentProjectionDisplay?.scaleFactor || 1
+    return scaleTextSizeEnhanced(baseSize, resolution, dpiScale, context)
+  }
+
+  supportsHighQuality(): boolean {
+    const config = this.getCurrentScalingConfig()
+    return config ? ['ultra', 'high'].includes(config.performanceLevel) : false
+  }
+
+  isUltraWide(): boolean {
+    const resolution = this.getCurrentResolution()
+    return resolution ? resolution.aspectRatio >= 2.1 : false
+  }
+
+  isHighDpi(): boolean {
+    return (this.currentProjectionDisplay?.scaleFactor || 1) >= 1.5
+  }
+
+  getRecommendedBackgroundQuality(): 'ultra' | 'high' | 'medium' | 'low' {
+    return this.currentScalingConfig?.recommendedSettings.backgroundQuality || 'medium'
+  }
+
+  getCanvasDimensions(): { width: number; height: number; scale: number } | null {
+    return this.currentScalingConfig?.canvasDimensions || null
   }
 }
 

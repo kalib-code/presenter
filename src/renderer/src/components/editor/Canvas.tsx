@@ -429,13 +429,9 @@ export const Canvas: React.FC<CanvasProps> = ({ className = '' }) => {
                   className="absolute inset-0 w-full h-full pointer-events-none"
                   style={{
                     objectFit:
-                      backgroundSize === 'cover'
-                        ? 'cover'
-                        : backgroundSize === 'contain'
-                          ? 'contain'
-                          : backgroundSize === 'fill'
-                            ? 'fill'
-                            : 'none',
+                      backgroundSize === 'fill'
+                        ? 'fill'
+                        : 'cover', // Force cover for all other cases to eliminate black bars
                     objectPosition: backgroundPosition,
                     opacity: slideBackgroundOpacity
                   }}
@@ -494,13 +490,9 @@ export const Canvas: React.FC<CanvasProps> = ({ className = '' }) => {
                   className="absolute inset-0 w-full h-full pointer-events-none"
                   style={{
                     objectFit:
-                      backgroundSize === 'cover'
-                        ? 'cover'
-                        : backgroundSize === 'contain'
-                          ? 'contain'
-                          : backgroundSize === 'fill'
-                            ? 'fill'
-                            : 'none',
+                      backgroundSize === 'fill'
+                        ? 'fill'
+                        : 'cover', // Force cover for all other cases to eliminate black bars
                     objectPosition: backgroundPosition,
                     opacity: globalBackgroundOpacity
                   }}

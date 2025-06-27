@@ -682,13 +682,15 @@ export function CountdownConfig({
                 )}
 
                 {config.background?.type === 'image' && resolvedBackgroundUrl && (
-                  <div
-                    className="absolute inset-0 bg-cover bg-center"
+                  <img
+                    className="absolute inset-0 w-full h-full"
+                    src={resolvedBackgroundUrl}
+                    alt="Background preview"
                     style={{
-                      backgroundImage: `url(${resolvedBackgroundUrl})`,
-                      backgroundSize:
-                        config.background.size === 'none' ? 'auto' : config.background.size,
-                      backgroundPosition: config.background.position,
+                      objectFit: config.background.size === 'contain' ? 'contain' : 
+                                 config.background.size === 'fill' ? 'fill' : 
+                                 config.background.size === 'none' ? 'none' : 'cover',
+                      objectPosition: config.background.position || 'center',
                       opacity: config.background.opacity || 1
                     }}
                   />
