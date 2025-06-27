@@ -20,7 +20,6 @@ interface SetlistState {
       | 'song'
       | 'presentation'
       | 'media'
-      | 'announcement'
       | 'countdown'
       | 'video'
       | 'image'
@@ -228,7 +227,6 @@ export const useSetlistStore = create<SetlistState>()(
           | 'song'
           | 'presentation'
           | 'media'
-          | 'announcement'
           | 'countdown'
           | 'video'
           | 'image'
@@ -344,8 +342,8 @@ export const useSetlistStore = create<SetlistState>()(
         currentItemIndex: 0
       })
       console.log('🎬 Started presentation:', setlist.name)
-      // Navigate to presenter view
-      window.location.hash = '#/setlist-presenter'
+      // Navigate to Home page where the main presentation controls are
+      window.location.hash = '#/'
     },
 
     stopPresentation: () => {

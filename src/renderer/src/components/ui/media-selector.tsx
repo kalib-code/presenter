@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import { Button } from './button'
 import { Input } from './input'
 import { Label } from './label'
@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { File, Play, Pause, Volume2, VolumeX, FolderOpen } from 'lucide-react'
 import type { SetlistItem, Media } from '@renderer/types/database'
 import { MediaBrowser } from '../editor/MediaBrowser'
+import { resolveMediaUrl } from '@renderer/utils/mediaUtils'
 
 interface MediaSelectorProps {
   isOpen: boolean
@@ -23,6 +24,14 @@ export function MediaSelector({
   onAddMedia,
   mediaType = 'any'
 }: MediaSelectorProps) {
+  // Log when component opens/closes
+  React.useEffect(() => {
+    if (isOpen) {
+      console.log('🎯 [MEDIA_SELECTOR] Component opened with mediaType:', mediaType)
+    } else {
+      console.log('🔄 [MEDIA_SELECTOR] Component closed')
+    }
+  }, [isOpen, mediaType])
   const [selectedMedia, setSelectedMedia] = useState<Media | null>(null)
   const [title, setTitle] = useState('')
   const [duration, setDuration] = useState<number>(0)
@@ -49,38 +58,116 @@ export function MediaSelector({
   const [isMediaBrowserOpen, setIsMediaBrowserOpen] = useState(false)
   const [isBackgroundAudioBrowserOpen, setIsBackgroundAudioBrowserOpen] = useState(false)
 
+  // Preview URL resolution state
+  const [resolvedPreviewUrl, setResolvedPreviewUrl] = useState<string>('')
+  const [isResolvingPreviewUrl, setIsResolvingPreviewUrl] = useState(false)
+
   const previewRef = useRef<HTMLVideoElement | HTMLAudioElement>(null)
 
-  const getMediaBrowserType = (): 'image' | 'video' | 'all' => {
+  // Resolve preview URL when selected media changes
+  useEffect(() => {
+    const resolvePreviewUrl = async () => {
+      if (!selectedMedia?.filename) {
+        setResolvedPreviewUrl('')
+        return
+      }
+
+      console.log('🎬 [MEDIA_SELECTOR] Resolving preview URL for:', selectedMedia.filename)
+      setIsResolvingPreviewUrl(true)
+
+      try {
+        const mediaUrl = `media://${selectedMedia.filename}`
+        const resolved = await resolveMediaUrl(mediaUrl)
+        console.log('🎬 [MEDIA_SELECTOR] Preview URL resolved:', {
+          original: mediaUrl,
+          resolved: resolved,
+          type: selectedMedia.type
+        })
+        setResolvedPreviewUrl(resolved)
+      } catch (error) {
+        console.error('❌ [MEDIA_SELECTOR] Failed to resolve preview URL:', error)
+        setResolvedPreviewUrl('')
+      } finally {
+        setIsResolvingPreviewUrl(false)
+      }
+    }
+
+    resolvePreviewUrl()
+  }, [selectedMedia?.filename, selectedMedia?.type])
+
+  const getMediaBrowserType = (): 'image' | 'video' | 'audio' | 'all' => {
     switch (mediaType) {
       case 'video':
         return 'video'
       case 'image':
         return 'image'
       case 'audio':
-        return 'all' // MediaBrowser doesn't have audio-only filter, use 'all'
+        return 'audio'
       default:
         return 'all'
     }
   }
 
   const handleMediaSelect = (media: Media) => {
-    setSelectedMedia(media)
-    setTitle(media.name.replace(/\.[^/.]+$/, '')) // Remove file extension
-    setIsMediaBrowserOpen(false)
+    try {
+      console.log('🎯 [MEDIA_SELECTOR] Media selected:', media)
+      
+      // Validate media object
+      if (!media) {
+        console.error('❌ [MEDIA_SELECTOR] No media object provided')
+        return
+      }
 
-    // Get duration for video/audio files
-    if (media.type === 'video' || media.type === 'audio') {
-      // For media library files, we'll set a default duration and let the player determine the actual duration
-      setDuration(0) // Will be updated when the media loads
-      setEndTime(0)
+      if (!media.name && !media.filename) {
+        console.error('❌ [MEDIA_SELECTOR] Media object missing name and filename:', media)
+        return
+      }
+
+      // Fix missing name and id fields
+      if (!media.name && media.filename) {
+        media.name = media.filename
+        console.log('🔧 [MEDIA_SELECTOR] Fixed missing name field using filename')
+      }
+      
+      if (!media.id && media.filename) {
+        media.id = media.filename
+        console.log('🔧 [MEDIA_SELECTOR] Fixed missing id field using filename')
+      }
+
+      setSelectedMedia(media)
+      
+      // Use name or filename, and safely remove file extension
+      const displayName = media.name || media.filename || 'Untitled'
+      const titleWithoutExtension = displayName ? displayName.replace(/\.[^/.]+$/, '') : 'Untitled'
+      setTitle(titleWithoutExtension)
+      
+      console.log('🎯 [MEDIA_SELECTOR] Set title to:', titleWithoutExtension)
+      setIsMediaBrowserOpen(false)
+
+      // Get duration for video/audio files
+      if (media.type === 'video' || media.type === 'audio') {
+        // For media library files, we'll set a default duration and let the player determine the actual duration
+        setDuration(0) // Will be updated when the media loads
+        setEndTime(0)
+      }
+      console.log('✅ [MEDIA_SELECTOR] Media selection completed successfully')
+    } catch (error) {
+      console.error('❌ [MEDIA_SELECTOR] Error selecting media:', error)
     }
   }
 
   const handleBackgroundAudioSelect = (media: Media) => {
-    if (media.type === 'audio') {
-      setBackgroundAudioMedia(media)
-      setIsBackgroundAudioBrowserOpen(false)
+    try {
+      console.log('🎯 [MEDIA_SELECTOR] Background audio selected:', media)
+      if (media.type === 'audio') {
+        setBackgroundAudioMedia(media)
+        setIsBackgroundAudioBrowserOpen(false)
+        console.log('✅ [MEDIA_SELECTOR] Background audio selection completed')
+      } else {
+        console.warn('⚠️ [MEDIA_SELECTOR] Selected media is not audio type:', media.type)
+      }
+    } catch (error) {
+      console.error('❌ [MEDIA_SELECTOR] Error selecting background audio:', error)
     }
   }
 
@@ -108,71 +195,112 @@ export function MediaSelector({
   }
 
   const handleAddMedia = () => {
-    if (!selectedMedia) return
-
-    const mediaItem: Omit<SetlistItem, 'id' | 'order'> = {
-      type: selectedMedia.type,
-      referenceId: selectedMedia.id,
-      title: title || selectedMedia.name,
-      duration: duration,
-      notes: '',
-      isActive: true,
-      mediaConfig: {
-        url: `media://${selectedMedia.filename}`,
-        autoplay,
-        loop,
-        volume,
-        startTime,
-        endTime: endTime || duration,
-        controls,
-        muted,
-        mediaType: selectedMedia.type,
-        aspectRatio,
-        objectFit,
-        // Include background audio if it's a video or image with background audio
-        ...(backgroundAudioMedia &&
-          (selectedMedia.type === 'video' || selectedMedia.type === 'image') && {
-            backgroundAudio: {
-              url: `media://${backgroundAudioMedia.filename}`,
-              volume: backgroundAudioVolume,
-              loop: backgroundAudioLoop,
-              autoplay: backgroundAudioAutoplay,
-              fadeIn: backgroundAudioFadeIn,
-              fadeOut: backgroundAudioFadeOut
-            }
-          })
+    try {
+      if (!selectedMedia) {
+        console.error('❌ [MEDIA_SELECTOR] No media selected')
+        return
       }
-    }
 
-    onAddMedia(mediaItem)
-    handleClose()
+      if (!title.trim()) {
+        console.error('❌ [MEDIA_SELECTOR] No title provided')
+        return
+      }
+
+      console.log('🎯 [MEDIA_SELECTOR] Creating media item:', {
+        selectedMedia,
+        title,
+        duration,
+        backgroundAudioMedia
+      })
+
+      const mediaItem: Omit<SetlistItem, 'id' | 'order'> = {
+        type: selectedMedia.type,
+        referenceId: selectedMedia.id || selectedMedia.filename || 'unknown',
+        title: title || selectedMedia.name || selectedMedia.filename || 'Untitled',
+        duration: duration,
+        notes: '',
+        isActive: true,
+        mediaConfig: {
+          url: `media://${selectedMedia.filename}`,
+          autoplay,
+          loop,
+          volume,
+          startTime,
+          endTime: endTime || duration,
+          controls,
+          muted,
+          mediaType: selectedMedia.type,
+          aspectRatio,
+          objectFit,
+          // Include background audio if it's a video or image with background audio
+          ...(backgroundAudioMedia &&
+            (selectedMedia.type === 'video' || selectedMedia.type === 'image') && {
+              backgroundAudio: {
+                url: `media://${backgroundAudioMedia.filename}`,
+                volume: backgroundAudioVolume,
+                loop: backgroundAudioLoop,
+                autoplay: backgroundAudioAutoplay,
+                fadeIn: backgroundAudioFadeIn,
+                fadeOut: backgroundAudioFadeOut
+              }
+            })
+        }
+      }
+
+      console.log('✅ [MEDIA_SELECTOR] Media item created:', mediaItem)
+      console.log('🚀 [MEDIA_SELECTOR] Calling onAddMedia...')
+      
+      onAddMedia(mediaItem)
+      handleClose()
+      
+      console.log('✅ [MEDIA_SELECTOR] Media addition completed')
+    } catch (error) {
+      console.error('❌ [MEDIA_SELECTOR] Error adding media:', error)
+    }
   }
 
   const handleClose = () => {
-    setSelectedMedia(null)
-    setTitle('')
-    setDuration(0)
-    setAutoplay(false)
-    setLoop(false)
-    setControls(true)
-    setMuted(false)
-    setVolume(1)
-    setAspectRatio('16:9')
-    setObjectFit('contain')
-    setStartTime(0)
-    setEndTime(0)
-    setIsPreviewPlaying(false)
-    // Reset background audio state
-    setBackgroundAudioMedia(null)
-    setBackgroundAudioVolume(0.5)
-    setBackgroundAudioLoop(false)
-    setBackgroundAudioAutoplay(false)
-    setBackgroundAudioFadeIn(0)
-    setBackgroundAudioFadeOut(0)
-    // Reset browser state
-    setIsMediaBrowserOpen(false)
-    setIsBackgroundAudioBrowserOpen(false)
-    onClose()
+    try {
+      console.log('🔄 [MEDIA_SELECTOR] Closing and resetting state')
+      
+      // Reset main media state
+      setSelectedMedia(null)
+      setTitle('')
+      setDuration(0)
+      setAutoplay(false)
+      setLoop(false)
+      setControls(true)
+      setMuted(false)
+      setVolume(1)
+      setAspectRatio('16:9')
+      setObjectFit('contain')
+      setStartTime(0)
+      setEndTime(0)
+      setIsPreviewPlaying(false)
+      
+      // Reset preview URL state
+      setResolvedPreviewUrl('')
+      setIsResolvingPreviewUrl(false)
+      
+      // Reset background audio state
+      setBackgroundAudioMedia(null)
+      setBackgroundAudioVolume(0.5)
+      setBackgroundAudioLoop(false)
+      setBackgroundAudioAutoplay(false)
+      setBackgroundAudioFadeIn(0)
+      setBackgroundAudioFadeOut(0)
+      
+      // Reset browser state
+      setIsMediaBrowserOpen(false)
+      setIsBackgroundAudioBrowserOpen(false)
+      
+      console.log('✅ [MEDIA_SELECTOR] State reset completed')
+      onClose()
+    } catch (error) {
+      console.error('❌ [MEDIA_SELECTOR] Error during close:', error)
+      // Still try to close even if there's an error
+      onClose()
+    }
   }
 
   const formatTime = (seconds: number) => {
@@ -184,29 +312,50 @@ export function MediaSelector({
   const renderPreview = () => {
     if (!selectedMedia) return null
 
-    const mediaUrl = `media://${selectedMedia.filename}`
+    // Show loading state while resolving URL
+    if (isResolvingPreviewUrl) {
+      return (
+        <div className="w-full max-h-48 flex items-center justify-center bg-muted rounded-lg">
+          <div className="text-muted-foreground">Loading preview...</div>
+        </div>
+      )
+    }
+
+    // Show error state if URL couldn't be resolved
+    if (!resolvedPreviewUrl) {
+      return (
+        <div className="w-full max-h-48 flex items-center justify-center bg-muted rounded-lg">
+          <div className="text-muted-foreground">Preview not available</div>
+        </div>
+      )
+    }
 
     switch (selectedMedia.type) {
       case 'video':
         return (
           <video
             ref={previewRef as React.RefObject<HTMLVideoElement>}
-            src={mediaUrl}
+            src={resolvedPreviewUrl}
             className="w-full max-h-48 rounded-lg"
             controls={false}
             muted={muted}
             onPlay={() => setIsPreviewPlaying(true)}
             onPause={() => setIsPreviewPlaying(false)}
             onEnded={() => setIsPreviewPlaying(false)}
+            onLoadStart={() => console.log('🎬 [MEDIA_SELECTOR] Video preview load started')}
+            onCanPlay={() => console.log('🎬 [MEDIA_SELECTOR] Video preview can play')}
+            onError={(e) => console.error('❌ [MEDIA_SELECTOR] Video preview failed to load:', e.nativeEvent)}
             style={{ objectFit }}
           />
         )
       case 'image':
         return (
           <img
-            src={mediaUrl}
+            src={resolvedPreviewUrl}
             alt="Preview"
             className="w-full max-h-48 rounded-lg object-contain"
+            onLoad={() => console.log('🖼️ [MEDIA_SELECTOR] Image preview loaded successfully')}
+            onError={(e) => console.error('❌ [MEDIA_SELECTOR] Image preview failed to load:', e.nativeEvent)}
             style={{ objectFit }}
           />
         )
@@ -215,10 +364,13 @@ export function MediaSelector({
           <div className="flex items-center justify-center p-8 bg-muted rounded-lg">
             <audio
               ref={previewRef as React.RefObject<HTMLAudioElement>}
-              src={mediaUrl}
+              src={resolvedPreviewUrl}
               onPlay={() => setIsPreviewPlaying(true)}
               onPause={() => setIsPreviewPlaying(false)}
               onEnded={() => setIsPreviewPlaying(false)}
+              onLoadStart={() => console.log('🎵 [MEDIA_SELECTOR] Audio preview load started')}
+              onCanPlay={() => console.log('🎵 [MEDIA_SELECTOR] Audio preview can play')}
+              onError={(e) => console.error('❌ [MEDIA_SELECTOR] Audio preview failed to load:', e.nativeEvent)}
             />
             <div className="text-center">
               <File className="w-16 h-16 mx-auto mb-2 text-muted-foreground" />
@@ -568,7 +720,7 @@ export function MediaSelector({
         isOpen={isBackgroundAudioBrowserOpen}
         onClose={() => setIsBackgroundAudioBrowserOpen(false)}
         onSelect={handleBackgroundAudioSelect}
-        mediaType="all"
+        mediaType="audio"
         title="Select Background Audio"
       />
     </>

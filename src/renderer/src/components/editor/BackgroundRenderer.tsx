@@ -14,6 +14,7 @@ interface BackgroundRendererProps {
   background?: Background
   className?: string
   style?: React.CSSProperties
+  preview?: boolean // When true, shows static preview for videos instead of playing
   onLoad?: () => void
   onError?: (error: Error) => void
 }
@@ -22,6 +23,7 @@ export const BackgroundRenderer: React.FC<BackgroundRendererProps> = ({
   background,
   className = '',
   style = {},
+  preview = false,
   onLoad,
   onError
 }) => {
@@ -46,7 +48,14 @@ export const BackgroundRenderer: React.FC<BackgroundRendererProps> = ({
         return
       }
 
-      setIsLoading(true)
+      // Skip URL resolution for color/gradient backgrounds
+      if (background.type === 'color' || background.type === 'gradient') {
+        console.log('🎨 [BACKGROUND_RENDERER] Color/gradient background, no URL resolution needed')
+        setResolvedUrl('')
+        return
+      }
+
+      // Loading state removed for simplicity
 
       try {
         if (isMediaReference(background.value)) {
@@ -73,33 +82,36 @@ export const BackgroundRenderer: React.FC<BackgroundRendererProps> = ({
       } catch (error) {
         console.error('❌ [BACKGROUND_RENDERER] Failed to resolve background:', error)
         setResolvedUrl('')
-        onError?.(error)
-      } finally {
-        setIsLoading(false)
+        onError?.(error instanceof Error ? error : new Error(String(error)))
       }
     }
 
     resolveBackground()
   }, [background?.value, onError])
 
-  // Don't render anything if no background or no resolved URL
-  if (!background || !resolvedUrl) {
+  // Don't render anything if no background
+  if (!background) {
     return null
   }
 
-  // Handle color backgrounds
-  if (background.type === 'color') {
+  // Handle color and gradient backgrounds (don't need resolved URL)
+  if (background.type === 'color' || background.type === 'gradient') {
     return (
       <div
         className={`absolute inset-0 ${className}`}
         style={{
           background: background.value,
           opacity: background.opacity || 1,
-          zIndex: 1,
+          zIndex: 0,
           ...style
         }}
       />
     )
+  }
+
+  // For media backgrounds, we need a resolved URL
+  if (!resolvedUrl) {
+    return null
   }
 
   // Handle image backgrounds
@@ -120,7 +132,7 @@ export const BackgroundRenderer: React.FC<BackgroundRendererProps> = ({
               : (backgroundSize as 'cover' | 'contain' | 'fill') || 'cover',
           objectPosition: backgroundPosition,
           opacity: background.opacity || 1,
-          zIndex: 1,
+          zIndex: 0,
           ...style
         }}
         onLoad={() => {
@@ -129,7 +141,7 @@ export const BackgroundRenderer: React.FC<BackgroundRendererProps> = ({
         }}
         onError={(e) => {
           console.error('🖼️ [BACKGROUND_RENDERER] Image error:', background.value, e)
-          onError?.(e)
+          onError?.(new Error(`Image failed to load: ${background.value}`))
         }}
       />
     )
@@ -150,6 +162,47 @@ export const BackgroundRenderer: React.FC<BackgroundRendererProps> = ({
 
     const objectPosition = background.position || 'center'
 
+    // In preview mode, show static video thumbnail
+    if (preview) {
+      console.log('🎬 [BACKGROUND_RENDERER] Rendering video in PREVIEW mode:', background.value)
+      return (
+        <div
+          className={`absolute inset-0 w-full h-full ${className}`}
+          style={{
+            backgroundColor: '#1a1a1a',
+            opacity: background.opacity || 1,
+            zIndex: 0,
+            ...style
+          }}
+        >
+          {/* Video thumbnail preview */}
+          <video
+            src={resolvedUrl}
+            className="absolute inset-0 w-full h-full object-cover"
+            style={{
+              objectFit: objectFit,
+              objectPosition: objectPosition,
+            }}
+            muted
+            preload="metadata"
+            onLoadedMetadata={(e) => {
+              try {
+                // Seek to 1 second to get a preview frame
+                const video = e.target as HTMLVideoElement
+                video.currentTime = 1
+                console.log('🎬 [BACKGROUND_RENDERER] Video metadata loaded, seeking to 1s for preview')
+              } catch (error) {
+                console.error('🎬 [BACKGROUND_RENDERER] Error seeking video for preview:', error)
+              }
+            }}
+          />
+          
+        </div>
+      )
+    }
+
+    // In live mode, show playing video
+    console.log('🎬 [BACKGROUND_RENDERER] Rendering video in LIVE mode:', background.value)
     return (
       <video
         key={background.value} // Force re-render when background changes
@@ -162,7 +215,7 @@ export const BackgroundRenderer: React.FC<BackgroundRendererProps> = ({
           objectFit: objectFit,
           objectPosition: objectPosition,
           opacity: background.opacity || 1,
-          zIndex: 1,
+          zIndex: 0,
           ...style
         }}
         onLoadStart={() => console.log('🎬 [BACKGROUND_RENDERER] Video load started')}
@@ -172,7 +225,7 @@ export const BackgroundRenderer: React.FC<BackgroundRendererProps> = ({
         }}
         onError={(e) => {
           console.error('🎬 [BACKGROUND_RENDERER] Video error:', background.value, e)
-          onError?.(e)
+          onError?.(new Error(`Video failed to load: ${background.value}`))
         }}
       >
         <source src={resolvedUrl} type="video/mp4" />

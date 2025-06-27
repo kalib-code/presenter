@@ -178,7 +178,7 @@ function SortableItem({
           <span className="text-sm text-muted-foreground font-mono w-6 text-center">
             {item.order + 1}
           </span>
-          {getItemIcon(item.type)}
+          {getItemIcon(item)}
         </div>
 
         <div className="flex-1">
@@ -275,7 +275,7 @@ export default function Setlist(): JSX.Element {
   const [newSetlistDescription, setNewSetlistDescription] = useState('')
   const [addItemSearchTerm, setAddItemSearchTerm] = useState('')
   const [selectedItemType, setSelectedItemType] = useState<
-    'all' | 'song' | 'presentation' | 'media' | 'announcement' | 'countdown'
+    'all' | 'song' | 'presentation' | 'media' | 'countdown'
   >('all')
   const [isEditItemModalOpen, setIsEditItemModalOpen] = useState(false)
   const [editingItem, setEditingItem] = useState<SetlistItem | null>(null)
@@ -390,7 +390,6 @@ export default function Setlist(): JSX.Element {
       | 'song'
       | 'presentation'
       | 'media'
-      | 'announcement'
       | 'countdown'
       | 'video'
       | 'image'
@@ -592,12 +591,48 @@ export default function Setlist(): JSX.Element {
     }
   }
 
-  const getItemIcon = (type: string) => {
+  const getPresentationType = (item: SetlistItem | { type: string; referenceId: string }): string | undefined => {
+    if (item.type === 'presentation' && item.referenceId) {
+      const presentation = presentations.find(p => p.id === item.referenceId)
+      return presentation?.type
+    }
+    return undefined
+  }
+
+  const getItemIcon = (itemOrType: SetlistItem | { type: string; referenceId: string } | string, presentationType?: string) => {
+    let type: string
+    let actualPresentationType: string | undefined
+    
+    if (typeof itemOrType === 'string') {
+      type = itemOrType
+      actualPresentationType = presentationType
+    } else {
+      type = itemOrType.type
+      actualPresentationType = getPresentationType(itemOrType)
+    }
+
     switch (type) {
       case 'song':
         return <Music className="w-4 h-4" />
       case 'presentation':
-        return <Presentation className="w-4 h-4" />
+        // Show different icons based on presentation type
+        switch (actualPresentationType) {
+          case 'announcement':
+            return <MessageSquare className="w-4 h-4" />
+          case 'scripture':
+            return <Presentation className="w-4 h-4" />
+          case 'sermon':
+            return <Presentation className="w-4 h-4" />
+          case 'teaching':
+            return <Presentation className="w-4 h-4" />
+          case 'testimony':
+            return <MessageSquare className="w-4 h-4" />
+          case 'prayer':
+            return <MessageSquare className="w-4 h-4" />
+          case 'custom':
+          default:
+            return <Presentation className="w-4 h-4" />
+        }
       case 'media':
         return <FileImage className="w-4 h-4" />
       case 'video':
@@ -606,8 +641,6 @@ export default function Setlist(): JSX.Element {
         return <Image className="w-4 h-4" />
       case 'audio':
         return <Volume2 className="w-4 h-4" />
-      case 'announcement':
-        return <MessageSquare className="w-4 h-4" />
       case 'countdown':
         return <Timer className="w-4 h-4" />
       default:
@@ -709,26 +742,40 @@ export default function Setlist(): JSX.Element {
   const handleAddMediaItem = async (
     mediaItem: Omit<SetlistItem, 'id' | 'order'>
   ): Promise<void> => {
-    if (!selectedSetlist) {
-      console.error('❌ No selected setlist when trying to add media')
-      return
-    }
+    try {
+      if (!selectedSetlist) {
+        console.error('❌ [SETLIST] No selected setlist when trying to add media')
+        return
+      }
 
-    console.log('➕ Adding media item to setlist:', {
-      mediaItem,
-      setlistId: selectedSetlist.id
-    })
+      console.log('➕ [SETLIST] Adding media item to setlist:', {
+        mediaItem,
+        setlistId: selectedSetlist.id,
+        currentItemsCount: selectedSetlist.items?.length || 0
+      })
 
-    // Wait for the addItem operation to complete
-    await addItem(selectedSetlist.id, mediaItem)
-    setIsMediaSelectorOpen(false)
+      // Wait for the addItem operation to complete
+      console.log('🚀 [SETLIST] Calling addItem...')
+      await addItem(selectedSetlist.id, mediaItem)
+      console.log('✅ [SETLIST] AddItem completed')
 
-    // Get the fresh state directly from the store
-    const freshSetlists = useSetlistStore.getState().setlists
-    const updatedSetlist = freshSetlists.find((s) => s.id === selectedSetlist.id)
-    if (updatedSetlist) {
-      setSelectedSetlist(updatedSetlist)
-      console.log('📊 After adding media - Updated setlist items:', updatedSetlist.items.length)
+      // Close the media selector
+      setIsMediaSelectorOpen(false)
+
+      // Get the fresh state directly from the store
+      console.log('🔄 [SETLIST] Refreshing setlist state...')
+      const freshSetlists = useSetlistStore.getState().setlists
+      const updatedSetlist = freshSetlists.find((s) => s.id === selectedSetlist.id)
+      
+      if (updatedSetlist) {
+        setSelectedSetlist(updatedSetlist)
+        console.log('✅ [SETLIST] Setlist state updated - items count:', updatedSetlist.items.length)
+        console.log('✅ [SETLIST] Updated items:', updatedSetlist.items.map(item => ({ title: item.title, type: item.type })))
+      } else {
+        console.error('❌ [SETLIST] Could not find updated setlist in store')
+      }
+    } catch (error) {
+      console.error('❌ [SETLIST] Error adding media item:', error)
     }
   }
 
@@ -1047,7 +1094,7 @@ export default function Setlist(): JSX.Element {
                         <div className="text-xs text-muted-foreground mt-1 flex items-center gap-2">
                           {setlist.items.slice(0, 3).map((item, index) => (
                             <span key={item.id} className="flex items-center gap-1">
-                              {getItemIcon(item.type)}
+                              {getItemIcon(item)}
                               <span className="truncate max-w-[100px]">{item.title}</span>
                               {index < Math.min(setlist.items.length, 3) - 1 && <span>•</span>}
                             </span>
@@ -1204,7 +1251,7 @@ export default function Setlist(): JSX.Element {
 
       {/* ADD ITEM MODAL - Always rendered at the top level */}
       <Dialog open={isAddItemModalOpen} onOpenChange={setIsAddItemModalOpen}>
-        <DialogContent className="max-w-4xl max-h-[80vh]">
+        <DialogContent className="max-w-6xl max-h-[85vh] overflow-hidden">
           <DialogHeader>
             <DialogTitle>Add Item to Setlist</DialogTitle>
             <div className="text-sm text-muted-foreground">
@@ -1218,9 +1265,9 @@ export default function Setlist(): JSX.Element {
               <Button onClick={() => setIsAddItemModalOpen(false)}>Close</Button>
             </div>
           ) : (
-            <div className="flex h-[60vh] gap-6">
+            <div className="flex h-[70vh] gap-6">
               {/* Left Sidebar - Categories */}
-              <div className="w-64 flex flex-col space-y-2">
+              <div className="w-72 flex flex-col space-y-2 flex-shrink-0">
                 <div className="relative mb-4">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
                   <Input
@@ -1235,15 +1282,15 @@ export default function Setlist(): JSX.Element {
                 <div className="space-y-2">
                   <Button
                     variant={selectedItemType === 'all' ? 'default' : 'ghost'}
-                    className="w-full justify-start h-auto p-3"
+                    className="w-full justify-start h-auto p-2.5"
                     onClick={() => setSelectedItemType('all')}
                   >
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
-                        <span className="text-white font-bold text-sm">All</span>
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+                        <span className="text-white font-bold text-xs">All</span>
                       </div>
                       <div className="text-left">
-                        <div className="font-medium">All Items</div>
+                        <div className="font-medium text-sm">All Items</div>
                         <div className="text-xs text-muted-foreground">Show everything</div>
                       </div>
                     </div>
@@ -1251,15 +1298,15 @@ export default function Setlist(): JSX.Element {
 
                   <Button
                     variant={selectedItemType === 'song' ? 'default' : 'ghost'}
-                    className="w-full justify-start h-auto p-3"
+                    className="w-full justify-start h-auto p-2.5"
                     onClick={() => setSelectedItemType('song')}
                   >
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
-                        <Music className="w-4 h-4 text-white" />
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
+                        <Music className="w-3.5 h-3.5 text-white" />
                       </div>
                       <div className="text-left">
-                        <div className="font-medium">Songs</div>
+                        <div className="font-medium text-sm">Songs</div>
                         <div className="text-xs text-muted-foreground">
                           {songs.length} available
                         </div>
@@ -1269,15 +1316,15 @@ export default function Setlist(): JSX.Element {
 
                   <Button
                     variant={selectedItemType === 'presentation' ? 'default' : 'ghost'}
-                    className="w-full justify-start h-auto p-3"
+                    className="w-full justify-start h-auto p-2.5"
                     onClick={() => setSelectedItemType('presentation')}
                   >
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center">
-                        <Presentation className="w-4 h-4 text-white" />
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center">
+                        <Presentation className="w-3.5 h-3.5 text-white" />
                       </div>
                       <div className="text-left">
-                        <div className="font-medium">Presentations</div>
+                        <div className="font-medium text-sm">Presentations</div>
                         <div className="text-xs text-muted-foreground">
                           {presentations.length} available
                         </div>
@@ -1290,15 +1337,15 @@ export default function Setlist(): JSX.Element {
 
                     <Button
                       variant="ghost"
-                      className="w-full justify-start h-auto p-3"
+                      className="w-full justify-start h-auto p-2.5"
                       onClick={() => handleOpenMediaSelector('video')}
                     >
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-red-500 to-red-600 flex items-center justify-center">
-                          <Video className="w-4 h-4 text-white" />
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-red-500 to-red-600 flex items-center justify-center">
+                          <Video className="w-3.5 h-3.5 text-white" />
                         </div>
                         <div className="text-left">
-                          <div className="font-medium">Video</div>
+                          <div className="font-medium text-sm">Video</div>
                           <div className="text-xs text-muted-foreground">Add from library</div>
                         </div>
                       </div>
@@ -1306,15 +1353,15 @@ export default function Setlist(): JSX.Element {
 
                     <Button
                       variant="ghost"
-                      className="w-full justify-start h-auto p-3"
+                      className="w-full justify-start h-auto p-2.5"
                       onClick={() => handleOpenMediaSelector('image')}
                     >
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-yellow-500 to-orange-600 flex items-center justify-center">
-                          <Image className="w-4 h-4 text-white" />
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-yellow-500 to-orange-600 flex items-center justify-center">
+                          <Image className="w-3.5 h-3.5 text-white" />
                         </div>
                         <div className="text-left">
-                          <div className="font-medium">Image</div>
+                          <div className="font-medium text-sm">Image</div>
                           <div className="text-xs text-muted-foreground">Add from library</div>
                         </div>
                       </div>
@@ -1322,15 +1369,15 @@ export default function Setlist(): JSX.Element {
 
                     <Button
                       variant="ghost"
-                      className="w-full justify-start h-auto p-3"
+                      className="w-full justify-start h-auto p-2.5"
                       onClick={() => handleOpenMediaSelector('audio')}
                     >
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center">
-                          <Volume2 className="w-4 h-4 text-white" />
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center">
+                          <Volume2 className="w-3.5 h-3.5 text-white" />
                         </div>
                         <div className="text-left">
-                          <div className="font-medium">Audio</div>
+                          <div className="font-medium text-sm">Audio</div>
                           <div className="text-xs text-muted-foreground">Add from library</div>
                         </div>
                       </div>
@@ -1344,35 +1391,20 @@ export default function Setlist(): JSX.Element {
 
                     <Button
                       variant={selectedItemType === 'countdown' ? 'default' : 'ghost'}
-                      className="w-full justify-start h-auto p-3"
+                      className="w-full justify-start h-auto p-2.5"
                       onClick={() => setSelectedItemType('countdown')}
                     >
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-red-500 to-pink-600 flex items-center justify-center">
-                          <Timer className="w-4 h-4 text-white" />
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-red-500 to-pink-600 flex items-center justify-center">
+                          <Timer className="w-3.5 h-3.5 text-white" />
                         </div>
                         <div className="text-left">
-                          <div className="font-medium">Countdown</div>
+                          <div className="font-medium text-sm">Countdown</div>
                           <div className="text-xs text-muted-foreground">Timer & events</div>
                         </div>
                       </div>
                     </Button>
 
-                    <Button
-                      variant={selectedItemType === 'announcement' ? 'default' : 'ghost'}
-                      className="w-full justify-start h-auto p-3"
-                      onClick={() => setSelectedItemType('announcement')}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-orange-500 to-amber-600 flex items-center justify-center">
-                          <MessageSquare className="w-4 h-4 text-white" />
-                        </div>
-                        <div className="text-left">
-                          <div className="font-medium">Announcement</div>
-                          <div className="text-xs text-muted-foreground">Custom messages</div>
-                        </div>
-                      </div>
-                    </Button>
                   </div>
                 </div>
               </div>
@@ -1391,9 +1423,7 @@ export default function Setlist(): JSX.Element {
                             ? 'Presentations'
                             : selectedItemType === 'countdown'
                               ? 'Countdown Timers'
-                              : selectedItemType === 'announcement'
-                                ? 'Announcements'
-                                : 'Items'}
+                              : 'Items'}
                     </h3>
                     <p className="text-sm text-muted-foreground">
                       {selectedItemType === 'all'
@@ -1404,9 +1434,7 @@ export default function Setlist(): JSX.Element {
                             ? 'Choose a presentation to include'
                             : selectedItemType === 'countdown'
                               ? 'Add timer elements for transitions'
-                              : selectedItemType === 'announcement'
-                                ? 'Create custom announcements'
-                                : 'Available items'}
+                              : 'Available items'}
                     </p>
                   </div>
                 </div>
@@ -1466,7 +1494,7 @@ export default function Setlist(): JSX.Element {
                                         }`}
                                       >
                                         <span className="text-white">
-                                          {getItemIcon(recentItem.type)}
+                                          {getItemIcon(recentItem)}
                                         </span>
                                       </div>
                                       <div className="flex-1 min-w-0">
@@ -1491,96 +1519,154 @@ export default function Setlist(): JSX.Element {
 
                       <div className="space-y-2">
                         {/* Songs */}
-                        {(selectedItemType === 'all' || selectedItemType === 'song') &&
-                          songs
-                            .filter(
-                              (song) =>
-                                song.name.toLowerCase().includes(addItemSearchTerm.toLowerCase()) ||
-                                song.artist
-                                  ?.toLowerCase()
-                                  .includes(addItemSearchTerm.toLowerCase()) ||
-                                song.tags.some((tag) =>
-                                  tag.toLowerCase().includes(addItemSearchTerm.toLowerCase())
-                                )
-                            )
-                            .map((song) => (
+                        {(selectedItemType === 'all' || selectedItemType === 'song') && (
+                          <>
+                            {/* Create New Song Option */}
+                            {selectedItemType === 'song' && (
                               <div
-                                key={`song-${song.id}`}
-                                className="flex items-center justify-between p-3 border rounded-lg hover:bg-accent cursor-pointer transition-colors"
-                                onClick={() => handleAddItem('song', song.id, song.name)}
+                                className="flex items-center justify-between p-3 border-2 border-dashed border-blue-300 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-950 cursor-pointer transition-colors"
+                                onClick={() => {
+                                  window.location.hash = '#/collection'
+                                }}
                               >
                                 <div className="flex items-center space-x-3">
                                   <div className="p-2 bg-blue-100 dark:bg-blue-900 rounded">
-                                    <Music className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                                    <Plus className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                                   </div>
                                   <div>
-                                    <div className="font-medium">{song.name}</div>
-                                    {song.artist && (
-                                      <div className="text-sm text-muted-foreground">
-                                        {song.artist}
-                                      </div>
-                                    )}
-                                    {song.tags.length > 0 && (
-                                      <div className="flex gap-1 mt-1">
-                                        {song.tags.slice(0, 3).map((tag) => (
-                                          <span
-                                            key={tag}
-                                            className="text-xs bg-secondary px-2 py-1 rounded"
-                                          >
-                                            {tag}
-                                          </span>
-                                        ))}
-                                        {song.tags.length > 3 && (
-                                          <span className="text-xs text-muted-foreground">
-                                            +{song.tags.length - 3} more
-                                          </span>
-                                        )}
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                                <Button size="sm" variant="ghost">
-                                  <Plus className="w-4 h-4" />
-                                </Button>
-                              </div>
-                            ))}
-
-                        {/* Presentations */}
-                        {(selectedItemType === 'all' || selectedItemType === 'presentation') &&
-                          presentations
-                            .filter(
-                              (presentation) =>
-                                presentation.name
-                                  .toLowerCase()
-                                  .includes(addItemSearchTerm.toLowerCase()) ||
-                                presentation.tags.some((tag) =>
-                                  tag.toLowerCase().includes(addItemSearchTerm.toLowerCase())
-                                )
-                            )
-                            .map((presentation) => (
-                              <div
-                                key={`presentation-${presentation.id}`}
-                                className="flex items-center justify-between p-3 border rounded-lg hover:bg-accent cursor-pointer transition-colors"
-                                onClick={() =>
-                                  handleAddItem('presentation', presentation.id, presentation.name)
-                                }
-                              >
-                                <div className="flex items-center space-x-3">
-                                  <div className="p-2 bg-green-100 dark:bg-green-900 rounded">
-                                    <Presentation className="w-4 h-4 text-green-600 dark:text-green-400" />
-                                  </div>
-                                  <div>
-                                    <div className="font-medium">{presentation.name}</div>
-                                    <div className="text-xs text-muted-foreground mt-1">
-                                      {presentation.slides.length} slides • {presentation.type}
+                                    <div className="font-medium text-blue-600 dark:text-blue-400">Create New Song</div>
+                                    <div className="text-sm text-muted-foreground">
+                                      Add lyrics and create a new song
                                     </div>
                                   </div>
                                 </div>
-                                <Button size="sm" variant="ghost">
+                                <Button size="sm" variant="ghost" className="text-blue-600 dark:text-blue-400">
                                   <Plus className="w-4 h-4" />
                                 </Button>
                               </div>
-                            ))}
+                            )}
+
+                            {/* Existing Songs */}
+                            {songs
+                              .filter(
+                                (song) =>
+                                  song.name.toLowerCase().includes(addItemSearchTerm.toLowerCase()) ||
+                                  song.artist
+                                    ?.toLowerCase()
+                                    .includes(addItemSearchTerm.toLowerCase()) ||
+                                  song.tags.some((tag) =>
+                                    tag.toLowerCase().includes(addItemSearchTerm.toLowerCase())
+                                  )
+                              )
+                              .map((song) => (
+                                <div
+                                  key={`song-${song.id}`}
+                                  className="flex items-center justify-between p-3 border rounded-lg hover:bg-accent cursor-pointer transition-colors"
+                                  onClick={() => handleAddItem('song', song.id, song.name)}
+                                >
+                                  <div className="flex items-center space-x-3">
+                                    <div className="p-2 bg-blue-100 dark:bg-blue-900 rounded">
+                                      <Music className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                                    </div>
+                                    <div>
+                                      <div className="font-medium">{song.name}</div>
+                                      {song.artist && (
+                                        <div className="text-sm text-muted-foreground">
+                                          {song.artist}
+                                        </div>
+                                      )}
+                                      {song.tags.length > 0 && (
+                                        <div className="flex gap-1 mt-1">
+                                          {song.tags.slice(0, 3).map((tag) => (
+                                            <span
+                                              key={tag}
+                                              className="text-xs bg-secondary px-2 py-1 rounded"
+                                            >
+                                              {tag}
+                                            </span>
+                                          ))}
+                                          {song.tags.length > 3 && (
+                                            <span className="text-xs text-muted-foreground">
+                                              +{song.tags.length - 3} more
+                                            </span>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <Button size="sm" variant="ghost">
+                                    <Plus className="w-4 h-4" />
+                                  </Button>
+                                </div>
+                              ))}
+                          </>
+                        )}
+
+                        {/* Presentations */}
+                        {(selectedItemType === 'all' || selectedItemType === 'presentation') && (
+                          <>
+                            {/* Create New Presentation Option */}
+                            {selectedItemType === 'presentation' && (
+                              <div
+                                className="flex items-center justify-between p-3 border-2 border-dashed border-green-300 rounded-lg hover:bg-green-50 dark:hover:bg-green-950 cursor-pointer transition-colors"
+                                onClick={() => {
+                                  window.location.hash = '#/collection'
+                                }}
+                              >
+                                <div className="flex items-center space-x-3">
+                                  <div className="p-2 bg-green-100 dark:bg-green-900 rounded">
+                                    <Plus className="w-4 h-4 text-green-600 dark:text-green-400" />
+                                  </div>
+                                  <div>
+                                    <div className="font-medium text-green-600 dark:text-green-400">Create New Presentation</div>
+                                    <div className="text-sm text-muted-foreground">
+                                      Create slides and build a new presentation
+                                    </div>
+                                  </div>
+                                </div>
+                                <Button size="sm" variant="ghost" className="text-green-600 dark:text-green-400">
+                                  <Plus className="w-4 h-4" />
+                                </Button>
+                              </div>
+                            )}
+
+                            {/* Existing Presentations */}
+                            {presentations
+                              .filter(
+                                (presentation) =>
+                                  presentation.name
+                                    .toLowerCase()
+                                    .includes(addItemSearchTerm.toLowerCase()) ||
+                                  presentation.tags.some((tag) =>
+                                    tag.toLowerCase().includes(addItemSearchTerm.toLowerCase())
+                                  )
+                              )
+                              .map((presentation) => (
+                                <div
+                                  key={`presentation-${presentation.id}`}
+                                  className="flex items-center justify-between p-3 border rounded-lg hover:bg-accent cursor-pointer transition-colors"
+                                  onClick={() =>
+                                    handleAddItem('presentation', presentation.id, presentation.name)
+                                  }
+                                >
+                                  <div className="flex items-center space-x-3">
+                                    <div className="p-2 bg-green-100 dark:bg-green-900 rounded">
+                                      <Presentation className="w-4 h-4 text-green-600 dark:text-green-400" />
+                                    </div>
+                                    <div>
+                                      <div className="font-medium">{presentation.name}</div>
+                                      <div className="text-xs text-muted-foreground mt-1">
+                                        {presentation.slides.length} slides • {presentation.type}
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <Button size="sm" variant="ghost">
+                                    <Plus className="w-4 h-4" />
+                                  </Button>
+                                </div>
+                              ))}
+                          </>
+                        )}
 
                         {/* Countdown Timer Option */}
                         {(selectedItemType === 'all' || selectedItemType === 'countdown') &&
@@ -1612,33 +1698,6 @@ export default function Setlist(): JSX.Element {
                             </div>
                           )}
 
-                        {/* Announcement Option */}
-                        {(selectedItemType === 'all' || selectedItemType === 'announcement') &&
-                          (!addItemSearchTerm ||
-                            'announcement'.includes(addItemSearchTerm.toLowerCase()) ||
-                            'new announcement'.includes(addItemSearchTerm.toLowerCase())) && (
-                            <div
-                              className="flex items-center justify-between p-3 border rounded-lg hover:bg-accent cursor-pointer transition-colors border-dashed"
-                              onClick={() =>
-                                handleAddItem('announcement', 'new', 'New Announcement')
-                              }
-                            >
-                              <div className="flex items-center space-x-3">
-                                <div className="p-2 bg-orange-100 dark:bg-orange-900 rounded">
-                                  <MessageSquare className="w-4 h-4 text-orange-600 dark:text-orange-400" />
-                                </div>
-                                <div>
-                                  <div className="font-medium">New Announcement</div>
-                                  <div className="text-sm text-muted-foreground">
-                                    Add a custom announcement or message
-                                  </div>
-                                </div>
-                              </div>
-                              <Button size="sm" variant="ghost">
-                                <Plus className="w-4 h-4" />
-                              </Button>
-                            </div>
-                          )}
 
                         {/* No Results */}
                         {addItemSearchTerm &&
@@ -1650,7 +1709,7 @@ export default function Setlist(): JSX.Element {
                               .toLowerCase()
                               .includes(addItemSearchTerm.toLowerCase())
                           ).length === 0 &&
-                          !'announcement'.includes(addItemSearchTerm.toLowerCase()) && (
+                          (
                             <div className="text-center py-8 text-muted-foreground">
                               <Search className="w-8 h-8 mx-auto mb-2 opacity-50" />
                               <p>No items match your search.</p>
@@ -1674,11 +1733,6 @@ export default function Setlist(): JSX.Element {
                 </div>
               </div>
 
-              {/* Quick Stats */}
-              <div className="flex justify-between text-sm text-muted-foreground pt-2 border-t">
-                <span>{songs.length} songs available</span>
-                <span>{presentations.length} presentations available</span>
-              </div>
             </div>
           )}
 

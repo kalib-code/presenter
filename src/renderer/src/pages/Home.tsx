@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useSetlistStore } from '@renderer/store/setlist'
 import { useSongStore } from '@renderer/store/song'
 import { usePresentationStore } from '@renderer/store/presentation'
@@ -48,9 +48,19 @@ import {
   EyeOff,
   ChevronDown,
   List,
-  GripVertical
+  GripVertical,
+  Clock,
+  Plus,
+  ChevronUp,
+  Play,
+  Pause,
+  Volume2,
+  VolumeX,
+  SkipBack,
+  SkipForward
 } from 'lucide-react'
 import type { Setlist, SetlistItem } from '@renderer/types/database'
+import { defaultTemplates, applyTemplateVariables, type SetlistTemplate } from '@renderer/lib/setlist-templates'
 
 interface ContentCard {
   id: string
@@ -375,21 +385,16 @@ function renderCardContent(card: ContentCard): JSX.Element {
         <BackgroundRenderer
           background={
             background || {
-              type: 'color',
+              type: 'gradient',
               value: 'linear-gradient(135deg, #DC2626, #EA580C)',
               opacity: 1
             }
           }
+          preview={true}
         />
-        {/* Video preview overlay for video backgrounds */}
-        {background?.type === 'video' && (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="text-white/50 text-xs bg-black/50 px-2 py-1 rounded">VIDEO PREVIEW</div>
-          </div>
-        )}
 
         {/* Content overlay */}
-        <div className="absolute inset-0 flex flex-col items-center justify-center p-4 text-center">
+        <div className="absolute inset-0 flex flex-col items-center justify-center p-4 text-center" style={{ zIndex: 10 }}>
           <div
             className={`font-bold mb-2 ${getTitleSizeClass(styling?.titleSize)}`}
             style={{
@@ -427,20 +432,25 @@ function renderCardContent(card: ContentCard): JSX.Element {
   // Regular content rendering - simplified with just centered text
   return (
     <div className="w-full aspect-video bg-black rounded border border-gray-300 relative overflow-hidden">
-      {/* Background Layer - Only show image backgrounds for regular content */}
+      {/* Background Layer - Render all background types for regular content */}
       {(() => {
         const background = card.slideBackground || card.globalBackground
 
-        // Only render image backgrounds for regular content cards
-        if (background?.type === 'image') {
-          return <BackgroundRenderer background={background} />
+        // Render all background types (image, video, color, gradient)
+        if (background) {
+          console.log('🎨 [CARD_CONTENT] Rendering background:', {
+            type: background.type,
+            value: background.value?.substring(0, 100) + '...',
+            cardTitle: card.title
+          })
+          return <BackgroundRenderer background={background} preview={true} />
         }
 
         return null
       })()}
 
       {/* Simplified content rendering - just show text content centered */}
-      <div className="absolute inset-0 flex items-center justify-center p-4">
+      <div className="absolute inset-0 flex items-center justify-center p-4" style={{ zIndex: 10 }}>
         <div
           className="text-center drop-shadow-lg whitespace-pre-line overflow-hidden w-full"
           style={{
@@ -519,7 +529,7 @@ function SortableContentCard({
 }
 
 export default function Home(): JSX.Element {
-  const { setlists, loadSetlists, updateSetlist } = useSetlistStore()
+  const { setlists, loadSetlists, updateSetlist, currentSetlist, isPresenting, getRecentItems, addItem, createSetlist } = useSetlistStore()
   const { songs, fetchSongs } = useSongStore()
   const { presentations, loadPresentations } = usePresentationStore()
 
@@ -528,6 +538,16 @@ export default function Home(): JSX.Element {
   const [selectedItem, setSelectedItem] = useState<SetlistItem | null>(null)
   const [contentCards, setContentCards] = useState<ContentCard[]>([])
   const [selectedCard, setSelectedCard] = useState<ContentCard | null>(null)
+  const [showRecentItems, setShowRecentItems] = useState(false)
+  const [liveCountdown, setLiveCountdown] = useState<{ time: number; active: boolean; config?: ContentCard['countdownConfig'] } | null>(null)
+  const [showTemplateDialog, setShowTemplateDialog] = useState(false)
+  const [mediaState, setMediaState] = useState<{ isPlaying: boolean; volume: number; currentTime: number; duration: number; muted: boolean }>({
+    isPlaying: false,
+    volume: 0.8,
+    currentTime: 0,
+    duration: 0,
+    muted: false
+  })
   const [projectionState, setProjectionState] = useState<ProjectionState>({
     isProjecting: false,
     isBlank: false,
@@ -586,6 +606,17 @@ export default function Home(): JSX.Element {
 
     return unsubscribe
   }, [loadSetlists, fetchSongs, loadPresentations])
+
+  // Auto-load setlist when presentation is started
+  useEffect(() => {
+    if (isPresenting && currentSetlist && currentSetlist !== selectedSetlist) {
+      console.log('🎬 [HOME] Auto-loading setlist for presentation:', currentSetlist.name)
+      setSelectedSetlist(currentSetlist)
+      setSelectedItem(null) // Clear selected item when changing setlist
+      setContentCards([])
+      setSelectedCard(null)
+    }
+  }, [isPresenting, currentSetlist, selectedSetlist])
 
   // Listen for window resize events to update preview dimensions
   useEffect(() => {
@@ -1449,6 +1480,171 @@ export default function Home(): JSX.Element {
     setSelectedCard(null)
   }
 
+  // Handle adding recent item to current setlist
+  const handleAddRecentItem = async (recentItem: { type: string; referenceId: string; title: string }): Promise<void> => {
+    if (!selectedSetlist) {
+      console.warn('No setlist selected to add recent item to')
+      return
+    }
+
+    try {
+      console.log('Adding recent item to setlist:', recentItem)
+      await addItem(selectedSetlist.id, {
+        type: recentItem.type as SetlistItem['type'],
+        title: recentItem.title,
+        referenceId: recentItem.referenceId,
+        isActive: true
+      })
+      
+      // Refresh setlists to update UI
+      await loadSetlists()
+      console.log('Recent item added successfully')
+    } catch (error) {
+      console.error('Failed to add recent item to setlist:', error)
+    }
+  }
+
+  // Countdown control functions
+  const startLiveCountdown = (config?: ContentCard['countdownConfig']): void => {
+    const duration = config?.duration || 300
+    setLiveCountdown({ time: duration, active: true, config })
+    
+    const interval = setInterval(() => {
+      setLiveCountdown(prev => {
+        if (!prev || !prev.active || prev.time <= 0) {
+          clearInterval(interval)
+          return prev && prev.time <= 0 ? { ...prev, active: false, time: 0 } : null
+        }
+        return { ...prev, time: prev.time - 1 }
+      })
+    }, 1000)
+  }
+
+  const pauseLiveCountdown = (): void => {
+    setLiveCountdown(prev => prev ? { ...prev, active: false } : null)
+  }
+
+  const stopLiveCountdown = (): void => {
+    setLiveCountdown(null)
+  }
+
+  const resetLiveCountdown = (): void => {
+    setLiveCountdown(prev => {
+      if (!prev?.config) return null
+      const duration = prev.config.duration || 300
+      return { ...prev, time: duration, active: false }
+    })
+  }
+
+  // Template functions
+  const createSetlistFromTemplate = async (template: SetlistTemplate): Promise<void> => {
+    try {
+      console.log('Creating setlist from template:', template.name)
+      
+      // Apply variables with defaults
+      const variables: Record<string, string> = {}
+      template.variables?.forEach(variable => {
+        if (variable.key === 'service_date') {
+          variables[variable.key] = new Date().toLocaleDateString()
+        } else {
+          variables[variable.key] = variable.defaultValue
+        }
+      })
+      
+      const processedTemplate = applyTemplateVariables(template, variables)
+      
+      // Convert template items to setlist items
+      const items: Omit<SetlistItem, 'id' | 'order'>[] = processedTemplate.items.map((item) => ({
+        type: item.type as SetlistItem['type'],
+        title: item.title,
+        referenceId: 'new', // Will be replaced when user selects actual content
+        duration: item.duration,
+        notes: item.notes,
+        isActive: item.isActive
+      }))
+
+      // Create the setlist
+      await createSetlist({
+        name: processedTemplate.name,
+        description: processedTemplate.description,
+        items: items as SetlistItem[], // Type assertion since we know these will get IDs assigned
+        tags: processedTemplate.tags,
+        isPublic: false,
+        estimatedDuration: processedTemplate.estimatedDuration,
+        createdBy: 'user'
+      })
+      
+      // Refresh setlists and select the new one
+      await loadSetlists()
+      const updatedSetlists = setlists
+      const newSetlist = updatedSetlists[updatedSetlists.length - 1] // Assuming new setlist is last
+      if (newSetlist) {
+        setSelectedSetlist(newSetlist)
+      }
+      
+      setShowTemplateDialog(false)
+      console.log('Setlist created from template successfully')
+    } catch (error) {
+      console.error('Failed to create setlist from template:', error)
+    }
+  }
+
+  // Media control functions
+  const toggleMediaPlayback = (): void => {
+    setMediaState(prev => ({ ...prev, isPlaying: !prev.isPlaying }))
+  }
+
+  const setMediaVolume = (volume: number): void => {
+    setMediaState(prev => ({ ...prev, volume, muted: volume === 0 }))
+  }
+
+  const toggleMediaMute = (): void => {
+    setMediaState(prev => ({ ...prev, muted: !prev.muted }))
+  }
+
+  // Note: seekMedia and updateMediaState functions removed as they were unused
+  // They can be added back when implementing more advanced media controls
+
+  // Format time for media display
+  const formatMediaTime = useCallback((seconds: number): string => {
+    const mins = Math.floor(seconds / 60)
+    const secs = Math.floor(seconds % 60)
+    return `${mins}:${secs.toString().padStart(2, '0')}`
+  }, [])
+
+  // Memoized recent items to avoid unnecessary re-renders
+  const recentItems = useMemo(() => {
+    return getRecentItems().slice(0, 5)
+  }, [getRecentItems])
+
+  // Memoized sorted content cards with performance optimization
+  const sortedContentCards = useMemo(() => {
+    return [...contentCards].sort((a, b) => a.order - b.order)
+  }, [contentCards])
+
+  // Performance optimization: Only show first 20 cards initially for large setlists
+  const displayedCards = useMemo(() => {
+    if (sortedContentCards.length <= 20) {
+      return sortedContentCards
+    }
+    return sortedContentCards.slice(0, 20)
+  }, [sortedContentCards])
+
+  const hasMoreCards = sortedContentCards.length > 20
+
+  // Memoized media elements to avoid recalculation
+  const mediaElements = useMemo(() => {
+    if (!selectedCard?.slideElements) return []
+    return selectedCard.slideElements.filter(element => 
+      element.type === 'video' || element.type === 'image'
+    )
+  }, [selectedCard?.slideElements])
+
+  // Check if current content has media elements (memoized)
+  const hasMediaContent = useMemo((): boolean => {
+    return mediaElements.length > 0
+  }, [mediaElements])
+
   // Handle drag end for setlist items
   const handleSetlistDragEnd = async (event: DragEndEvent): Promise<void> => {
     const { active, over } = event
@@ -1537,13 +1733,49 @@ export default function Home(): JSX.Element {
           <div className="p-4 border-b">
             <div className="flex items-center justify-between">
               <h2 className="font-semibold text-lg">Current Setlist</h2>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm">
-                    <List className="w-4 h-4 mr-2" />
-                    <ChevronDown className="w-3 h-3" />
-                  </Button>
-                </DropdownMenuTrigger>
+              <div className="flex items-center gap-2">
+                <DropdownMenu open={showTemplateDialog} onOpenChange={setShowTemplateDialog}>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm">
+                      <Plus className="w-4 h-4 mr-2" />
+                      Templates
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-80">
+                    <div className="p-2">
+                      <div className="text-sm font-medium mb-3">Quick Start Templates</div>
+                      <div className="space-y-1">
+                        {defaultTemplates.map((template) => (
+                          <DropdownMenuItem
+                            key={template.id}
+                            onClick={() => createSetlistFromTemplate(template)}
+                            className="flex-col items-start p-3 cursor-pointer"
+                          >
+                            <div className="flex items-center justify-between w-full">
+                              <div className="font-medium">{template.name}</div>
+                              <Badge variant="secondary" className="text-xs capitalize">
+                                {template.category}
+                              </Badge>
+                            </div>
+                            <div className="text-xs text-muted-foreground mt-1">
+                              {template.description}
+                            </div>
+                            <div className="text-xs text-muted-foreground mt-1">
+                              {template.items.length} items • {Math.floor(template.estimatedDuration / 60)} min
+                            </div>
+                          </DropdownMenuItem>
+                        ))}
+                      </div>
+                    </div>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm">
+                      <List className="w-4 h-4 mr-2" />
+                      <ChevronDown className="w-3 h-3" />
+                    </Button>
+                  </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-64">
                   {setlists.map((setlist) => (
                     <DropdownMenuItem
@@ -1569,6 +1801,7 @@ export default function Home(): JSX.Element {
                   )}
                 </DropdownMenuContent>
               </DropdownMenu>
+              </div>
             </div>
             {selectedSetlist && (
               <div className="mt-2">
@@ -1577,6 +1810,66 @@ export default function Home(): JSX.Element {
                   {selectedSetlist.items.length} items
                   {selectedSetlist.description && ` • ${selectedSetlist.description}`}
                 </p>
+              </div>
+            )}
+          </div>
+
+          {/* Recent Items Panel */}
+          <div className="border-b">
+            <button
+              onClick={() => setShowRecentItems(!showRecentItems)}
+              className="w-full p-3 text-left hover:bg-accent transition-colors flex items-center justify-between"
+            >
+              <div className="flex items-center gap-2">
+                <Clock className="w-4 h-4" />
+                <span className="text-sm font-medium">Recent Items</span>
+                <span className="text-xs text-muted-foreground">
+                  ({recentItems.length})
+                </span>
+              </div>
+              {showRecentItems ? (
+                <ChevronUp className="w-4 h-4" />
+              ) : (
+                <ChevronDown className="w-4 h-4" />
+              )}
+            </button>
+            
+            {showRecentItems && (
+              <div className="p-2 bg-muted/30 max-h-32 overflow-y-auto">
+                {recentItems.length > 0 ? (
+                  <div className="space-y-1">
+                    {recentItems.map((item) => (
+                      <div
+                        key={`${item.type}-${item.referenceId}`}
+                        className="flex items-center justify-between p-2 rounded hover:bg-background transition-colors"
+                      >
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          {getItemIcon(item.type)}
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium truncate">{item.title}</div>
+                            <div className="text-xs text-muted-foreground capitalize">
+                              {item.type} • {new Date(item.usedAt).toLocaleDateString()}
+                            </div>
+                          </div>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleAddRecentItem(item)}
+                          disabled={!selectedSetlist}
+                          className="shrink-0"
+                        >
+                          <Plus className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-4 text-muted-foreground">
+                    <Clock className="w-6 h-6 mx-auto mb-2 opacity-50" />
+                    <p className="text-sm">No recent items</p>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1635,15 +1928,76 @@ export default function Home(): JSX.Element {
 
               {/* Navigation Controls */}
               <div className="flex items-center gap-2">
+                {/* Slide Navigation */}
                 <Button variant="outline" size="sm" onClick={goToPrevCard} disabled={!selectedCard}>
                   <ChevronLeft className="w-4 h-4" />
-                  Prev
+                  Prev Slide
                 </Button>
                 <Button variant="outline" size="sm" onClick={goToNextCard} disabled={!selectedCard}>
-                  Next
+                  Next Slide
                   <ChevronRight className="w-4 h-4" />
                 </Button>
+                
                 <Separator orientation="vertical" className="h-6" />
+                
+                {/* Item Navigation */}
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => {
+                    if (selectedSetlist && selectedSetlist.items.length > 0) {
+                      const currentItemIndex = selectedSetlist.items.findIndex(item => item.id === selectedItem?.id)
+                      if (currentItemIndex > 0) {
+                        setSelectedItem(selectedSetlist.items[currentItemIndex - 1])
+                      }
+                    }
+                  }}
+                  disabled={!selectedSetlist || !selectedItem || selectedSetlist.items.findIndex(item => item.id === selectedItem?.id) <= 0}
+                >
+                  <SkipBack className="w-4 h-4" />
+                  Prev Item
+                </Button>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => {
+                    if (selectedSetlist && selectedSetlist.items.length > 0) {
+                      const currentItemIndex = selectedSetlist.items.findIndex(item => item.id === selectedItem?.id)
+                      if (currentItemIndex >= 0 && currentItemIndex < selectedSetlist.items.length - 1) {
+                        setSelectedItem(selectedSetlist.items[currentItemIndex + 1])
+                      }
+                    }
+                  }}
+                  disabled={!selectedSetlist || !selectedItem || selectedSetlist.items.findIndex(item => item.id === selectedItem?.id) >= (selectedSetlist?.items.length || 0) - 1}
+                >
+                  Next Item
+                  <SkipForward className="w-4 h-4" />
+                </Button>
+
+                <Separator orientation="vertical" className="h-6" />
+
+                {/* Jump to Slide */}
+                <div className="flex items-center gap-1">
+                  <span className="text-xs text-muted-foreground">Slide:</span>
+                  <input
+                    type="number"
+                    min="1"
+                    max={contentCards.length}
+                    value={selectedCard ? (contentCards.findIndex(c => c.id === selectedCard.id) + 1) : 1}
+                    onChange={(e) => {
+                      const slideNumber = parseInt(e.target.value) - 1
+                      if (slideNumber >= 0 && slideNumber < contentCards.length) {
+                        projectContent(contentCards[slideNumber]).catch(console.error)
+                      }
+                    }}
+                    className="w-12 h-8 text-xs border rounded px-1 text-center"
+                    disabled={contentCards.length === 0}
+                  />
+                  <span className="text-xs text-muted-foreground">/ {contentCards.length}</span>
+                </div>
+                
+                <Separator orientation="vertical" className="h-6" />
+                
                 <Button
                   variant={projectionState.isBlank ? 'default' : 'outline'}
                   size="sm"
@@ -1668,9 +2022,9 @@ export default function Home(): JSX.Element {
                 collisionDetection={closestCenter}
                 onDragEnd={handleCardDragEnd}
               >
-                <SortableContext items={contentCards} strategy={rectSortingStrategy}>
+                <SortableContext items={sortedContentCards} strategy={rectSortingStrategy}>
                   <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                    {contentCards.map((card) => (
+                    {displayedCards.map((card) => (
                       <SortableContentCard
                         key={card.id}
                         card={card}
@@ -1682,6 +2036,23 @@ export default function Home(): JSX.Element {
                       />
                     ))}
                   </div>
+                  
+                  {/* Show More Cards Button for Performance */}
+                  {hasMoreCards && (
+                    <div className="flex justify-center mt-4">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          // Simple implementation: just show all cards when clicked
+                          // In a more advanced implementation, this could use actual virtualization
+                          console.log('Show more cards - would implement virtualization here')
+                        }}
+                      >
+                        Show {sortedContentCards.length - 20} More Cards
+                      </Button>
+                    </div>
+                  )}
                 </SortableContext>
               </DndContext>
             ) : (
@@ -1742,13 +2113,23 @@ export default function Home(): JSX.Element {
                         const background =
                           selectedCard.slideBackground || selectedCard.globalBackground
 
-                        return <BackgroundRenderer background={background} />
+                        console.log('🎨 [HOME_PREVIEW] Background for preview:', {
+                          hasSlideBackground: !!selectedCard.slideBackground,
+                          hasGlobalBackground: !!selectedCard.globalBackground,
+                          selectedBackground: background,
+                          backgroundType: background?.type,
+                          backgroundValue: background?.value,
+                          cardTitle: selectedCard.title,
+                          previewMode: false
+                        })
+
+                        return <BackgroundRenderer background={background} preview={false} />
                       })()}
 
                       {/* Content Layer */}
                       {selectedCard.type === 'countdown' && selectedCard.countdownConfig ? (
                         // Render countdown with enhanced config
-                        <div className="absolute inset-0 flex flex-col items-center justify-center p-2 text-center">
+                        <div className="absolute inset-0 flex flex-col items-center justify-center p-2 text-center" style={{ zIndex: 10 }}>
                           <div
                             className="font-bold mb-1 text-xs"
                             style={{
@@ -1773,10 +2154,13 @@ export default function Home(): JSX.Element {
                                   : 'none'
                             }}
                           >
-                            {Math.floor((selectedCard.countdownConfig.duration || 300) / 60)}:
-                            {((selectedCard.countdownConfig.duration || 300) % 60)
-                              .toString()
-                              .padStart(2, '0')}
+                            {(() => {
+                              // Use live countdown time if active, otherwise use config duration
+                              const timeToShow = liveCountdown?.active && selectedCard.type === 'countdown'
+                                ? liveCountdown.time
+                                : (selectedCard.countdownConfig.duration || 300)
+                              return `${Math.floor(timeToShow / 60)}:${(timeToShow % 60).toString().padStart(2, '0')}`
+                            })()}
                           </div>
 
                           <div
@@ -1811,6 +2195,7 @@ export default function Home(): JSX.Element {
                               const scaledWidth = element.size.width * scale
                               const scaledHeight = element.size.height * scale
                               const scaledFontSize = (element.style.fontSize || 48) * scale
+                              const elementZIndex = (element.zIndex || 0) + 10 // Ensure elements are above background
 
                               if (element.type === 'text') {
                                 return (
@@ -1831,6 +2216,7 @@ export default function Home(): JSX.Element {
                                         element.style.textShadow || '1px 1px 2px rgba(0,0,0,0.8)',
                                       lineHeight: element.style.lineHeight || 1.3,
                                       opacity: element.style.opacity || 1,
+                                      zIndex: elementZIndex,
                                       justifyContent:
                                         element.style.textAlign === 'left'
                                           ? 'flex-start'
@@ -1883,7 +2269,7 @@ export default function Home(): JSX.Element {
                         </>
                       ) : (
                         // Fallback: Render simple text content
-                        <div className="absolute inset-0 flex items-center justify-center p-2">
+                        <div className="absolute inset-0 flex items-center justify-center p-2" style={{ zIndex: 10 }}>
                           <div className="text-white text-center text-xs font-bold drop-shadow-lg max-w-full overflow-hidden whitespace-pre-wrap">
                             {selectedCard.content}
                           </div>
@@ -1952,6 +2338,165 @@ export default function Home(): JSX.Element {
                 Stop Projection
               </Button>
             </div>
+
+            {/* Countdown Controls */}
+            {selectedCard?.type === 'countdown' && (
+              <div className="mt-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">Countdown Timer</span>
+                  <Badge variant={liveCountdown?.active ? 'default' : 'secondary'}>
+                    {liveCountdown?.active ? 'Running' : 'Stopped'}
+                  </Badge>
+                </div>
+
+                {liveCountdown && (
+                  <div className="text-center p-3 bg-muted rounded-lg">
+                    <div className="text-2xl font-mono font-bold mb-1">
+                      {Math.floor(liveCountdown.time / 60)}:{(liveCountdown.time % 60).toString().padStart(2, '0')}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {liveCountdown.config?.title || 'Countdown Timer'}
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    size="sm"
+                    variant={liveCountdown?.active ? 'secondary' : 'default'}
+                    onClick={() => {
+                      if (liveCountdown?.active) {
+                        pauseLiveCountdown()
+                      } else {
+                        startLiveCountdown(selectedCard.countdownConfig)
+                      }
+                    }}
+                    className="w-full"
+                  >
+                    {liveCountdown?.active ? 'Pause' : 'Start'}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={resetLiveCountdown}
+                    disabled={!liveCountdown}
+                    className="w-full"
+                  >
+                    Reset
+                  </Button>
+                </div>
+
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  onClick={stopLiveCountdown}
+                  disabled={!liveCountdown}
+                  className="w-full"
+                >
+                  Stop Timer
+                </Button>
+              </div>
+            )}
+
+            {/* Media Controls */}
+            {hasMediaContent && (
+              <div className="mt-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">Media Controls</span>
+                  <Badge variant={mediaState.isPlaying ? 'default' : 'secondary'}>
+                    {mediaState.isPlaying ? 'Playing' : 'Stopped'}
+                  </Badge>
+                </div>
+
+                {/* Media Elements List */}
+                <div className="space-y-2">
+                  {mediaElements.map((element, index) => (
+                    <div key={element.id || index} className="p-2 bg-muted rounded-lg">
+                      <div className="flex items-center gap-2 mb-2">
+                        {element.type === 'video' ? (
+                          <div className="w-4 h-4 bg-blue-500 rounded flex items-center justify-center">
+                            <Play className="w-3 h-3 text-white" />
+                          </div>
+                        ) : (
+                          <Image className="w-4 h-4 text-green-600" />
+                        )}
+                        <span className="text-xs font-medium truncate">
+                          {element.type === 'video' ? 'Video' : 'Image'} {index + 1}
+                        </span>
+                      </div>
+                      
+                      {element.type === 'video' && (
+                        <>
+                          {/* Playback Controls */}
+                          <div className="flex items-center gap-2 mb-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={toggleMediaPlayback}
+                              className="flex-shrink-0"
+                            >
+                              {mediaState.isPlaying ? (
+                                <Pause className="w-3 h-3" />
+                              ) : (
+                                <Play className="w-3 h-3" />
+                              )}
+                            </Button>
+                            
+                            <div className="text-xs text-muted-foreground">
+                              {formatMediaTime(mediaState.currentTime)} / {formatMediaTime(mediaState.duration)}
+                            </div>
+                          </div>
+
+                          {/* Progress Bar */}
+                          <div className="w-full bg-muted-foreground/20 rounded-full h-1 mb-2">
+                            <div 
+                              className="bg-primary h-1 rounded-full transition-all duration-300"
+                              style={{ 
+                                width: mediaState.duration > 0 
+                                  ? `${(mediaState.currentTime / mediaState.duration) * 100}%` 
+                                  : '0%' 
+                              }}
+                            />
+                          </div>
+
+                          {/* Volume Control */}
+                          <div className="flex items-center gap-2">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={toggleMediaMute}
+                              className="p-1"
+                            >
+                              {mediaState.muted ? (
+                                <VolumeX className="w-3 h-3" />
+                              ) : (
+                                <Volume2 className="w-3 h-3" />
+                              )}
+                            </Button>
+                            
+                            <div className="flex-1">
+                              <input
+                                type="range"
+                                min="0"
+                                max="1"
+                                step="0.1"
+                                value={mediaState.muted ? 0 : mediaState.volume}
+                                onChange={(e) => setMediaVolume(parseFloat(e.target.value))}
+                                className="w-full h-1 bg-muted-foreground/20 rounded-lg appearance-none cursor-pointer"
+                              />
+                            </div>
+                            
+                            <span className="text-xs text-muted-foreground w-8 text-right">
+                              {Math.round((mediaState.muted ? 0 : mediaState.volume) * 100)}%
+                            </span>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Keyboard Shortcuts Help */}
             <div className="mt-6 p-3 bg-muted rounded-lg">

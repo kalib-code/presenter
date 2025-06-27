@@ -161,12 +161,48 @@ export default function SetlistPresenter(): JSX.Element {
   const currentItem = currentSetlist.items[currentItemIndex]
   const nextItemData = currentSetlist.items[currentItemIndex + 1]
 
-  const getItemIcon = (type: string) => {
+  const getPresentationType = (item: SetlistItem): string | undefined => {
+    if (item.type === 'presentation' && item.referenceId) {
+      const presentation = presentations.find(p => p.id === item.referenceId)
+      return presentation?.type
+    }
+    return undefined
+  }
+
+  const getItemIcon = (itemOrType: SetlistItem | string, presentationType?: string) => {
+    let type: string
+    let actualPresentationType: string | undefined
+    
+    if (typeof itemOrType === 'string') {
+      type = itemOrType
+      actualPresentationType = presentationType
+    } else {
+      type = itemOrType.type
+      actualPresentationType = getPresentationType(itemOrType)
+    }
+
     switch (type) {
       case 'song':
         return <Music className="w-5 h-5" />
       case 'presentation':
-        return <Presentation className="w-5 h-5" />
+        // Show different icons based on presentation type
+        switch (actualPresentationType) {
+          case 'announcement':
+            return <MessageSquare className="w-5 h-5" />
+          case 'scripture':
+            return <Presentation className="w-5 h-5" />
+          case 'sermon':
+            return <Presentation className="w-5 h-5" />
+          case 'teaching':
+            return <Presentation className="w-5 h-5" />
+          case 'testimony':
+            return <MessageSquare className="w-5 h-5" />
+          case 'prayer':
+            return <MessageSquare className="w-5 h-5" />
+          case 'custom':
+          default:
+            return <Presentation className="w-5 h-5" />
+        }
       case 'media':
         return <FileImage className="w-5 h-5" />
       case 'video':
@@ -175,8 +211,6 @@ export default function SetlistPresenter(): JSX.Element {
         return <Image className="w-5 h-5" />
       case 'audio':
         return <Volume2 className="w-5 h-5" />
-      case 'announcement':
-        return <MessageSquare className="w-5 h-5" />
       case 'countdown':
         return <Timer className="w-5 h-5" />
       default:
@@ -326,7 +360,7 @@ export default function SetlistPresenter(): JSX.Element {
             {currentDetails ? (
               <div className="space-y-4">
                 <div className="flex items-center justify-center space-x-3 mb-6">
-                  {getItemIcon(currentItem.type)}
+                  {getItemIcon(currentItem)}
                   <div className="text-2xl text-gray-400">{currentDetails.subtitle}</div>
                 </div>
                 <div className="text-4xl font-bold mb-4">{currentDetails.title}</div>
@@ -400,7 +434,7 @@ export default function SetlistPresenter(): JSX.Element {
             {nextDetails ? (
               <div className="space-y-2">
                 <div className="flex items-center space-x-2">
-                  {getItemIcon(nextItemData.type)}
+                  {getItemIcon(nextItemData)}
                   <div className="text-sm text-gray-400">{nextDetails.subtitle}</div>
                 </div>
                 <div className="font-semibold">{nextDetails.title}</div>
@@ -508,7 +542,7 @@ export default function SetlistPresenter(): JSX.Element {
                 >
                   <div className="flex items-center space-x-2 mb-1">
                     <span className="text-xs font-mono w-6">{index + 1}</span>
-                    {getItemIcon(item.type)}
+                    {getItemIcon(item)}
                     <span className="text-sm font-medium truncate">{item.title}</span>
                   </div>
                   {(item.duration || 0) > 0 && (

@@ -35,6 +35,37 @@ export type Audio = {
   createdAt: string
 }
 
+// Helper function to get MIME type from file extension
+function getMimeType(ext: string): string {
+  switch (ext.toLowerCase()) {
+    case '.jpg':
+    case '.jpeg':
+      return 'image/jpeg'
+    case '.png':
+      return 'image/png'
+    case '.gif':
+      return 'image/gif'
+    case '.webp':
+      return 'image/webp'
+    case '.mp4':
+      return 'video/mp4'
+    case '.webm':
+      return 'video/webm'
+    case '.mov':
+      return 'video/quicktime'
+    case '.avi':
+      return 'video/x-msvideo'
+    case '.mp3':
+      return 'audio/mpeg'
+    case '.wav':
+      return 'audio/wav'
+    case '.ogg':
+      return 'audio/ogg'
+    default:
+      return 'application/octet-stream'
+  }
+}
+
 // LMDB databases
 const songDb = open<Song>({
   path: join(app.getPath('userData'), 'songs.lmdb'),
@@ -1175,6 +1206,8 @@ app.whenReady().then(() => {
             const ext = extname(file).toLowerCase()
 
             return {
+              id: file, // Use filename as ID for now
+              name: file, // Use filename as display name
               filename: file,
               path: filePath,
               url: getMediaUrl(file),
@@ -1184,7 +1217,14 @@ app.whenReady().then(() => {
                 : ['.mp4', '.mov', '.avi'].includes(ext)
                   ? 'video'
                   : 'audio',
-              createdAt: stats.birthtimeMs
+              mimeType: getMimeType(ext),
+              tags: [],
+              isPublic: true,
+              checksum: '', // TODO: Generate actual checksum
+              createdAt: stats.birthtimeMs,
+              updatedAt: stats.mtimeMs,
+              createdBy: 'system',
+              version: 1
             }
           })
       )
@@ -1300,6 +1340,28 @@ app.whenReady().then(() => {
       return dataUrl
     } catch (error) {
       console.error('❌ [MAIN] Failed to get media data URL for:', filename, error)
+      return null
+    }
+  })
+
+  // Get media file path for direct file access
+  ipcMain.handle('get-media-file-path', async (_event, filename: string) => {
+    console.log('🔍 [MAIN] get-media-file-path requested for:', filename)
+    try {
+      const filePath = join(getMediaDirectory(), filename)
+      console.log('🔍 [MAIN] Media file path:', filePath)
+
+      // Check if file exists
+      try {
+        await fs.access(filePath)
+        console.log('✅ [MAIN] Media file exists:', filePath)
+        return filePath
+      } catch {
+        console.error('❌ [MAIN] Media file not found:', filePath)
+        return null
+      }
+    } catch (error) {
+      console.error('❌ [MAIN] Failed to get media file path for:', filename, error)
       return null
     }
   })

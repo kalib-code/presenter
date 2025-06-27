@@ -13,6 +13,7 @@ import {
   RotateCcw
 } from 'lucide-react'
 import type { SetlistItem } from '@renderer/types/database'
+import { resolveMediaUrl } from '@renderer/utils/mediaUtils'
 
 interface MediaPlayerProps {
   item: SetlistItem
@@ -41,6 +42,11 @@ export function MediaPlayer({
   const [showControls, setShowControls] = useState(true)
   const [controlsTimeout, setControlsTimeout] = useState<NodeJS.Timeout | null>(null)
 
+  // URL resolution state
+  const [resolvedMediaUrl, setResolvedMediaUrl] = useState<string>('')
+  const [resolvedBackgroundAudioUrl, setResolvedBackgroundAudioUrl] = useState<string>('')
+  const [isResolvingUrls, setIsResolvingUrls] = useState(false)
+
   // Background audio state
   const [backgroundAudioPlaying, setBackgroundAudioPlaying] = useState(false)
   const [backgroundAudioVolume, setBackgroundAudioVolume] = useState(
@@ -50,11 +56,53 @@ export function MediaPlayer({
   const mediaRef = item.type === 'video' ? videoRef : audioRef
   const mediaConfig = item.mediaConfig
 
+  // URL resolution effect
+  useEffect(() => {
+    const resolveUrls = async () => {
+      if (!mediaConfig?.url) return
+
+      console.log('🎬 [MEDIA_PLAYER] Resolving media URLs for item:', item.title)
+      setIsResolvingUrls(true)
+
+      try {
+        // Resolve main media URL
+        const mainUrl = await resolveMediaUrl(mediaConfig.url)
+        console.log('🎬 [MEDIA_PLAYER] Main media URL resolved:', {
+          original: mediaConfig.url,
+          resolved: mainUrl,
+          type: item.type
+        })
+        setResolvedMediaUrl(mainUrl)
+
+        // Resolve background audio URL if present
+        if (mediaConfig.backgroundAudio?.url) {
+          const bgAudioUrl = await resolveMediaUrl(mediaConfig.backgroundAudio.url)
+          console.log('🎬 [MEDIA_PLAYER] Background audio URL resolved:', {
+            original: mediaConfig.backgroundAudio.url,
+            resolved: bgAudioUrl
+          })
+          setResolvedBackgroundAudioUrl(bgAudioUrl)
+        }
+      } catch (error) {
+        console.error('❌ [MEDIA_PLAYER] Failed to resolve media URLs:', error)
+      } finally {
+        setIsResolvingUrls(false)
+      }
+    }
+
+    resolveUrls()
+  }, [mediaConfig?.url, mediaConfig?.backgroundAudio?.url, item.title, item.type])
+
   useEffect(() => {
     const media = mediaRef.current
-    if (!media || !mediaConfig?.url) return
+    if (!media || !resolvedMediaUrl || isResolvingUrls) return
 
-    media.src = mediaConfig.url
+    console.log('🎬 [MEDIA_PLAYER] Setting media source:', {
+      element: item.type,
+      resolvedUrl: resolvedMediaUrl
+    })
+
+    media.src = resolvedMediaUrl
     media.volume = volume
     media.muted = isMuted
     media.loop = mediaConfig.loop || false
@@ -104,16 +152,31 @@ export function MediaPlayer({
       media.removeEventListener('pause', handlePause)
       media.removeEventListener('ended', handleEnded)
     }
-  }, [mediaConfig, autoplay, volume, isMuted, onEnded, onTimeUpdate, mediaRef])
+  }, [
+    resolvedMediaUrl,
+    isResolvingUrls,
+    mediaConfig,
+    autoplay,
+    volume,
+    isMuted,
+    onEnded,
+    onTimeUpdate,
+    mediaRef,
+    item.type
+  ])
 
   // Background audio effect
   useEffect(() => {
     const backgroundAudio = backgroundAudioRef.current
     const backgroundConfig = mediaConfig?.backgroundAudio
 
-    if (!backgroundAudio || !backgroundConfig?.url) return
+    if (!backgroundAudio || !backgroundConfig?.url || !resolvedBackgroundAudioUrl) return
 
-    backgroundAudio.src = backgroundConfig.url
+    console.log('🎬 [MEDIA_PLAYER] Setting background audio source:', {
+      resolvedUrl: resolvedBackgroundAudioUrl
+    })
+
+    backgroundAudio.src = resolvedBackgroundAudioUrl
     backgroundAudio.volume = backgroundAudioVolume
     backgroundAudio.loop = backgroundConfig.loop || false
 
@@ -160,7 +223,7 @@ export function MediaPlayer({
       backgroundAudio.removeEventListener('pause', handleBackgroundAudioPause)
       backgroundAudio.removeEventListener('ended', handleBackgroundAudioEnded)
     }
-  }, [mediaConfig?.backgroundAudio, backgroundAudioVolume, autoplay])
+  }, [resolvedBackgroundAudioUrl, mediaConfig?.backgroundAudio, backgroundAudioVolume, autoplay])
 
   const togglePlayPause = () => {
     const media = mediaRef.current
@@ -293,15 +356,27 @@ export function MediaPlayer({
   if (item.type === 'image') {
     return (
       <div className={`relative ${className}`}>
-        <img
-          src={mediaConfig?.url}
-          alt={item.title}
-          className="w-full h-full object-contain"
-          style={{
-            objectFit: mediaConfig?.objectFit || 'contain',
-            aspectRatio: mediaConfig?.aspectRatio === 'auto' ? 'auto' : mediaConfig?.aspectRatio
-          }}
-        />
+        {isResolvingUrls ? (
+          <div className="w-full h-full flex items-center justify-center bg-gray-800">
+            <div className="text-white">Loading image...</div>
+          </div>
+        ) : (
+          <img
+            src={resolvedMediaUrl}
+            alt={item.title}
+            className="w-full h-full object-contain"
+            style={{
+              objectFit: mediaConfig?.objectFit || 'contain',
+              aspectRatio: mediaConfig?.aspectRatio === 'auto' ? 'auto' : mediaConfig?.aspectRatio
+            }}
+            onLoad={() => console.log('🖼️ [MEDIA_PLAYER] Image loaded successfully:', item.title)}
+            onError={(e) => console.error('🖼️ [MEDIA_PLAYER] Image failed to load:', {
+              title: item.title,
+              resolvedUrl: resolvedMediaUrl,
+              error: e.nativeEvent
+            })}
+          />
+        )}
 
         {/* Background Audio Element */}
         {mediaConfig?.backgroundAudio?.url && <audio ref={backgroundAudioRef} />}
@@ -361,7 +436,11 @@ export function MediaPlayer({
 
   return (
     <div className={`relative bg-black ${className}`} onMouseMove={handleMouseMove}>
-      {item.type === 'video' ? (
+      {isResolvingUrls ? (
+        <div className="w-full h-full flex items-center justify-center">
+          <div className="text-white">Loading media...</div>
+        </div>
+      ) : item.type === 'video' ? (
         <>
           <video
             ref={videoRef}
@@ -372,6 +451,13 @@ export function MediaPlayer({
             }}
             poster={mediaConfig?.thumbnail}
             playsInline
+            onLoadStart={() => console.log('🎬 [MEDIA_PLAYER] Video load started:', item.title)}
+            onCanPlay={() => console.log('🎬 [MEDIA_PLAYER] Video can play:', item.title)}
+            onError={(e) => console.error('🎬 [MEDIA_PLAYER] Video failed to load:', {
+              title: item.title,
+              resolvedUrl: resolvedMediaUrl,
+              error: e.nativeEvent
+            })}
           />
           {/* Background Audio Element for Video */}
           {mediaConfig?.backgroundAudio?.url && <audio ref={backgroundAudioRef} />}
