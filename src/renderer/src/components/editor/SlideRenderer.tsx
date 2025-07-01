@@ -102,6 +102,29 @@ interface SlideRendererProps {
   className?: string
   scalingConfig?: ScalingConfig // Optional scaling config for projection scaling
   useProjectionScaling?: boolean // Whether to use projection-aware scaling
+  globalAudioControls?: any // Global audio controls for registering live projection audio
+  mediaConfig?: {
+    url?: string
+    autoplay?: boolean
+    loop?: boolean
+    volume?: number
+    startTime?: number
+    endTime?: number
+    controls?: boolean
+    muted?: boolean
+    thumbnail?: string
+    mediaType?: 'video' | 'image' | 'audio'
+    aspectRatio?: '16:9' | '4:3' | '1:1' | 'auto'
+    objectFit?: 'cover' | 'contain' | 'fill' | 'scale-down'
+    backgroundAudio?: {
+      url?: string
+      volume?: number
+      loop?: boolean
+      autoplay?: boolean
+      fadeIn?: number
+      fadeOut?: number
+    }
+  } // Media configuration for background audio support
 }
 
 // Canvas dimensions imported from constants
@@ -115,9 +138,14 @@ const MediaElement: React.FC<{
   scaledHeight: number
   isPreview: boolean
   index: number
-}> = ({ element, scaledLeft, scaledTop, scaledWidth, scaledHeight, isPreview, index }) => {
+  mediaConfig?: SlideRendererProps['mediaConfig']
+  globalAudioControls?: any
+}> = ({ element, scaledLeft, scaledTop, scaledWidth, scaledHeight, isPreview, index, mediaConfig, globalAudioControls }) => {
   const [resolvedUrl, setResolvedUrl] = useState<string>(element.content)
   const [isPlaceholder, setIsPlaceholder] = useState<boolean>(false)
+  const [resolvedBackgroundAudioUrl, setResolvedBackgroundAudioUrl] = useState<string>('')
+  const [backgroundAudioPlaying, setBackgroundAudioPlaying] = useState<boolean>(false)
+  const backgroundAudioRef = React.useRef<HTMLAudioElement>(null)
 
   useEffect(() => {
     const loadUrl = async (): Promise<void> => {
@@ -164,6 +192,160 @@ const MediaElement: React.FC<{
     loadUrl()
   }, [element.content])
 
+  // Handle background audio URL resolution for video and image elements
+  useEffect(() => {
+    const loadBackgroundAudio = async (): Promise<void> => {
+      if ((element.type === 'video' || element.type === 'image') && mediaConfig?.backgroundAudio?.url) {
+        console.log(`🎵 [SLIDE_RENDERER] Resolving background audio URL for ${element.type}:`, mediaConfig.backgroundAudio.url)
+        try {
+          if (isMediaReference(mediaConfig.backgroundAudio.url)) {
+            const resolved = await resolveMediaUrl(mediaConfig.backgroundAudio.url)
+            setResolvedBackgroundAudioUrl(resolved)
+            console.log(`🎵 [SLIDE_RENDERER] Background audio URL resolved for ${element.type}:`, {
+              original: mediaConfig.backgroundAudio.url,
+              resolved: resolved?.substring(0, 100) + '...'
+            })
+          } else {
+            setResolvedBackgroundAudioUrl(mediaConfig.backgroundAudio.url)
+          }
+        } catch (error) {
+          console.error(`🎵 [SLIDE_RENDERER] Failed to resolve background audio URL for ${element.type}:`, error)
+        }
+      }
+    }
+
+    loadBackgroundAudio()
+  }, [element.type, mediaConfig?.backgroundAudio?.url])
+
+  // Handle background audio setup and autoplay for video and image elements
+  useEffect(() => {
+    const backgroundAudio = backgroundAudioRef.current
+    if (
+      (element.type === 'video' || element.type === 'image') && 
+      backgroundAudio && 
+      resolvedBackgroundAudioUrl &&
+      !isPreview // Only handle in live mode, not preview
+    ) {
+      console.log(`🎵 [SLIDE_RENDERER] Setting up background audio for ${element.type}:`, {
+        hasAutoplay: !!mediaConfig?.backgroundAudio?.autoplay,
+        volume: mediaConfig?.backgroundAudio?.volume,
+        loop: mediaConfig?.backgroundAudio?.loop
+      })
+      
+      backgroundAudio.src = resolvedBackgroundAudioUrl
+      backgroundAudio.volume = mediaConfig?.backgroundAudio?.volume || 0.5
+      backgroundAudio.loop = mediaConfig?.backgroundAudio?.loop || false
+      
+      // Register with global audio controls in live presentation mode
+      if (globalAudioControls) {
+        console.log(`🎵 [SLIDE_RENDERER] Registering background audio with global controls for ${element.type}`)
+        globalAudioControls.registerAudio(backgroundAudio, `Live: ${element.type} Background Audio`)
+      }
+      
+      // Send audio state to main window via IPC
+      const sendAudioStateUpdate = () => {
+        if (window.electron?.ipcRenderer) {
+          const audioState = {
+            currentTrack: `Live: ${element.type} Background Audio`,
+            duration: backgroundAudio.duration || 0,
+            currentTime: backgroundAudio.currentTime || 0,
+            volume: backgroundAudio.volume || 0.5,
+            muted: backgroundAudio.muted || false,
+            isPlaying: !backgroundAudio.paused
+          }
+          window.electron.ipcRenderer.send('audio-state-sync', audioState)
+          console.log(`🎵 [SLIDE_RENDERER] Sent audio state to main window:`, audioState)
+        }
+      }
+      
+      // Set up audio event listeners for state sync
+      const handlePlay = () => {
+        setBackgroundAudioPlaying(true)
+        sendAudioStateUpdate()
+        console.log(`🎵 [SLIDE_RENDERER] Background audio started playing for ${element.type} in live mode`)
+      }
+      
+      const handlePause = () => {
+        setBackgroundAudioPlaying(false)
+        sendAudioStateUpdate()
+        console.log(`🎵 [SLIDE_RENDERER] Background audio paused for ${element.type}`)
+      }
+      
+      const handleTimeUpdate = () => {
+        sendAudioStateUpdate()
+      }
+      
+      backgroundAudio.addEventListener('play', handlePlay)
+      backgroundAudio.addEventListener('pause', handlePause)
+      backgroundAudio.addEventListener('timeupdate', handleTimeUpdate)
+      
+      // Auto-play background audio in live presentation mode
+      console.log(`🎵 [SLIDE_RENDERER] Starting background audio for ${element.type} in live presentation`)
+      
+      // Check if audio element is still in the DOM before playing
+      if (backgroundAudioRef.current && backgroundAudioRef.current.isConnected) {
+        backgroundAudio.play().then(() => {
+          handlePlay()
+        }).catch((error) => {
+          if (error.name === 'AbortError') {
+            console.log(`🎵 [SLIDE_RENDERER] Background audio autoplay aborted for ${element.type} (component unmounted)`)
+          } else {
+            console.error(`🎵 [SLIDE_RENDERER] Background audio autoplay failed for ${element.type} in live mode:`, error)
+          }
+        })
+      } else {
+        console.log(`🎵 [SLIDE_RENDERER] Background audio element not available for ${element.type}`)
+      }
+      
+      // Cleanup function
+      return () => {
+        backgroundAudio.removeEventListener('play', handlePlay)
+        backgroundAudio.removeEventListener('pause', handlePause)
+        backgroundAudio.removeEventListener('timeupdate', handleTimeUpdate)
+      }
+    }
+  }, [resolvedBackgroundAudioUrl, element.type, isPreview, mediaConfig?.backgroundAudio?.volume, mediaConfig?.backgroundAudio?.loop])
+
+  // Listen for audio control commands from main window (only in live mode)
+  useEffect(() => {
+    if (!isPreview && backgroundAudioRef.current && window.electron?.ipcRenderer) {
+      const handleAudioControl = (event: any, command: any) => {
+        const audio = backgroundAudioRef.current
+        if (!audio) return
+        
+        console.log(`🎵 [SLIDE_RENDERER] Received audio control command:`, command)
+        
+        switch (command.action) {
+          case 'play':
+            audio.play().catch(console.error)
+            break
+          case 'pause':
+            audio.pause()
+            break
+          case 'stop':
+            audio.pause()
+            audio.currentTime = 0
+            break
+          case 'setVolume':
+            audio.volume = command.value
+            break
+          case 'setMuted':
+            audio.muted = command.value
+            break
+          case 'seek':
+            audio.currentTime = command.value
+            break
+        }
+      }
+      
+      window.electron.ipcRenderer.on('audio-control', handleAudioControl)
+      
+      return () => {
+        window.electron?.ipcRenderer.removeListener('audio-control', handleAudioControl)
+      }
+    }
+  }, [isPreview, backgroundAudioRef.current])
+
   // Common styles for positioning
   const commonStyles = {
     left: scaledLeft,
@@ -177,35 +359,69 @@ const MediaElement: React.FC<{
 
   if (element.type === 'image') {
     return (
-      <img
-        key={element.id || `image-element-${index}`}
-        src={resolvedUrl}
-        alt="Slide image"
-        className="absolute object-cover"
-        style={commonStyles}
-        onLoad={(): void =>
-          console.log('🖼️ [SLIDE_RENDERER] Image loaded successfully:', element.content)
-        }
-        onError={(e): void => {
-          console.error('🖼️ [SLIDE_RENDERER] Image failed to load:', {
-            originalContent: element.content,
-            resolvedUrl: resolvedUrl,
-            isPlaceholder: isPlaceholder,
-            error: e.nativeEvent
-          })
-
-          // If it fails and it's still a media:// URL, force regenerate placeholder
-          if (resolvedUrl.startsWith('media://')) {
-            console.warn(
-              '🔄 [SLIDE_RENDERER] Forcing placeholder for failed media URL:',
-              resolvedUrl
-            )
-            // This will trigger a re-render with placeholder
-            setResolvedUrl(generatePlaceholderForElement(element.content))
-            setIsPlaceholder(true)
+      <div className="relative">
+        <img
+          key={element.id || `image-element-${index}`}
+          src={resolvedUrl}
+          alt="Slide image"
+          className="absolute object-cover"
+          style={commonStyles}
+          onLoad={(): void =>
+            console.log('🖼️ [SLIDE_RENDERER] Image loaded successfully:', element.content)
           }
-        }}
-      />
+          onError={(e): void => {
+            console.error('🖼️ [SLIDE_RENDERER] Image failed to load:', {
+              originalContent: element.content,
+              resolvedUrl: resolvedUrl,
+              isPlaceholder: isPlaceholder,
+              error: e.nativeEvent
+            })
+
+            // If it fails and it's still a media:// URL, force regenerate placeholder
+            if (resolvedUrl.startsWith('media://')) {
+              console.warn(
+                '🔄 [SLIDE_RENDERER] Forcing placeholder for failed media URL:',
+                resolvedUrl
+              )
+              // This will trigger a re-render with placeholder
+              setResolvedUrl(generatePlaceholderForElement(element.content))
+              setIsPlaceholder(true)
+            }
+          }}
+        />
+        
+        {/* Background Audio Element for Image */}
+        {element.type === 'image' && mediaConfig?.backgroundAudio?.url && (
+          <audio 
+            ref={backgroundAudioRef}
+            onPlay={() => {
+              setBackgroundAudioPlaying(true)
+              console.log('🎵 [SLIDE_RENDERER] Background audio started for image')
+            }}
+            onPause={() => {
+              setBackgroundAudioPlaying(false)
+              console.log('🎵 [SLIDE_RENDERER] Background audio paused for image')
+            }}
+            onError={(e) => {
+              console.error('🎵 [SLIDE_RENDERER] Background audio failed to load for image:', e.nativeEvent)
+            }}
+          />
+        )}
+        
+        {/* Background Audio Indicator (only in preview mode) */}
+        {element.type === 'image' && mediaConfig?.backgroundAudio?.url && isPreview && (
+          <div 
+            className="absolute top-1 right-1 bg-black/80 text-white text-xs px-2 py-1 rounded"
+            style={{ 
+              left: scaledLeft + scaledWidth - 80,
+              top: scaledTop + 4,
+              zIndex: (element.zIndex || 10) + 1 
+            }}
+          >
+            🎵 {backgroundAudioPlaying ? 'Playing' : 'Ready'}
+          </div>
+        )}
+      </div>
     )
   } else if (element.type === 'video') {
     // If it's a placeholder, render as an image instead of trying to play as video
@@ -233,30 +449,64 @@ const MediaElement: React.FC<{
 
     // Regular video rendering for actual video files
     return (
-      <video
-        key={element.id || `video-element-${index}`}
-        src={resolvedUrl}
-        autoPlay
-        loop
-        muted
-        playsInline
-        className="absolute object-cover"
-        style={commonStyles}
-        onLoadStart={(): void =>
-          console.log('🎬 [SLIDE_RENDERER] Video load started:', element.content)
-        }
-        onCanPlay={(): void => console.log('🎬 [SLIDE_RENDERER] Video can play:', element.content)}
-        onError={(e): void => {
-          console.error('🎬 [SLIDE_RENDERER] Video failed to load:', {
-            originalContent: element.content,
-            resolvedUrl: resolvedUrl,
-            isPlaceholder: isPlaceholder,
-            error: e.nativeEvent
-          })
-        }}
-      >
-        <source src={resolvedUrl} type="video/mp4" />
-      </video>
+      <div className="relative">
+        <video
+          key={element.id || `video-element-${index}`}
+          src={resolvedUrl}
+          autoPlay
+          loop
+          muted
+          playsInline
+          className="absolute object-cover"
+          style={commonStyles}
+          onLoadStart={(): void =>
+            console.log('🎬 [SLIDE_RENDERER] Video load started:', element.content)
+          }
+          onCanPlay={(): void => console.log('🎬 [SLIDE_RENDERER] Video can play:', element.content)}
+          onError={(e): void => {
+            console.error('🎬 [SLIDE_RENDERER] Video failed to load:', {
+              originalContent: element.content,
+              resolvedUrl: resolvedUrl,
+              isPlaceholder: isPlaceholder,
+              error: e.nativeEvent
+            })
+          }}
+        >
+          <source src={resolvedUrl} type="video/mp4" />
+        </video>
+        
+        {/* Background Audio Element for Video */}
+        {element.type === 'video' && mediaConfig?.backgroundAudio?.url && (
+          <audio 
+            ref={backgroundAudioRef}
+            onPlay={() => {
+              setBackgroundAudioPlaying(true)
+              console.log('🎵 [SLIDE_RENDERER] Background audio started')
+            }}
+            onPause={() => {
+              setBackgroundAudioPlaying(false)
+              console.log('🎵 [SLIDE_RENDERER] Background audio paused')
+            }}
+            onError={(e) => {
+              console.error('🎵 [SLIDE_RENDERER] Background audio failed to load:', e.nativeEvent)
+            }}
+          />
+        )}
+        
+        {/* Background Audio Indicator (only in preview mode) */}
+        {element.type === 'video' && mediaConfig?.backgroundAudio?.url && isPreview && (
+          <div 
+            className="absolute top-1 right-1 bg-black/80 text-white text-xs px-2 py-1 rounded"
+            style={{ 
+              left: scaledLeft + scaledWidth - 80,
+              top: scaledTop + 4,
+              zIndex: (element.zIndex || 10) + 1 
+            }}
+          >
+            🎵 {backgroundAudioPlaying ? 'Playing' : 'Ready'}
+          </div>
+        )}
+      </div>
     )
   }
 
@@ -273,7 +523,9 @@ export const SlideRenderer: React.FC<SlideRendererProps> = ({
   showBlank = false,
   className = '',
   scalingConfig,
-  useProjectionScaling = false
+  useProjectionScaling = false,
+  globalAudioControls,
+  mediaConfig
 }) => {
   // Get enhanced projection scaling config with multi-resolution support
   const projectionConfig =
@@ -447,6 +699,8 @@ export const SlideRenderer: React.FC<SlideRendererProps> = ({
                 scaledHeight={scaledHeight}
                 isPreview={isPreview}
                 index={index}
+                mediaConfig={mediaConfig}
+                globalAudioControls={globalAudioControls}
               />
             )
           }

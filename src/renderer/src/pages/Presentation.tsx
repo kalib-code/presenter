@@ -82,6 +82,29 @@ interface ProjectionData {
         position?: 'center' | 'top' | 'bottom' | 'left' | 'right'
       }
     }
+    // Media configuration for standalone media items
+    mediaConfig?: {
+      url?: string
+      autoplay?: boolean
+      loop?: boolean
+      volume?: number
+      startTime?: number
+      endTime?: number
+      controls?: boolean
+      muted?: boolean
+      thumbnail?: string
+      mediaType?: 'video' | 'image' | 'audio'
+      aspectRatio?: '16:9' | '4:3' | '1:1' | 'auto'
+      objectFit?: 'cover' | 'contain' | 'fill' | 'scale-down'
+      backgroundAudio?: {
+        url?: string
+        volume?: number
+        loop?: boolean
+        autoplay?: boolean
+        fadeIn?: number
+        fadeOut?: number
+      }
+    }
   }
 }
 
@@ -371,6 +394,7 @@ export default function Presentation(): JSX.Element {
           showBlank={presentationState.isBlank}
           className="w-full h-screen"
           useProjectionScaling={true}
+          mediaConfig={currentData.slideData.mediaConfig}
         />
       )
     }

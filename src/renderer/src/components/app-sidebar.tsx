@@ -81,13 +81,13 @@ const data = {
       url: '/collection',
       icon: FolderOpen,
       isActive: false
-    },
-    {
-      title: 'Settings',
-      url: '/settings',
-      icon: Settings,
-      isActive: false
     }
+    // {
+    //   title: 'Settings',
+    //   url: '/settings',
+    //   icon: Settings,
+    //   isActive: false
+    // }
   ],
   mails: []
 }
@@ -180,9 +180,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>): 
             </SidebarGroupContent>
           </SidebarGroup>
         </SidebarContent>
-        <SidebarFooter>
+        {/* <SidebarFooter>
           <NavUser user={data.user} />
-        </SidebarFooter>
+        </SidebarFooter> */}
       </Sidebar>
 
       {/* This is the second sidebar */}

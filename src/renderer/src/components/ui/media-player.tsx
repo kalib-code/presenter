@@ -56,32 +56,38 @@ export function MediaPlayer({
   const mediaRef = item.type === 'video' ? videoRef : audioRef
   const mediaConfig = item.mediaConfig
 
-  // URL resolution effect
+  // URL resolution effect - optimized to reduce burst requests
   useEffect(() => {
     const resolveUrls = async () => {
       if (!mediaConfig?.url) return
 
+      // Skip resolution if URLs haven't changed (prevent unnecessary re-resolution)
+      const currentMainUrl = mediaConfig.url
+      const currentBgUrl = mediaConfig.backgroundAudio?.url
+      
       console.log('🎬 [MEDIA_PLAYER] Resolving media URLs for item:', item.title)
       setIsResolvingUrls(true)
 
       try {
         // Resolve main media URL
-        const mainUrl = await resolveMediaUrl(mediaConfig.url)
+        const mainUrl = await resolveMediaUrl(currentMainUrl)
         console.log('🎬 [MEDIA_PLAYER] Main media URL resolved:', {
-          original: mediaConfig.url,
+          original: currentMainUrl,
           resolved: mainUrl,
           type: item.type
         })
         setResolvedMediaUrl(mainUrl)
 
         // Resolve background audio URL if present
-        if (mediaConfig.backgroundAudio?.url) {
-          const bgAudioUrl = await resolveMediaUrl(mediaConfig.backgroundAudio.url)
+        if (currentBgUrl) {
+          const bgAudioUrl = await resolveMediaUrl(currentBgUrl)
           console.log('🎬 [MEDIA_PLAYER] Background audio URL resolved:', {
-            original: mediaConfig.backgroundAudio.url,
+            original: currentBgUrl,
             resolved: bgAudioUrl
           })
           setResolvedBackgroundAudioUrl(bgAudioUrl)
+        } else {
+          setResolvedBackgroundAudioUrl('')
         }
       } catch (error) {
         console.error('❌ [MEDIA_PLAYER] Failed to resolve media URLs:', error)
@@ -91,7 +97,7 @@ export function MediaPlayer({
     }
 
     resolveUrls()
-  }, [mediaConfig?.url, mediaConfig?.backgroundAudio?.url, item.title, item.type])
+  }, [mediaConfig?.url, mediaConfig?.backgroundAudio?.url]) // Removed item.title and item.type to prevent unnecessary re-resolution
 
   useEffect(() => {
     const media = mediaRef.current
@@ -189,29 +195,51 @@ export function MediaPlayer({
     backgroundAudio.addEventListener('ended', handleBackgroundAudioEnded)
 
     // Auto-play background audio if configured
+    let fadeInterval: NodeJS.Timeout | null = null
+    let isComponentMounted = true
+
     if (backgroundConfig.autoplay && (autoplay || mediaConfig?.autoplay)) {
       const startBackgroundAudio = async () => {
         try {
+          // Check if component is still mounted before playing
+          if (!isComponentMounted || !backgroundAudioRef.current) {
+            console.log('🎬 [MEDIA_PLAYER] Component unmounted, skipping background audio autoplay')
+            return
+          }
+
           if (backgroundConfig.fadeIn && backgroundConfig.fadeIn > 0) {
-            // Fade in effect
+            // Fade in effect with proper cleanup
             backgroundAudio.volume = 0
             await backgroundAudio.play()
+            
             const fadeStep = backgroundAudioVolume / (backgroundConfig.fadeIn * 10)
-            const fadeInterval = setInterval(() => {
+            fadeInterval = setInterval(() => {
+              // Check if component is still mounted during fade
+              if (!isComponentMounted || !backgroundAudioRef.current) {
+                if (fadeInterval) clearInterval(fadeInterval)
+                return
+              }
+
               if (backgroundAudio.volume < backgroundAudioVolume) {
                 backgroundAudio.volume = Math.min(
                   backgroundAudio.volume + fadeStep,
                   backgroundAudioVolume
                 )
               } else {
-                clearInterval(fadeInterval)
+                if (fadeInterval) clearInterval(fadeInterval)
+                fadeInterval = null
               }
             }, 100)
           } else {
             await backgroundAudio.play()
           }
         } catch (error) {
-          console.warn('Background audio autoplay failed:', error)
+          // More specific error handling for AbortError
+          if (error instanceof Error && error.name === 'AbortError') {
+            console.log('🎬 [MEDIA_PLAYER] Background audio autoplay aborted (component unmounted)')
+          } else {
+            console.warn('🎬 [MEDIA_PLAYER] Background audio autoplay failed:', error)
+          }
         }
       }
 
@@ -219,9 +247,30 @@ export function MediaPlayer({
     }
 
     return () => {
+      // Mark component as unmounted to prevent async operations
+      isComponentMounted = false
+      
+      // Clean up fade interval if it's running
+      if (fadeInterval) {
+        clearInterval(fadeInterval)
+        fadeInterval = null
+      }
+      
+      // Remove event listeners
       backgroundAudio.removeEventListener('play', handleBackgroundAudioPlay)
       backgroundAudio.removeEventListener('pause', handleBackgroundAudioPause)
       backgroundAudio.removeEventListener('ended', handleBackgroundAudioEnded)
+      
+      // Stop and clean up background audio
+      try {
+        if (!backgroundAudio.paused) {
+          backgroundAudio.pause()
+        }
+        backgroundAudio.src = ''
+      } catch (error) {
+        // Ignore cleanup errors
+        console.log('🎬 [MEDIA_PLAYER] Background audio cleanup completed')
+      }
     }
   }, [resolvedBackgroundAudioUrl, mediaConfig?.backgroundAudio, backgroundAudioVolume, autoplay])
 

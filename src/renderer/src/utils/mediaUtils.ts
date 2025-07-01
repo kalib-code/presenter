@@ -2,6 +2,11 @@
  * Media utilities for handling media references and URL resolution
  */
 
+// Simple URL cache to prevent burst requests to backend
+const urlCache = new Map<string, string>()
+const cacheTimestamps = new Map<string, number>()
+const CACHE_DURATION = 30000 // 30 seconds cache duration
+
 // Helper function to check if content is a media reference
 export const isMediaReference = (content: string): boolean => {
   return content.startsWith('media://')
@@ -12,6 +17,22 @@ export const resolveMediaUrl = async (content: string): Promise<string> => {
   // Check if content is a media reference (starts with "media://")
   if (content.startsWith('media://')) {
     const filename = content.replace('media://', '')
+    
+    // Check cache first to prevent burst requests
+    const now = Date.now()
+    if (urlCache.has(content) && cacheTimestamps.has(content)) {
+      const cacheTime = cacheTimestamps.get(content)!
+      if (now - cacheTime < CACHE_DURATION) {
+        const cachedUrl = urlCache.get(content)!
+        console.log('📋 [MEDIA_UTILS] Using cached URL for:', filename)
+        return cachedUrl
+      } else {
+        // Cache expired, remove old entries
+        urlCache.delete(content)
+        cacheTimestamps.delete(content)
+      }
+    }
+    
     console.log('🔍 [MEDIA_UTILS] Resolving media reference:', filename)
 
     // Try to get file URL first (more efficient)
@@ -20,6 +41,9 @@ export const resolveMediaUrl = async (content: string): Promise<string> => {
         const fileUrl = await window.electron.invoke('get-media-file-url', filename)
         if (fileUrl) {
           console.log('✅ [MEDIA_UTILS] Got file URL:', filename)
+          // Cache the resolved URL
+          urlCache.set(content, fileUrl)
+          cacheTimestamps.set(content, Date.now())
           return fileUrl
         }
       } catch (error) {
@@ -33,6 +57,9 @@ export const resolveMediaUrl = async (content: string): Promise<string> => {
         const dataUrl = await window.electron.invoke('get-media-data-url', filename)
         if (dataUrl) {
           console.log('✅ [MEDIA_UTILS] Got data URL fallback:', filename)
+          // Cache the resolved URL
+          urlCache.set(content, dataUrl)
+          cacheTimestamps.set(content, Date.now())
           return dataUrl
         }
       } catch (error) {

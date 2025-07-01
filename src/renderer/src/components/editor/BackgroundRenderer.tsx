@@ -66,11 +66,11 @@ export const BackgroundRenderer: React.FC<BackgroundRendererProps> = ({
     }
   }, [useProjectionQuality, targetResolution])
 
-  // Generate unique key for background changes and force re-render
+  // Generate unique key for background changes - optimized to prevent burst requests
   useEffect(() => {
     if (background) {
-      // Create a unique key that includes all background properties
-      const newKey = `${background.type}-${background.value}-${background.opacity || 1}-${background.size || 'cover'}-${background.position || 'center'}-${Date.now()}`
+      // Create a stable key that includes all background properties (removed Date.now() to prevent unnecessary re-renders)
+      const newKey = `${background.type}-${background.value}-${background.opacity || 1}-${background.size || 'cover'}-${background.position || 'center'}`
       setBackgroundKey(newKey)
       console.log('🔄 [BACKGROUND_RENDERER] Background changed, new key:', newKey)
     } else {
@@ -143,7 +143,7 @@ export const BackgroundRenderer: React.FC<BackgroundRendererProps> = ({
     }
 
     resolveBackground()
-  }, [background, onError, backgroundKey]) // Watch entire background object and key
+  }, [background?.type, background?.value, background?.opacity, background?.size, background?.position]) // Only watch specific background properties to reduce re-resolutions
 
   // Don't render anything if no background
   if (!background) {
@@ -330,7 +330,7 @@ export const BackgroundRenderer: React.FC<BackgroundRendererProps> = ({
           opacity: background.opacity || 1,
           zIndex: 0,
           ...style,
-          ...videoAttributes.style
+          ...(videoAttributes as any).style
         }}
         onLoadStart={() => console.log('🎬 [BACKGROUND_RENDERER] Video load started, key:', backgroundKey)}
         onCanPlay={() => {

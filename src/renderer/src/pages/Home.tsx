@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useSetlistStore } from '@renderer/store/setlist'
 import { useSongStore } from '@renderer/store/song'
 import { usePresentationStore } from '@renderer/store/presentation'
@@ -95,6 +95,29 @@ interface ContentCard {
     value: string
     opacity?: number
   }
+  // Media configuration for standalone media items
+  mediaConfig?: {
+    url?: string
+    autoplay?: boolean
+    loop?: boolean
+    volume?: number
+    startTime?: number
+    endTime?: number
+    controls?: boolean
+    muted?: boolean
+    thumbnail?: string
+    mediaType?: 'video' | 'image' | 'audio'
+    aspectRatio?: '16:9' | '4:3' | '1:1' | 'auto'
+    objectFit?: 'cover' | 'contain' | 'fill' | 'scale-down'
+    backgroundAudio?: {
+      url?: string
+      volume?: number
+      loop?: boolean
+      autoplay?: boolean
+      fadeIn?: number
+      fadeOut?: number
+    }
+  }
   slideElements?: Array<{
     id: string
     type: 'text' | 'image' | 'video'
@@ -161,6 +184,9 @@ interface SortableContentCardProps {
   isSelected: boolean
   onSelect: (card: ContentCard) => void
   getCardStyling: (type: string) => string
+  selectedCardId?: string
+  globalAudioControls?: any
+  hasUserInteracted?: boolean
 }
 
 function SortableSetlistItem({
@@ -221,6 +247,7 @@ function SortableSetlistItem({
 }
 
 // Component for rendering media elements in preview with URL resolution
+// Extracted PreviewMediaElement component to prevent re-mounting on every render
 interface PreviewMediaElementProps {
   element: {
     id: string
@@ -236,13 +263,13 @@ interface PreviewMediaElementProps {
   scaledHeight: number
 }
 
-function PreviewMediaElement({
+const PreviewMediaElement: React.FC<PreviewMediaElementProps> = ({
   element,
   scaledLeft,
   scaledTop,
   scaledWidth,
   scaledHeight
-}: PreviewMediaElementProps): JSX.Element | null {
+}) => {
   const [resolvedUrl, setResolvedUrl] = useState<string>(element.content)
 
   useEffect(() => {
@@ -359,7 +386,7 @@ function getOptimalPreviewTextSize(): string {
 }
 
 // Function to render card content as projection preview (16:9 aspect ratio)
-function renderCardContent(card: ContentCard): JSX.Element {
+function renderCardContent(card: ContentCard, selectedCardId?: string, globalAudioControls?: any, hasUserInteracted: boolean = false): JSX.Element {
   console.log(
     'Rendering card:',
     card.title,
@@ -504,24 +531,313 @@ function renderCardContent(card: ContentCard): JSX.Element {
         return null
       })()}
 
-      {/* Resolution-aware content rendering with proper text scaling */}
-      <div className="absolute inset-0 flex items-center justify-center p-4" style={{ zIndex: 10 }}>
-        <div
-          className="text-center drop-shadow-lg whitespace-pre-line overflow-hidden w-full"
-          style={{
-            fontSize: getOptimalPreviewTextSize(),
-            color: '#FFFFFF',
-            fontFamily: 'Arial, sans-serif',
-            fontWeight: 'bold',
-            textAlign: 'center',
-            textShadow: '1px 1px 2px rgba(0,0,0,0.8)',
-            lineHeight: 1.3,
-            opacity: 1
-          }}
-        >
-          {card.content || `[No content for ${card.title}]`}
+      {/* Content Layer - Handle slideElements if present, otherwise show text */}
+      {card.slideElements && card.slideElements.length > 0 ? (
+        <div className="absolute inset-0" style={{ zIndex: 10 }}>
+          {/* Render slide elements with proper positioning and scaling */}
+          {card.slideElements
+            .sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0))
+            .map((element, index) => {
+              // Calculate preview scale (assuming preview is 400x225 for 16:9 aspect ratio)
+              const previewWidth = 400 // Approximate preview width
+              const previewHeight = 225 // Approximate preview height
+              const scaleX = previewWidth / 1920 // Canvas width from constants
+              const scaleY = previewHeight / 1080 // Canvas height from constants
+              const scale = Math.min(scaleX, scaleY)
+
+              const scaledPosition = {
+                x: element.position.x * scale,
+                y: element.position.y * scale
+              }
+              const scaledSize = {
+                width: element.size.width * scale,
+                height: element.size.height * scale
+              }
+
+              console.log('🎬 [PREVIEW] Rendering slide element:', {
+                type: element.type,
+                id: element.id,
+                contentLength: element.content?.length || 0,
+                originalPosition: element.position,
+                scaledPosition,
+                originalSize: element.size,
+                scaledSize,
+                scale
+              })
+
+              switch (element.type) {
+                case 'text':
+                  return (
+                    <div
+                      key={element.id}
+                      className="absolute overflow-hidden"
+                      style={{
+                        left: scaledPosition.x,
+                        top: scaledPosition.y,
+                        width: scaledSize.width,
+                        height: scaledSize.height,
+                        fontSize: `${(element.style?.fontSize || 24) * scale}px`,
+                        color: element.style?.color || '#FFFFFF',
+                        fontFamily: element.style?.fontFamily || 'Arial, sans-serif',
+                        fontWeight: element.style?.fontWeight || 'bold',
+                        fontStyle: element.style?.fontStyle || 'normal',
+                        textAlign: element.style?.textAlign as any || 'center',
+                        textShadow: element.style?.textShadow || '2px 2px 4px rgba(0,0,0,0.8)',
+                        lineHeight: element.style?.lineHeight || 1.2,
+                        opacity: element.style?.opacity || 1,
+                        zIndex: element.zIndex || 1,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}
+                    >
+                      {element.content}
+                    </div>
+                  )
+
+                case 'image':
+                  return (
+                    <ImagePreview 
+                      element={element} 
+                      isSelectedCard={selectedCardId === card.id} 
+                      card={card}
+                      scaledPosition={scaledPosition}
+                      scaledSize={scaledSize}
+                      globalAudioControls={globalAudioControls}
+                      hasUserInteracted={hasUserInteracted}
+                    />
+                  )
+
+                case 'video':
+                  console.log('🎬 [PREVIEW] Rendering video element:', {
+                    elementId: element.id,
+                    videoSrc: element.content,
+                    hasContent: !!element.content,
+                    cardTitle: card.title,
+                    cardHasMediaConfig: !!card.mediaConfig,
+                    cardMediaUrl: card.mediaConfig?.url,
+                    cardHasBackgroundAudio: !!(card.mediaConfig?.backgroundAudio?.url),
+                    backgroundAudioUrl: card.mediaConfig?.backgroundAudio?.url,
+                    scaledPosition,
+                    scaledSize,
+                    elementStyle: element.style
+                  })
+                  
+                  // For preview, we need to handle media URL resolution
+                  const VideoPreview = ({ element, isSelectedCard }: { element: any; isSelectedCard: boolean }) => {
+                    const [resolvedVideoUrl, setResolvedVideoUrl] = useState<string>('')
+                    const [resolvedBackgroundAudioUrl, setResolvedBackgroundAudioUrl] = useState<string>('')
+                    const [backgroundAudioPlaying, setBackgroundAudioPlaying] = useState(false)
+                    const backgroundAudioRef = useRef<HTMLAudioElement>(null)
+                    
+                    useEffect(() => {
+                      const resolveVideo = async () => {
+                        try {
+                          if (element.content) {
+                            if (element.content.startsWith('media://')) {
+                              const resolved = await resolveMediaUrl(element.content)
+                              setResolvedVideoUrl(resolved)
+                              console.log('🎬 [PREVIEW] Video URL resolved:', {
+                                original: element.content,
+                                resolved: resolved?.substring(0, 100) + '...'
+                              })
+                            } else {
+                              setResolvedVideoUrl(element.content)
+                            }
+                          }
+                        } catch (error) {
+                          console.error('🎬 [PREVIEW] Failed to resolve video URL:', error)
+                        }
+                      }
+                      resolveVideo()
+                    }, [element.content])
+
+                    // Handle background audio URL resolution
+                    useEffect(() => {
+                      const resolveBackgroundAudio = async () => {
+                        try {
+                          if (card.mediaConfig?.backgroundAudio?.url) {
+                            console.log('🎵 [PREVIEW] Resolving background audio URL:', card.mediaConfig.backgroundAudio.url)
+                            if (card.mediaConfig.backgroundAudio.url.startsWith('media://')) {
+                              const resolved = await resolveMediaUrl(card.mediaConfig.backgroundAudio.url)
+                              setResolvedBackgroundAudioUrl(resolved)
+                              console.log('🎵 [PREVIEW] Background audio URL resolved:', {
+                                original: card.mediaConfig.backgroundAudio.url,
+                                resolved: resolved?.substring(0, 100) + '...'
+                              })
+                            } else {
+                              setResolvedBackgroundAudioUrl(card.mediaConfig.backgroundAudio.url)
+                            }
+                          }
+                        } catch (error) {
+                          console.error('🎵 [PREVIEW] Failed to resolve background audio URL:', error)
+                        }
+                      }
+                      resolveBackgroundAudio()
+                    }, [card.mediaConfig?.backgroundAudio?.url])
+
+                    // Handle background audio setup and autoplay
+                    useEffect(() => {
+                      const backgroundAudio = backgroundAudioRef.current
+                      if (backgroundAudio && resolvedBackgroundAudioUrl) {
+                        console.log('🎵 [PREVIEW] Setting up background audio:', {
+                          hasAutoplay: !!card.mediaConfig?.backgroundAudio?.autoplay,
+                          volume: card.mediaConfig?.backgroundAudio?.volume,
+                          loop: card.mediaConfig?.backgroundAudio?.loop
+                        })
+                        
+                        backgroundAudio.src = resolvedBackgroundAudioUrl
+                        backgroundAudio.volume = card.mediaConfig?.backgroundAudio?.volume || 0.5
+                        backgroundAudio.loop = card.mediaConfig?.backgroundAudio?.loop || false
+                        
+                        // Don't auto-play on item selection - only play when slide is actually projected
+                        console.log('🎵 [PREVIEW] Background audio setup complete, ready for slide projection')
+                      }
+                    }, [resolvedBackgroundAudioUrl, card.mediaConfig?.backgroundAudio?.autoplay, card.mediaConfig?.backgroundAudio?.volume, card.mediaConfig?.backgroundAudio?.loop])
+
+                    // Setup background audio when this video becomes the selected card (no auto-play)
+                    useEffect(() => {
+                      const backgroundAudio = backgroundAudioRef.current
+                      
+                      if (isSelectedCard && backgroundAudio && resolvedBackgroundAudioUrl && card.mediaConfig?.backgroundAudio?.url) {
+                        console.log('🎵 [PREVIEW] Registering background audio for selected video item (no auto-play)')
+                        
+                        // Register with global audio manager but don't auto-play
+                        globalAudioControls?.registerAudio(backgroundAudio, `Video: ${card.title}`)
+                        console.log('🎵 [PREVIEW] Background audio ready - will only play when slide is projected')
+                      } else if (!isSelectedCard && backgroundAudio && backgroundAudioPlaying) {
+                        // Stop audio when this item is no longer selected
+                        console.log('🎵 [PREVIEW] Stopping background audio for deselected video item')
+                        backgroundAudio.pause()
+                        backgroundAudio.currentTime = 0
+                        setBackgroundAudioPlaying(false)
+                      }
+                    }, [isSelectedCard, resolvedBackgroundAudioUrl, backgroundAudioPlaying])
+                    
+                    if (!resolvedVideoUrl) {
+                      return (
+                        <div
+                          className="absolute flex items-center justify-center bg-gray-800 text-white text-xs"
+                          style={{
+                            left: scaledPosition.x,
+                            top: scaledPosition.y,
+                            width: scaledSize.width,
+                            height: scaledSize.height,
+                            zIndex: element.zIndex || 1
+                          }}
+                        >
+                          Loading video...
+                        </div>
+                      )
+                    }
+                    
+                    return (
+                      <div className="relative">
+                        <video
+                          key={`${element.id}-${resolvedVideoUrl}`}
+                          src={resolvedVideoUrl}
+                          className="absolute object-cover"
+                          style={{
+                            left: scaledPosition.x,
+                            top: scaledPosition.y,
+                            width: scaledSize.width,
+                            height: scaledSize.height,
+                            opacity: element.style?.opacity || 1,
+                            zIndex: element.zIndex || 1,
+                            backgroundColor: '#000' // Add black background for debugging
+                          }}
+                          muted
+                          preload="metadata"
+                          onError={(e) => {
+                            console.error('🎬 [PREVIEW] Video failed to load:', {
+                              src: element.content,
+                              error: e,
+                              cardTitle: card.title,
+                              hasBackgroundAudio: !!(card.mediaConfig?.backgroundAudio?.url)
+                            })
+                          }}
+                          onLoadStart={() => {
+                            console.log('🎬 [PREVIEW] Video load started:', element.content?.substring(0, 50) + '...')
+                          }}
+                          onLoadedMetadata={(e) => {
+                            try {
+                              // Seek to 1 second for preview thumbnail
+                              const video = e.target as HTMLVideoElement
+                              console.log('🎬 [PREVIEW] Video metadata loaded:', {
+                                duration: video.duration,
+                                videoWidth: video.videoWidth,
+                                videoHeight: video.videoHeight,
+                                readyState: video.readyState
+                              })
+                              video.currentTime = 1
+                              console.log('🎬 [PREVIEW] Video seeking to 1s for preview')
+                            } catch (error) {
+                              console.error('🎬 [PREVIEW] Error seeking video for preview:', error)
+                            }
+                          }}
+                          onCanPlay={() => {
+                            console.log('🎬 [PREVIEW] Video can play:', resolvedVideoUrl?.substring(0, 50) + '...')
+                          }}
+                        />
+                        
+                        {/* Background Audio Element */}
+                        {card.mediaConfig?.backgroundAudio?.url && (
+                          <audio 
+                            ref={backgroundAudioRef}
+                            onPlay={() => {
+                              setBackgroundAudioPlaying(true)
+                              console.log('🎵 [PREVIEW] Background audio started')
+                            }}
+                            onPause={() => {
+                              setBackgroundAudioPlaying(false)
+                              console.log('🎵 [PREVIEW] Background audio paused')
+                            }}
+                            onError={(e) => {
+                              console.error('🎵 [PREVIEW] Background audio failed to load:', e.nativeEvent)
+                            }}
+                          />
+                        )}
+                        
+                        {/* Background Audio Indicator */}
+                        {card.mediaConfig?.backgroundAudio?.url && (
+                          <div 
+                            className="absolute top-1 right-1 bg-black/80 text-white text-xs px-2 py-1 rounded"
+                            style={{ zIndex: (element.zIndex || 1) + 1 }}
+                          >
+                            🎵 {backgroundAudioPlaying ? 'Playing' : 'Ready'}
+                          </div>
+                        )}
+                      </div>
+                    )
+                }
+                
+                return <VideoPreview element={element} isSelectedCard={selectedCardId === card.id} />
+
+                default:
+                  return null
+              }
+            })}
         </div>
-      </div>
+      ) : (
+        /* Fallback to text-only rendering when no slideElements */
+        <div className="absolute inset-0 flex items-center justify-center p-4" style={{ zIndex: 10 }}>
+          <div
+            className="text-center drop-shadow-lg whitespace-pre-line overflow-hidden w-full"
+            style={{
+              fontSize: getOptimalPreviewTextSize(),
+              color: '#FFFFFF',
+              fontFamily: 'Arial, sans-serif',
+              fontWeight: 'bold',
+              textAlign: 'center',
+              textShadow: '1px 1px 2px rgba(0,0,0,0.8)',
+              lineHeight: 1.3,
+              opacity: 1
+            }}
+          >
+            {card.content || `[No content for ${card.title}]`}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -530,7 +846,10 @@ function SortableContentCard({
   card,
   isSelected,
   onSelect,
-  getCardStyling
+  getCardStyling,
+  selectedCardId,
+  globalAudioControls,
+  hasUserInteracted
 }: SortableContentCardProps): JSX.Element {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: card.id
@@ -577,8 +896,185 @@ function SortableContentCard({
         </div>
 
         {/* Content Preview */}
-        <div className="relative">{renderCardContent(card)}</div>
+        <div className="relative">{renderCardContent(card, selectedCardId, globalAudioControls, hasUserInteracted)}</div>
       </div>
+    </div>
+  )
+}
+
+// ImagePreview component extracted to prevent re-mounting issues
+interface ImagePreviewProps {
+  element: any
+  isSelectedCard: boolean
+  card: any
+  scaledPosition: any
+  scaledSize: any
+  globalAudioControls: any
+  hasUserInteracted: boolean
+}
+
+const ImagePreview = ({ element, isSelectedCard, card, scaledPosition, scaledSize, globalAudioControls, hasUserInteracted }: ImagePreviewProps) => {
+  const [resolvedImageUrl, setResolvedImageUrl] = useState<string>('')
+  const [resolvedBackgroundAudioUrl, setResolvedBackgroundAudioUrl] = useState<string>('')
+  const [backgroundAudioPlaying, setBackgroundAudioPlaying] = useState(false)
+  const backgroundAudioRef = useRef<HTMLAudioElement>(null)
+  
+  useEffect(() => {
+    const resolveImage = async () => {
+      try {
+        if (element.content) {
+          if (element.content.startsWith('media://')) {
+            const resolved = await resolveMediaUrl(element.content)
+            setResolvedImageUrl(resolved)
+            console.log('🖼️ [PREVIEW] Image URL resolved:', {
+              original: element.content,
+              resolved: resolved?.substring(0, 100) + '...'
+            })
+          } else {
+            setResolvedImageUrl(element.content)
+          }
+        }
+      } catch (error) {
+        console.error('🖼️ [PREVIEW] Failed to resolve image URL:', error)
+      }
+    }
+    resolveImage()
+  }, [element.content])
+
+  // Handle background audio URL resolution
+  useEffect(() => {
+    const resolveBackgroundAudio = async () => {
+      try {
+        if (card.mediaConfig?.backgroundAudio?.url) {
+          console.log('🎵 [PREVIEW] Resolving background audio URL for image:', card.mediaConfig.backgroundAudio.url)
+          if (card.mediaConfig.backgroundAudio.url.startsWith('media://')) {
+            const resolved = await resolveMediaUrl(card.mediaConfig.backgroundAudio.url)
+            setResolvedBackgroundAudioUrl(resolved)
+            console.log('🎵 [PREVIEW] Background audio URL resolved for image:', {
+              original: card.mediaConfig.backgroundAudio.url,
+              resolved: resolved?.substring(0, 100) + '...'
+            })
+          } else {
+            setResolvedBackgroundAudioUrl(card.mediaConfig.backgroundAudio.url)
+          }
+        }
+      } catch (error) {
+        console.error('🎵 [PREVIEW] Failed to resolve background audio URL for image:', error)
+      }
+    }
+    resolveBackgroundAudio()
+  }, [card.mediaConfig?.backgroundAudio?.url])
+
+  // Handle background audio setup and autoplay for images
+  useEffect(() => {
+    const backgroundAudio = backgroundAudioRef.current
+    if (backgroundAudio && resolvedBackgroundAudioUrl) {
+      console.log('🎵 [PREVIEW] Setting up background audio for image:', {
+        hasAutoplay: !!card.mediaConfig?.backgroundAudio?.autoplay,
+        volume: card.mediaConfig?.backgroundAudio?.volume,
+        loop: card.mediaConfig?.backgroundAudio?.loop
+      })
+      
+      backgroundAudio.src = resolvedBackgroundAudioUrl
+      backgroundAudio.volume = card.mediaConfig?.backgroundAudio?.volume || 0.5
+      backgroundAudio.loop = card.mediaConfig?.backgroundAudio?.loop || false
+      
+      // Don't auto-play on item selection - only play when slide is actually projected
+      console.log('🎵 [PREVIEW] Background audio setup complete for image, ready for slide projection')
+    }
+  }, [resolvedBackgroundAudioUrl, card.mediaConfig?.backgroundAudio?.autoplay, card.mediaConfig?.backgroundAudio?.volume, card.mediaConfig?.backgroundAudio?.loop])
+
+  // Setup background audio when this image becomes the selected card (no auto-play)
+  useEffect(() => {
+    const backgroundAudio = backgroundAudioRef.current
+    
+    if (isSelectedCard && backgroundAudio && resolvedBackgroundAudioUrl && card.mediaConfig?.backgroundAudio?.url) {
+      console.log('🎵 [PREVIEW] Registering background audio for selected image item (no auto-play)')
+      
+      // Register with global audio manager but don't auto-play
+      globalAudioControls?.registerAudio(backgroundAudio, `Image: ${card.title}`)
+      console.log('🎵 [PREVIEW] Background audio ready - will only play when slide is projected')
+    } else if (!isSelectedCard && backgroundAudio && backgroundAudioPlaying) {
+      // Stop audio when this item is no longer selected
+      console.log('🎵 [PREVIEW] Stopping background audio for deselected image item')
+      backgroundAudio.pause()
+      backgroundAudio.currentTime = 0
+      setBackgroundAudioPlaying(false)
+    }
+  }, [isSelectedCard, resolvedBackgroundAudioUrl, backgroundAudioPlaying])
+  
+  if (!resolvedImageUrl) {
+    return (
+      <div
+        className="absolute flex items-center justify-center bg-gray-200 text-gray-600 text-xs"
+        style={{
+          left: scaledPosition.x,
+          top: scaledPosition.y,
+          width: scaledSize.width,
+          height: scaledSize.height,
+          zIndex: element.zIndex || 1
+        }}
+      >
+        Loading image...
+      </div>
+    )
+  }
+  
+  return (
+    <div className="relative">
+      <img
+        key={`${element.id}-${resolvedImageUrl}`}
+        src={resolvedImageUrl}
+        alt="Slide element"
+        className="absolute object-cover"
+        style={{
+          left: scaledPosition.x,
+          top: scaledPosition.y,
+          width: scaledSize.width,
+          height: scaledSize.height,
+          opacity: element.style?.opacity || 1,
+          zIndex: element.zIndex || 1
+        }}
+        onError={(e) => {
+          console.error('🖼️ [PREVIEW] Image failed to load:', {
+            src: resolvedImageUrl,
+            original: element.content,
+            error: e,
+            cardTitle: card.title
+          })
+        }}
+        onLoad={() => {
+          console.log('🖼️ [PREVIEW] Image loaded successfully:', resolvedImageUrl?.substring(0, 50) + '...')
+        }}
+      />
+      
+      {/* Background Audio Element for Image */}
+      {card.mediaConfig?.backgroundAudio?.url && (
+        <audio 
+          ref={backgroundAudioRef}
+          onPlay={() => {
+            setBackgroundAudioPlaying(true)
+            console.log('🎵 [PREVIEW] Background audio started for image')
+          }}
+          onPause={() => {
+            setBackgroundAudioPlaying(false)
+            console.log('🎵 [PREVIEW] Background audio paused for image')
+          }}
+          onError={(e) => {
+            console.error('🎵 [PREVIEW] Background audio failed to load for image:', e.nativeEvent)
+          }}
+        />
+      )}
+      
+      {/* Background Audio Indicator */}
+      {card.mediaConfig?.backgroundAudio?.url && (
+        <div 
+          className="absolute top-1 right-1 bg-black/80 text-white text-xs px-2 py-1 rounded"
+          style={{ zIndex: (element.zIndex || 1) + 1 }}
+        >
+          🎵 {backgroundAudioPlaying ? 'Playing' : 'Ready'}
+        </div>
+      )}
     </div>
   )
 }
@@ -603,6 +1099,346 @@ export default function Home(): JSX.Element {
     duration: 0,
     muted: false
   })
+  
+  // Global audio control state
+  const [globalAudioState, setGlobalAudioState] = useState<{
+    isPlaying: boolean
+    currentTime: number
+    duration: number
+    volume: number
+    muted: boolean
+    currentTrack: string | null
+  }>({
+    isPlaying: false,
+    currentTime: 0,
+    duration: 0,
+    volume: 0.5,
+    muted: false,
+    currentTrack: null
+  })
+
+  // Ref to track the currently active audio element
+  const activeAudioRef = useRef<HTMLAudioElement | null>(null)
+  
+  // Track user interaction for autoplay permissions
+  const [hasUserInteracted, setHasUserInteracted] = useState(false)
+  
+  // Enable autoplay after first user interaction
+  useEffect(() => {
+    const enableAutoplay = () => {
+      if (!hasUserInteracted) {
+        setHasUserInteracted(true)
+        console.log('🎵 [GLOBAL] User interaction detected - audio autoplay now available')
+      }
+    }
+
+    // Listen for any user interaction events
+    const events = ['click', 'keydown', 'touchstart']
+    events.forEach(event => {
+      document.addEventListener(event, enableAutoplay, { once: true })
+    })
+
+    return () => {
+      events.forEach(event => {
+        document.removeEventListener(event, enableAutoplay)
+      })
+    }
+  }, [hasUserInteracted])
+
+  // Global audio manager to prevent audio stacking and provide controls
+  useEffect(() => {
+    // Stop all background audio when selectedCard changes
+    const stopAllBackgroundAudio = () => {
+      const allAudioElements = document.querySelectorAll('audio')
+      allAudioElements.forEach((audio) => {
+        if (!audio.paused) {
+          console.log('🎵 [GLOBAL] Stopping background audio element')
+          audio.pause()
+          audio.currentTime = 0
+        }
+      })
+      activeAudioRef.current = null
+      setGlobalAudioState(prev => ({ ...prev, isPlaying: false, currentTime: 0, duration: 0, currentTrack: null }))
+    }
+    
+    stopAllBackgroundAudio()
+  }, [selectedCard?.id])
+
+  // Global audio control functions
+  const globalAudioControls = {
+    play: () => {
+      // Try to find any audio element that's currently active
+      const findAndControlAudio = () => {
+        // First try the activeAudioRef
+        if (activeAudioRef.current && !activeAudioRef.current.paused) {
+          console.log('🎵 [GLOBAL] Found audio in activeAudioRef, resuming...')
+          activeAudioRef.current.play()
+          return true
+        }
+        
+        // Search for any audio elements in the current document
+        const audioElements = document.querySelectorAll('audio')
+        console.log('🎵 [GLOBAL] Searching for active audio elements, found:', audioElements.length)
+        
+        for (const audio of audioElements) {
+          if (audio.src && !audio.paused) {
+            console.log('🎵 [GLOBAL] Found playing audio element, controlling it')
+            audio.play()
+            return true
+          }
+        }
+        
+        // Try to find paused audio that we can resume
+        for (const audio of audioElements) {
+          if (audio.src && audio.readyState >= 2) { // HAVE_CURRENT_DATA
+            console.log('🎵 [GLOBAL] Found paused audio element, attempting to play')
+            audio.play().then(() => {
+              setGlobalAudioState(prev => ({ ...prev, isPlaying: true }))
+              // Update activeAudioRef to this audio
+              activeAudioRef.current = audio
+            }).catch(console.error)
+            return true
+          }
+        }
+        
+        return false
+      }
+      
+      if (findAndControlAudio()) {
+        setGlobalAudioState(prev => ({ ...prev, isPlaying: true }))
+        console.log('🎵 [GLOBAL] Audio playback started via global controls')
+      } else {
+        // Send IPC command to control projection window audio as fallback
+        window.electron?.ipcRenderer.send('audio-control', { action: 'play' })
+        setGlobalAudioState(prev => ({ ...prev, isPlaying: true }))
+        console.log('🎵 [GLOBAL] No local audio found, sent play command to projection window')
+      }
+    },
+    pause: () => {
+      // Find and pause any playing audio
+      const audioElements = document.querySelectorAll('audio')
+      let foundAudio = false
+      
+      for (const audio of audioElements) {
+        if (audio.src && !audio.paused) {
+          console.log('🎵 [GLOBAL] Found playing audio, pausing it')
+          audio.pause()
+          foundAudio = true
+          // Update activeAudioRef to track this audio
+          activeAudioRef.current = audio
+        }
+      }
+      
+      if (foundAudio) {
+        setGlobalAudioState(prev => ({ ...prev, isPlaying: false }))
+        console.log('🎵 [GLOBAL] Audio paused via global controls')
+      } else {
+        // Send IPC command to control projection window audio
+        window.electron?.ipcRenderer.send('audio-control', { action: 'pause' })
+        setGlobalAudioState(prev => ({ ...prev, isPlaying: false }))
+        console.log('🎵 [GLOBAL] No local audio found, sent pause command to projection window')
+      }
+    },
+    stop: () => {
+      // Find and stop any audio
+      const audioElements = document.querySelectorAll('audio')
+      let foundAudio = false
+      
+      for (const audio of audioElements) {
+        if (audio.src) {
+          console.log('🎵 [GLOBAL] Found audio element, stopping it')
+          audio.pause()
+          audio.currentTime = 0
+          foundAudio = true
+          activeAudioRef.current = audio
+        }
+      }
+      
+      if (foundAudio) {
+        setGlobalAudioState(prev => ({ ...prev, isPlaying: false, currentTime: 0 }))
+        console.log('🎵 [GLOBAL] Audio stopped via global controls')
+      } else {
+        // Send IPC command to control projection window audio
+        window.electron?.ipcRenderer.send('audio-control', { action: 'stop' })
+        setGlobalAudioState(prev => ({ ...prev, isPlaying: false, currentTime: 0 }))
+        console.log('🎵 [GLOBAL] No local audio found, sent stop command to projection window')
+      }
+    },
+    setVolume: (volume: number) => {
+      // Find and set volume for any audio
+      const audioElements = document.querySelectorAll('audio')
+      let foundAudio = false
+      
+      for (const audio of audioElements) {
+        if (audio.src) {
+          console.log('🎵 [GLOBAL] Found audio element, setting volume to', volume)
+          audio.volume = volume
+          foundAudio = true
+          activeAudioRef.current = audio
+        }
+      }
+      
+      if (foundAudio) {
+        setGlobalAudioState(prev => ({ ...prev, volume }))
+        console.log('🎵 [GLOBAL] Volume set via global controls')
+      } else {
+        // Send IPC command to control projection window audio
+        window.electron?.ipcRenderer.send('audio-control', { action: 'setVolume', value: volume })
+        setGlobalAudioState(prev => ({ ...prev, volume }))
+        console.log('🎵 [GLOBAL] No local audio found, sent volume command to projection window')
+      }
+    },
+    setMuted: (muted: boolean) => {
+      // Find and set muted for any audio
+      const audioElements = document.querySelectorAll('audio')
+      let foundAudio = false
+      
+      for (const audio of audioElements) {
+        if (audio.src) {
+          console.log('🎵 [GLOBAL] Found audio element, setting muted to', muted)
+          audio.muted = muted
+          foundAudio = true
+          activeAudioRef.current = audio
+        }
+      }
+      
+      if (foundAudio) {
+        setGlobalAudioState(prev => ({ ...prev, muted }))
+        console.log('🎵 [GLOBAL] Muted state set via global controls')
+      } else {
+        // Send IPC command to control projection window audio
+        window.electron?.ipcRenderer.send('audio-control', { action: 'setMuted', value: muted })
+        setGlobalAudioState(prev => ({ ...prev, muted }))
+        console.log('🎵 [GLOBAL] No local audio found, sent muted command to projection window')
+      }
+    },
+    seek: (time: number) => {
+      // Find and seek any audio
+      const audioElements = document.querySelectorAll('audio')
+      let foundAudio = false
+      
+      for (const audio of audioElements) {
+        if (audio.src && audio.readyState >= 2) {
+          console.log('🎵 [GLOBAL] Found audio element, seeking to', time)
+          audio.currentTime = time
+          foundAudio = true
+          activeAudioRef.current = audio
+        }
+      }
+      
+      if (foundAudio) {
+        setGlobalAudioState(prev => ({ ...prev, currentTime: time }))
+        console.log('🎵 [GLOBAL] Seek completed via global controls')
+      } else {
+        // Send IPC command to control projection window audio
+        window.electron?.ipcRenderer.send('audio-control', { action: 'seek', value: time })
+        setGlobalAudioState(prev => ({ ...prev, currentTime: time }))
+        console.log('🎵 [GLOBAL] No local audio found, sent seek command to projection window')
+      }
+    },
+    registerAudio: (audio: HTMLAudioElement, trackName: string) => {
+      // Stop any previously playing audio before registering new one
+      if (activeAudioRef.current && activeAudioRef.current !== audio) {
+        console.log('🎵 [GLOBAL] Stopping previous audio before registering new one')
+        if (!activeAudioRef.current.paused) {
+          activeAudioRef.current.pause()
+          activeAudioRef.current.currentTime = 0
+        }
+      }
+      
+      activeAudioRef.current = audio
+      setGlobalAudioState(prev => ({ 
+        ...prev, 
+        currentTrack: trackName,
+        duration: audio.duration || 0,
+        currentTime: audio.currentTime || 0,
+        volume: audio.volume || 0.5,
+        muted: audio.muted || false,
+        isPlaying: !audio.paused
+      }))
+      console.log('🎵 [GLOBAL] Registered audio:', trackName)
+    }
+  }
+
+  // Update audio state timer - now searches for any active audio
+  useEffect(() => {
+    const updateAudioState = () => {
+      // Try activeAudioRef first
+      let targetAudio = activeAudioRef.current
+      
+      // If no activeAudioRef or it's paused, search for any playing audio
+      if (!targetAudio || targetAudio.paused) {
+        const audioElements = document.querySelectorAll('audio')
+        for (const audio of audioElements) {
+          if (audio.src && !audio.paused) {
+            targetAudio = audio
+            // Update activeAudioRef to track this audio
+            activeAudioRef.current = audio
+            break
+          }
+        }
+      }
+      
+      if (targetAudio && !targetAudio.paused) {
+        const currentTime = targetAudio.currentTime || 0
+        const duration = targetAudio.duration || 0
+        const isPlaying = !targetAudio.paused
+        const volume = targetAudio.volume || 0.5
+        const muted = targetAudio.muted || false
+        
+        // Only update state if values have meaningfully changed (avoid unnecessary re-renders)
+        setGlobalAudioState(prev => {
+          const timeDiff = Math.abs(prev.currentTime - currentTime)
+          const durationDiff = Math.abs(prev.duration - duration)
+          const volumeDiff = Math.abs(prev.volume - volume)
+          
+          if (timeDiff > 0.5 || durationDiff > 0.1 || prev.isPlaying !== isPlaying || volumeDiff > 0.01 || prev.muted !== muted) {
+            return {
+              ...prev,
+              currentTime,
+              duration,
+              isPlaying,
+              volume,
+              muted
+            }
+          }
+          return prev // No change needed
+        })
+      } else {
+        // No audio playing, update state to reflect that
+        setGlobalAudioState(prev => {
+          if (prev.isPlaying) {
+            return { ...prev, isPlaying: false }
+          }
+          return prev
+        })
+      }
+    }
+
+    // Reduced frequency from 100ms to 500ms to minimize backend load
+    const interval = setInterval(updateAudioState, 500) // Update every 500ms - still smooth but 5x fewer requests
+    return () => clearInterval(interval)
+  }, [])
+
+  // Cleanup audio when selectedItem changes or component unmounts
+  useEffect(() => {
+    return () => {
+      // Stop any playing audio when selectedItem changes
+      if (activeAudioRef.current && !activeAudioRef.current.paused) {
+        console.log('🎵 [GLOBAL] Stopping audio due to item change')
+        activeAudioRef.current.pause()
+        activeAudioRef.current.currentTime = 0
+        setGlobalAudioState(prev => ({ ...prev, isPlaying: false, currentTime: 0 }))
+      }
+    }
+  }, [selectedItem?.id])
+
+  // Format time for display
+  const formatTime = (seconds: number): string => {
+    const mins = Math.floor(seconds / 60)
+    const secs = Math.floor(seconds % 60)
+    return `${mins}:${secs.toString().padStart(2, '0')}`
+  }
   const [projectionState, setProjectionState] = useState<ProjectionState>({
     isProjecting: false,
     isBlank: false,
@@ -631,6 +1467,17 @@ export default function Home(): JSX.Element {
     loadSetlists()
     fetchSongs()
     loadPresentations()
+
+    // Set up IPC listeners for audio state sync from projection window
+    const handleAudioStateUpdate = (event: any, audioState: any) => {
+      console.log('🎵 [GLOBAL] Received audio state update from projection window:', audioState)
+      setGlobalAudioState(prev => ({
+        ...prev,
+        ...audioState
+      }))
+    }
+
+    window.electron?.ipcRenderer.on('audio-state-update', handleAudioStateUpdate)
 
     // Initialize screen manager and resolution manager
     const initializeScreens = async (): Promise<void> => {
@@ -667,7 +1514,12 @@ export default function Home(): JSX.Element {
       }
     })
 
-    return unsubscribe
+    return () => {
+      // Cleanup IPC listener
+      window.electron?.ipcRenderer.removeListener('audio-state-update', handleAudioStateUpdate)
+      // Cleanup display listener
+      unsubscribe()
+    }
   }, [loadSetlists, fetchSongs, loadPresentations])
 
   // Auto-load setlist when presentation is started
@@ -1261,6 +2113,69 @@ export default function Home(): JSX.Element {
         })
         break
       }
+
+      case 'video':
+      case 'image':
+      case 'audio':
+      case 'media': {
+        console.log('🎬 [HOME] Processing standalone media item:', {
+          type: selectedItem.type,
+          title: selectedItem.title,
+          hasMediaConfig: !!selectedItem.mediaConfig,
+          mediaUrl: selectedItem.mediaConfig?.url?.substring(0, 100) + '...',
+          hasBackgroundAudio: !!selectedItem.mediaConfig?.backgroundAudio?.url,
+          backgroundAudioUrl: selectedItem.mediaConfig?.backgroundAudio?.url?.substring(0, 100) + '...'
+        })
+
+        // Create content description based on media type and settings
+        let contentDescription = selectedItem.title
+        if (selectedItem.mediaConfig?.url) {
+          const mediaType = selectedItem.mediaConfig.mediaType || selectedItem.type
+          contentDescription = `${mediaType.toUpperCase()}: ${selectedItem.mediaConfig.url.split('/').pop() || selectedItem.mediaConfig.url}`
+          
+          // Add background audio info if present
+          if (selectedItem.mediaConfig.backgroundAudio?.url) {
+            const audioFile = selectedItem.mediaConfig.backgroundAudio.url.split('/').pop() || 'audio'
+            contentDescription += ` + Audio: ${audioFile}`
+          }
+        }
+
+        cards.push({
+          id: selectedItem.id,
+          title: selectedItem.title,
+          content: contentDescription,
+          type: selectedItem.type as 'verse' | 'chorus' | 'bridge' | 'slide' | 'announcement' | 'countdown',
+          order: 0,
+          // Store media configuration for preview and projection
+          mediaConfig: selectedItem.mediaConfig,
+          // Create slide elements that represent the media content (only for visual media)
+          slideElements: selectedItem.mediaConfig?.url && (selectedItem.type === 'video' || selectedItem.type === 'image' || selectedItem.mediaConfig.mediaType === 'video' || selectedItem.mediaConfig.mediaType === 'image') ? [{
+            id: `media-element-${selectedItem.id}`,
+            type: (selectedItem.mediaConfig.mediaType || selectedItem.type) as 'text' | 'image' | 'video',
+            content: selectedItem.mediaConfig.url,
+            position: { x: 0, y: 0 },
+            size: { 
+              // Full screen coverage for media items
+              width: 1920, // Full canvas width
+              height: 1080 // Full canvas height
+            },
+            style: {
+              opacity: selectedItem.mediaConfig.volume !== undefined ? selectedItem.mediaConfig.volume : 1
+            },
+            zIndex: 1
+          }] : undefined
+        })
+
+        console.log('🎬 [HOME] Created media card:', {
+          id: selectedItem.id,
+          title: selectedItem.title,
+          contentDescription,
+          hasSlideElements: !!(selectedItem.mediaConfig?.url && (selectedItem.type === 'video' || selectedItem.type === 'image' || selectedItem.mediaConfig.mediaType === 'video' || selectedItem.mediaConfig.mediaType === 'image')),
+          mediaType: selectedItem.mediaConfig?.mediaType || selectedItem.type,
+          isVisualMedia: selectedItem.type === 'video' || selectedItem.type === 'image' || selectedItem.mediaConfig?.mediaType === 'video' || selectedItem.mediaConfig?.mediaType === 'image'
+        })
+        break
+      }
     }
 
     setContentCards(cards)
@@ -1270,6 +2185,14 @@ export default function Home(): JSX.Element {
   // Project content to second display
   const projectContent = useCallback(
     async (card: ContentCard) => {
+      // Stop any currently playing audio before projecting new content
+      if (activeAudioRef.current && !activeAudioRef.current.paused) {
+        console.log('🎯 [PROJECTION] Stopping active audio before projecting new content')
+        activeAudioRef.current.pause()
+        activeAudioRef.current.currentTime = 0
+        setGlobalAudioState(prev => ({ ...prev, isPlaying: false, currentTime: 0 }))
+      }
+      
       // Refresh data to ensure we have the latest background information
       console.log('🎯 [PROJECTION] Refreshing data before projection...')
       await fetchSongs()
@@ -1373,7 +2296,11 @@ export default function Home(): JSX.Element {
         hasSlideBackground: !!card.slideBackground,
         slideBackground: card.slideBackground,
         hasGlobalBackground: !!card.globalBackground,
-        globalBackground: card.globalBackground
+        globalBackground: card.globalBackground,
+        hasMediaConfig: !!card.mediaConfig,
+        mediaConfig: card.mediaConfig,
+        hasSlideElements: !!(card.slideElements && card.slideElements.length > 0),
+        slideElementsCount: card.slideElements?.length || 0
       })
 
       setSelectedCard(card)
@@ -1428,7 +2355,9 @@ export default function Home(): JSX.Element {
         slideBackground: card.slideBackground,
         // Include countdown configuration for countdown cards
         ...(card.type === 'countdown' &&
-          card.countdownConfig && { countdownConfig: card.countdownConfig })
+          card.countdownConfig && { countdownConfig: card.countdownConfig }),
+        // Include media configuration for standalone media items
+        ...(card.mediaConfig && { mediaConfig: card.mediaConfig })
       }
 
       console.log('🎯 [PROJECTION] Generated slideData:', {
@@ -1448,7 +2377,9 @@ export default function Home(): JSX.Element {
         hasSlideBackground: !!slideData.slideBackground,
         slideBackground: slideData.slideBackground,
         hasCountdownConfig: !!slideData.countdownConfig,
-        countdownConfig: slideData.countdownConfig
+        countdownConfig: slideData.countdownConfig,
+        hasMediaConfig: !!slideData.mediaConfig,
+        mediaConfig: slideData.mediaConfig
       })
 
       console.log('🎯 [PROJECTION] Selected card slideElements:', {
@@ -2096,6 +3027,9 @@ export default function Home(): JSX.Element {
                           projectContent(card).catch(console.error)
                         }}
                         getCardStyling={getCardStyling}
+                        selectedCardId={selectedCard?.id}
+                        globalAudioControls={globalAudioControls}
+                        hasUserInteracted={hasUserInteracted}
                       />
                     ))}
                   </div>
@@ -2585,6 +3519,110 @@ export default function Home(): JSX.Element {
                   </div>
                   <div className="text-sm text-amber-700 whitespace-pre-wrap leading-relaxed">
                     {selectedItem.notes}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Global Audio Controls */}
+            {globalAudioState.currentTrack && (
+              <div className="mt-4">
+                <div className="p-4 bg-slate-900 border border-slate-700 rounded-lg">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Volume2 className="w-4 h-4 text-blue-400" />
+                    <span className="text-sm font-medium text-white">Audio Control</span>
+                    <div className="flex-1 text-xs text-slate-400 truncate ml-2">
+                      {globalAudioState.currentTrack}
+                    </div>
+                  </div>
+                  
+                  {/* Timeline */}
+                  <div className="mb-3">
+                    <div className="flex items-center gap-2 text-xs text-slate-400 mb-1">
+                      <span>{formatTime(globalAudioState.currentTime)}</span>
+                      <div className="flex-1">
+                        <input
+                          type="range"
+                          min="0"
+                          max={globalAudioState.duration || 100}
+                          value={globalAudioState.currentTime}
+                          onChange={(e) => globalAudioControls.seek(Number(e.target.value))}
+                          className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer slider"
+                          style={{
+                            background: `linear-gradient(to right, #3B82F6 0%, #3B82F6 ${(globalAudioState.currentTime / (globalAudioState.duration || 1)) * 100}%, #374151 ${(globalAudioState.currentTime / (globalAudioState.duration || 1)) * 100}%, #374151 100%)`
+                          }}
+                        />
+                      </div>
+                      <span>{formatTime(globalAudioState.duration)}</span>
+                    </div>
+                  </div>
+
+                  {/* Control Buttons */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={globalAudioControls.play}
+                        disabled={globalAudioState.isPlaying}
+                        className="text-white hover:bg-slate-800 disabled:opacity-50"
+                      >
+                        <Play className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={globalAudioControls.pause}
+                        disabled={!globalAudioState.isPlaying}
+                        className="text-white hover:bg-slate-800 disabled:opacity-50"
+                      >
+                        <Pause className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={globalAudioControls.stop}
+                        className="text-white hover:bg-slate-800"
+                      >
+                        <SkipBack className="w-4 h-4" />
+                      </Button>
+                    </div>
+
+                    {/* Volume Control */}
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => globalAudioControls.setMuted(!globalAudioState.muted)}
+                        className="text-white hover:bg-slate-800"
+                      >
+                        {globalAudioState.muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+                      </Button>
+                      <input
+                        type="range"
+                        min="0"
+                        max="1"
+                        step="0.1"
+                        value={globalAudioState.muted ? 0 : globalAudioState.volume}
+                        onChange={(e) => {
+                          const volume = Number(e.target.value)
+                          globalAudioControls.setVolume(volume)
+                          if (volume > 0 && globalAudioState.muted) {
+                            globalAudioControls.setMuted(false)
+                          }
+                        }}
+                        className="w-20 h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer"
+                        style={{
+                          background: `linear-gradient(to right, #3B82F6 0%, #3B82F6 ${(globalAudioState.muted ? 0 : globalAudioState.volume) * 100}%, #374151 ${(globalAudioState.muted ? 0 : globalAudioState.volume) * 100}%, #374151 100%)`
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Status */}
+                  <div className="mt-2 text-xs text-slate-400 flex items-center gap-2">
+                    <div className={`w-2 h-2 rounded-full ${globalAudioState.isPlaying ? 'bg-green-400 animate-pulse' : 'bg-slate-500'}`}></div>
+                    {globalAudioState.isPlaying ? 'Playing' : 'Paused'}
                   </div>
                 </div>
               </div>
