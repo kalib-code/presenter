@@ -61,33 +61,32 @@ export default function Collection(): JSX.Element {
   const [mediaError, setMediaError] = useState<string | null>(null)
 
   // Media functions
-  const fetchMedia = useCallback(async (): Promise<void> => {
+  const loadMediaFiles = useCallback(async (): Promise<void> => {
+    setMediaLoading(true)
     try {
-      setMediaLoading(true)
-      setMediaError(null)
-      const files = await window.electron.ipcRenderer.invoke('list-media-files')
-      setMedia(files)
+      const files = await window.electron?.invoke('list-media-files')
+      setMedia(files || [])
     } catch (error) {
-      console.error('Failed to fetch media files:', error)
+      console.error('Failed to load media files:', error)
       setMediaError('Failed to load media files')
+      setMedia([])
     } finally {
       setMediaLoading(false)
     }
   }, [])
 
-  const deleteMedia = useCallback(
-    async (filename: string): Promise<void> => {
+  const handleDeleteMedia = async (filename: string): Promise<void> => {
+    if (confirm(`Are you sure you want to delete ${filename}?`)) {
       try {
-        const success = await window.electron.ipcRenderer.invoke('delete-media-file', filename)
+        const success = await window.electron?.invoke('delete-media-file', filename)
         if (success) {
-          await fetchMedia() // Refresh the list
+          await loadMediaFiles() // Refresh the list
         }
       } catch (error) {
-        console.error('Failed to delete media file:', error)
+        console.error('Failed to delete file:', error)
       }
-    },
-    [fetchMedia]
-  )
+    }
+  }
 
   // Legacy slide store (keeping for potential future use)
   // const {
@@ -122,7 +121,7 @@ export default function Collection(): JSX.Element {
             console.log('Presentations fetched:', presentations.length)
             break
           case 'media':
-            await fetchMedia()
+            await loadMediaFiles()
             console.log('Media fetched:', media.length)
             break
         }
@@ -132,7 +131,7 @@ export default function Collection(): JSX.Element {
     }
 
     fetchData()
-  }, [activeTab, fetchSongs, loadPresentations, fetchMedia])
+  }, [activeTab, fetchSongs, loadPresentations, loadMediaFiles])
 
   // Get filtered data based on active tab and search
   const getFilteredData = (): CollectionData[] => {
@@ -214,7 +213,7 @@ export default function Collection(): JSX.Element {
           await deletePresentation(id)
           break
         case 'media':
-          await deleteMedia(id)
+          await handleDeleteMedia(id)
           break
       }
     } catch (error) {
@@ -262,19 +261,19 @@ export default function Collection(): JSX.Element {
         }
 
         // Upload all files at once
-        const results = await window.electron.ipcRenderer.invoke('upload-media-files', fileData)
+        const results = await window.electron?.invoke('upload-media-files', fileData)
 
         console.log(`✅ Successfully uploaded ${results.length} files`)
 
         // Refresh the media list
-        await fetchMedia()
+        await loadMediaFiles()
       } catch (error) {
         console.error('❌ Failed to upload files:', error)
       }
     }
 
     input.click()
-  }, [fetchMedia])
+  }, [loadMediaFiles])
 
   const handleAdd = (): void => {
     switch (activeTab) {
@@ -544,7 +543,7 @@ export default function Collection(): JSX.Element {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => deleteMedia((item as MediaFile).filename)}
+                          onClick={() => handleDeleteMedia((item as MediaFile).filename)}
                           className="text-destructive hover:text-destructive"
                         >
                           <Trash2 className="h-4 w-4" />

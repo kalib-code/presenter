@@ -417,8 +417,15 @@ export const useCanvasStore = create<CanvasStore>()(
 
     deleteSelectedElements: () => {
       const state = get()
+      console.log('🗑️ deleteSelectedElements called:', {
+        selectedElementId: state.selectedElementId,
+        elementsCount: state.elements.length
+      })
       if (state.selectedElementId) {
+        console.log('🗑️ Calling deleteElement for:', state.selectedElementId)
         get().deleteElement(state.selectedElementId)
+      } else {
+        console.log('🗑️ No element selected, cannot delete')
       }
     },
 

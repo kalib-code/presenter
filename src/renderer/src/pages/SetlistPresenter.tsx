@@ -16,9 +16,15 @@ import {
   FileImage,
   MessageSquare,
   Timer,
-  X
+  X,
+  HelpCircle,
+  Keyboard,
+  Video,
+  Image,
+  Volume2
 } from 'lucide-react'
 import type { SetlistItem } from '@renderer/types/database'
+import { MediaPlayer } from '@renderer/components/ui/media-player'
 
 export default function SetlistPresenter(): JSX.Element {
   const {
@@ -41,6 +47,100 @@ export default function SetlistPresenter(): JSX.Element {
   const { presentations } = usePresentationStore()
 
   const [customCountdownMinutes, setCustomCountdownMinutes] = useState(5)
+  const [showKeyboardHelp, setShowKeyboardHelp] = useState(false)
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Ignore if user is typing in an input field
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
+        return
+      }
+
+      switch (event.code) {
+        case 'ArrowRight':
+        case 'Space':
+          event.preventDefault()
+          nextItem()
+          break
+        case 'ArrowLeft':
+          event.preventDefault()
+          previousItem()
+          break
+        case 'Escape':
+          event.preventDefault()
+          if (showKeyboardHelp) {
+            setShowKeyboardHelp(false)
+          } else {
+            stopPresentation()
+          }
+          break
+        case 'KeyH':
+        case 'Slash':
+          event.preventDefault()
+          setShowKeyboardHelp(!showKeyboardHelp)
+          break
+        case 'KeyP':
+          event.preventDefault()
+          if (countdownActive) {
+            pauseCountdown()
+          } else if (countdownTime > 0) {
+            startCountdown(countdownTime)
+          }
+          break
+        case 'KeyS':
+          event.preventDefault()
+          stopCountdown()
+          break
+        case 'Digit1':
+          event.preventDefault()
+          setCountdownTime(300)
+          startCountdown(300)
+          break
+        case 'Digit2':
+          event.preventDefault()
+          setCountdownTime(600)
+          startCountdown(600)
+          break
+        case 'Digit3':
+          event.preventDefault()
+          setCountdownTime(900)
+          startCountdown(900)
+          break
+        case 'Digit4':
+          event.preventDefault()
+          setCountdownTime(1800)
+          startCountdown(1800)
+          break
+        default:
+          // Number keys for quick item navigation (1-9)
+          if (event.code.startsWith('Digit') && currentSetlist) {
+            const digit = parseInt(event.code.replace('Digit', ''))
+            if (digit >= 1 && digit <= 9 && digit <= currentSetlist.items.length) {
+              event.preventDefault()
+              goToItem(digit - 1)
+            }
+          }
+          break
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [
+    isPresenting,
+    currentSetlist,
+    countdownActive,
+    countdownTime,
+    nextItem,
+    previousItem,
+    stopPresentation,
+    startCountdown,
+    pauseCountdown,
+    stopCountdown,
+    setCountdownTime,
+    goToItem
+  ])
 
   // Redirect if not presenting
   useEffect(() => {
@@ -61,16 +161,56 @@ export default function SetlistPresenter(): JSX.Element {
   const currentItem = currentSetlist.items[currentItemIndex]
   const nextItemData = currentSetlist.items[currentItemIndex + 1]
 
-  const getItemIcon = (type: string) => {
+  const getPresentationType = (item: SetlistItem): string | undefined => {
+    if (item.type === 'presentation' && item.referenceId) {
+      const presentation = presentations.find(p => p.id === item.referenceId)
+      return presentation?.type
+    }
+    return undefined
+  }
+
+  const getItemIcon = (itemOrType: SetlistItem | string, presentationType?: string) => {
+    let type: string
+    let actualPresentationType: string | undefined
+    
+    if (typeof itemOrType === 'string') {
+      type = itemOrType
+      actualPresentationType = presentationType
+    } else {
+      type = itemOrType.type
+      actualPresentationType = getPresentationType(itemOrType)
+    }
+
     switch (type) {
       case 'song':
         return <Music className="w-5 h-5" />
       case 'presentation':
-        return <Presentation className="w-5 h-5" />
+        // Show different icons based on presentation type
+        switch (actualPresentationType) {
+          case 'announcement':
+            return <MessageSquare className="w-5 h-5" />
+          case 'scripture':
+            return <Presentation className="w-5 h-5" />
+          case 'sermon':
+            return <Presentation className="w-5 h-5" />
+          case 'teaching':
+            return <Presentation className="w-5 h-5" />
+          case 'testimony':
+            return <MessageSquare className="w-5 h-5" />
+          case 'prayer':
+            return <MessageSquare className="w-5 h-5" />
+          case 'custom':
+          default:
+            return <Presentation className="w-5 h-5" />
+        }
       case 'media':
         return <FileImage className="w-5 h-5" />
-      case 'announcement':
-        return <MessageSquare className="w-5 h-5" />
+      case 'video':
+        return <Video className="w-5 h-5" />
+      case 'image':
+        return <Image className="w-5 h-5" />
+      case 'audio':
+        return <Volume2 className="w-5 h-5" />
       case 'countdown':
         return <Timer className="w-5 h-5" />
       default:
@@ -99,6 +239,38 @@ export default function SetlistPresenter(): JSX.Element {
           title: presentation?.name || item.title,
           subtitle: 'Presentation',
           content: presentation?.name || ''
+        }
+      case 'video':
+        return {
+          title: item.title,
+          subtitle: 'Video',
+          content: item.notes || '',
+          isMedia: true,
+          mediaConfig: item.mediaConfig
+        }
+      case 'image':
+        return {
+          title: item.title,
+          subtitle: 'Image',
+          content: item.notes || '',
+          isMedia: true,
+          mediaConfig: item.mediaConfig
+        }
+      case 'audio':
+        return {
+          title: item.title,
+          subtitle: 'Audio',
+          content: item.notes || '',
+          isMedia: true,
+          mediaConfig: item.mediaConfig
+        }
+      case 'media':
+        return {
+          title: item.title,
+          subtitle: 'Media',
+          content: item.notes || '',
+          isMedia: true,
+          mediaConfig: item.mediaConfig
         }
       case 'countdown':
         return {
@@ -163,6 +335,15 @@ export default function SetlistPresenter(): JSX.Element {
             </Button>
           </div>
 
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowKeyboardHelp(!showKeyboardHelp)}
+            title="Keyboard shortcuts (H or ?)"
+          >
+            <Keyboard className="w-4 h-4" />
+          </Button>
+
           <Button variant="destructive" onClick={stopPresentation}>
             <X className="w-4 h-4 mr-2" />
             End Presentation
@@ -179,15 +360,31 @@ export default function SetlistPresenter(): JSX.Element {
             {currentDetails ? (
               <div className="space-y-4">
                 <div className="flex items-center justify-center space-x-3 mb-6">
-                  {getItemIcon(currentItem.type)}
+                  {getItemIcon(currentItem)}
                   <div className="text-2xl text-gray-400">{currentDetails.subtitle}</div>
                 </div>
                 <div className="text-4xl font-bold mb-4">{currentDetails.title}</div>
-                {currentDetails.content && (
-                  <div className="text-lg text-gray-300 max-w-2xl mx-auto">
-                    {currentDetails.content}
+
+                {/* Media Content */}
+                {currentDetails.isMedia && currentDetails.mediaConfig ? (
+                  <div className="max-w-4xl mx-auto">
+                    <MediaPlayer
+                      item={currentItem}
+                      autoplay={currentDetails.mediaConfig.autoplay}
+                      className="rounded-lg overflow-hidden"
+                      onEnded={nextItem}
+                    />
                   </div>
+                ) : (
+                  <>
+                    {currentDetails.content && (
+                      <div className="text-lg text-gray-300 max-w-2xl mx-auto">
+                        {currentDetails.content}
+                      </div>
+                    )}
+                  </>
                 )}
+
                 {currentItem.notes && (
                   <div className="text-sm text-yellow-400 bg-yellow-400/10 rounded-lg p-4 max-w-2xl mx-auto">
                     <strong>Notes:</strong> {currentItem.notes}
@@ -237,7 +434,7 @@ export default function SetlistPresenter(): JSX.Element {
             {nextDetails ? (
               <div className="space-y-2">
                 <div className="flex items-center space-x-2">
-                  {getItemIcon(nextItemData.type)}
+                  {getItemIcon(nextItemData)}
                   <div className="text-sm text-gray-400">{nextDetails.subtitle}</div>
                 </div>
                 <div className="font-semibold">{nextDetails.title}</div>
@@ -345,7 +542,7 @@ export default function SetlistPresenter(): JSX.Element {
                 >
                   <div className="flex items-center space-x-2 mb-1">
                     <span className="text-xs font-mono w-6">{index + 1}</span>
-                    {getItemIcon(item.type)}
+                    {getItemIcon(item)}
                     <span className="text-sm font-medium truncate">{item.title}</span>
                   </div>
                   {(item.duration || 0) > 0 && (
@@ -359,6 +556,101 @@ export default function SetlistPresenter(): JSX.Element {
           </div>
         </div>
       </div>
+
+      {/* Keyboard Shortcuts Help Overlay */}
+      {showKeyboardHelp && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
+          <div className="bg-gray-900 rounded-lg p-8 max-w-2xl w-full mx-4 border border-gray-700">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl font-bold text-white flex items-center gap-3">
+                <Keyboard className="w-6 h-6" />
+                Keyboard Shortcuts
+              </h2>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowKeyboardHelp(false)}
+                className="text-gray-400 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </Button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-6 text-sm">
+              <div className="space-y-3">
+                <h3 className="text-lg font-semibold text-gray-300 mb-3">Navigation</h3>
+                <div className="space-y-2">
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Next Item</span>
+                    <div className="flex gap-1">
+                      <kbd className="bg-gray-800 px-2 py-1 rounded text-xs">→</kbd>
+                      <kbd className="bg-gray-800 px-2 py-1 rounded text-xs">Space</kbd>
+                    </div>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Previous Item</span>
+                    <kbd className="bg-gray-800 px-2 py-1 rounded text-xs">←</kbd>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Go to Item 1-9</span>
+                    <kbd className="bg-gray-800 px-2 py-1 rounded text-xs">1-9</kbd>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">End Presentation</span>
+                    <kbd className="bg-gray-800 px-2 py-1 rounded text-xs">Esc</kbd>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <h3 className="text-lg font-semibold text-gray-300 mb-3">Timer Controls</h3>
+                <div className="space-y-2">
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Play/Pause Timer</span>
+                    <kbd className="bg-gray-800 px-2 py-1 rounded text-xs">P</kbd>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Stop Timer</span>
+                    <kbd className="bg-gray-800 px-2 py-1 rounded text-xs">S</kbd>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">5 min Timer</span>
+                    <kbd className="bg-gray-800 px-2 py-1 rounded text-xs">1</kbd>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">10 min Timer</span>
+                    <kbd className="bg-gray-800 px-2 py-1 rounded text-xs">2</kbd>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">15 min Timer</span>
+                    <kbd className="bg-gray-800 px-2 py-1 rounded text-xs">3</kbd>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">30 min Timer</span>
+                    <kbd className="bg-gray-800 px-2 py-1 rounded text-xs">4</kbd>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 pt-4 border-t border-gray-700">
+              <div className="flex justify-between items-center">
+                <span className="text-gray-400">Show/Hide Help</span>
+                <div className="flex gap-1">
+                  <kbd className="bg-gray-800 px-2 py-1 rounded text-xs">H</kbd>
+                  <kbd className="bg-gray-800 px-2 py-1 rounded text-xs">?</kbd>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 text-center">
+              <span className="text-xs text-gray-500">
+                Keyboard shortcuts are disabled when typing in input fields
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

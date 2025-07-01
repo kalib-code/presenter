@@ -36,12 +36,19 @@ export interface Slide {
   notes?: string
 }
 
+export type SlideElementContent = 
+  | { type: 'text'; text: string }
+  | { type: 'image'; url: string; alt?: string }
+  | { type: 'video'; url: string; autoplay?: boolean; loop?: boolean }
+  | { type: 'audio'; url: string; autoplay?: boolean; loop?: boolean }
+  | { type: 'shape'; shape: 'rectangle' | 'circle' | 'triangle'; fill?: string }
+
 export interface SlideElement {
   id: string
   type: 'text' | 'image' | 'video' | 'audio' | 'shape'
   position: { x: number; y: number }
   size: { width: number; height: number }
-  content: any
+  content: SlideElementContent
   style: ElementStyle
   zIndex: number
 }
@@ -113,6 +120,28 @@ export interface SetlistItem {
   // Countdown-specific properties
   countdownDuration?: number // Duration in seconds for countdown timers
   countdownMessage?: string // Message to display during countdown
+  // Enhanced countdown customization
+  countdownConfig?: {
+    title?: string // Custom title for the countdown
+    message?: string // Custom message content
+    duration?: number // Duration in seconds
+    styling?: {
+      counterSize?: 'small' | 'medium' | 'large' | 'extra-large' // Size of the countdown numbers
+      counterColor?: string // Color of the countdown numbers
+      titleSize?: 'small' | 'medium' | 'large' // Size of the title text
+      titleColor?: string // Color of the title text
+      messageSize?: 'small' | 'medium' | 'large' // Size of the message text
+      messageColor?: string // Color of the message text
+      textShadow?: boolean // Whether to apply text shadow
+    }
+    background?: {
+      type: 'color' | 'image' | 'video'
+      value: string // Color hex, image URL, or video URL
+      opacity?: number // Background opacity (0-1)
+      size?: 'cover' | 'contain' | 'fill' | 'none' // For images/videos
+      position?: 'center' | 'top' | 'bottom' | 'left' | 'right' // For images/videos
+    }
+  }
 }
 
 // Presentation types

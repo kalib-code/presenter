@@ -1,0 +1,36 @@
+name: Code Quality
+
+on:
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          
+      - name: Install dependencies
+        run: npm ci
+        
+      - name: Check formatting
+        run: npx prettier --check .
+        
+      - name: Bundle size check
+        run: |
+          npm run build
+          du -sh out/renderer/assets/* || true
+          
+      - name: Dependency check
+        run: |
+          npx depcheck --skip-missing
+          npm ls --depth=0

@@ -27,6 +27,7 @@ interface SlidesActions {
   previousSlide: () => void
 
   // Slide editing
+  updateSlide: (index: number, updates: Partial<Slide>) => void
   updateSlideTitle: (index: number, title: string) => void
   updateSlideContent: (index: number, content: string) => void
   updateSlideNotes: (index: number, notes: string) => void
@@ -320,24 +321,46 @@ export const useSlidesStore = create<SlidesStore>()(
           currentSlideIndex: index
         })
 
-        // Load background for the new slide
+        // Load background for the new slide - direct store update to avoid circular dependency
         const newSlide = updatedSlides[index]
+        console.log('🔄 [SLIDES] Loading background for slide', index, ':', newSlide?.background)
         if (newSlide?.background) {
           const { type, value, opacity, playbackRate } = newSlide.background
+          console.log('🔄 [SLIDES] Setting slide background directly:', {
+            type,
+            value: value.substring(0, 50) + '...',
+            opacity
+          })
+          // Update background store directly without triggering slide update
           if (type === 'image') {
-            backgroundState.setSlideBackground('image', value)
+            useBackgroundStore.setState({
+              backgroundType: 'image',
+              backgroundImage: value,
+              backgroundVideo: null,
+              backgroundVideoBlob: null,
+              backgroundOpacity: opacity !== undefined ? opacity : 1
+            })
           } else if (type === 'video') {
-            backgroundState.setSlideBackground('video', value, value)
-          }
-          if (opacity !== undefined) {
-            backgroundState.setBackgroundOpacity(opacity)
+            useBackgroundStore.setState({
+              backgroundType: 'video',
+              backgroundImage: null,
+              backgroundVideo: value,
+              backgroundVideoBlob: null,
+              backgroundOpacity: opacity !== undefined ? opacity : 1
+            })
           }
           if (playbackRate !== undefined) {
-            backgroundState.setVideoPlaybackRate(playbackRate)
+            useBackgroundStore.setState({ videoPlaybackRate: playbackRate })
           }
         } else {
           // Clear slide background if new slide has no background
-          backgroundState.removeSlideBackground()
+          console.log('🔄 [SLIDES] No background for slide, clearing background store')
+          useBackgroundStore.setState({
+            backgroundType: 'none',
+            backgroundImage: null,
+            backgroundVideo: null,
+            backgroundVideoBlob: null
+          })
         }
 
         // Load canvas elements for the new slide (use updated slides)
@@ -390,6 +413,33 @@ export const useSlidesStore = create<SlidesStore>()(
       if (state.currentSlideIndex > 0) {
         get().setCurrentSlide(state.currentSlideIndex - 1)
       }
+    },
+
+    updateSlide: (index, updates) => {
+      const state = get()
+      if (index < 0 || index >= state.slides.length) return
+
+      const oldSlide = state.slides[index]
+      const newSlide = { ...oldSlide, ...updates }
+      const newSlides = state.slides.map((slide, i) => (i === index ? newSlide : slide))
+
+      // Create history action
+      const historyAction = createHistoryAction(
+        'update-slide',
+        `Update slide "${oldSlide.title}"`,
+        () => {
+          // Undo: restore old slide
+          const currentSlides = get().slides.map((slide, i) => (i === index ? oldSlide : slide))
+          set({ slides: currentSlides })
+        },
+        () => {
+          // Redo: apply new slide
+          set({ slides: newSlides })
+        }
+      )
+
+      set({ slides: newSlides })
+      useHistoryStore.getState().pushAction(historyAction)
     },
 
     updateSlideTitle: (index, title) => {

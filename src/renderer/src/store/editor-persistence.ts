@@ -7,7 +7,9 @@ import { useSlidesStore } from './editor-slides'
 import { useCanvasStore } from './editor-canvas'
 import { useHistoryStore } from './editor-history'
 import { useBackgroundStore } from './editor-background'
-import type { Song, Presentation } from '@renderer/types/database'
+import { useSettingsStore } from './settings'
+import type { Song, Presentation, Background } from '@renderer/types/database'
+import { migrateSong, migratePresentation, validateMigration } from '@renderer/utils/migration'
 
 interface PersistenceState {
   autoSaveEnabled: boolean
@@ -15,6 +17,8 @@ interface PersistenceState {
   lastAutoSave?: Date
   isSaving: boolean
   saveError?: string
+  migrationEnabled: boolean
+  useLegacyFormat: boolean
 }
 
 interface PersistenceActions {
@@ -30,6 +34,11 @@ interface PersistenceActions {
   setSaving: (saving: boolean) => void
   setSaveError: (error?: string) => void
 
+  // Migration management
+  enableMigration: () => void
+  disableMigration: () => void
+  setLegacyFormat: (useLegacy: boolean) => void
+
   // Initialization
   initialize: () => void
   cleanup: () => void
@@ -41,11 +50,13 @@ type PersistenceStore = PersistenceState &
   }
 
 const initialState: PersistenceState = {
-  autoSaveEnabled: true,
-  autoSaveInterval: 30000, // 30 seconds
+  autoSaveEnabled: true, // Default value, will be synced from settings store later
+  autoSaveInterval: 30000, // Default value, will be synced from settings store later
   lastAutoSave: undefined,
   isSaving: false,
-  saveError: undefined
+  saveError: undefined,
+  migrationEnabled: true, // Enable by default for gradual migration
+  useLegacyFormat: false // Use optimized format by default
 }
 
 let autoSaveTimer: NodeJS.Timeout | null = null
@@ -75,6 +86,13 @@ export const usePersistenceStore = create<PersistenceStore>()(
       }, interval)
 
       set({ autoSaveEnabled: true, autoSaveInterval: interval })
+      console.log('🎛️ [PERSISTENCE] AutoSave enabled in persistence store with interval:', interval)
+
+      // Update settings store
+      useSettingsStore.getState().setAutoSave(true)
+      if (interval !== useSettingsStore.getState().app.autoSaveInterval) {
+        useSettingsStore.getState().setAutoSaveInterval(interval)
+      }
     },
 
     disableAutoSave: () => {
@@ -83,6 +101,10 @@ export const usePersistenceStore = create<PersistenceStore>()(
         autoSaveTimer = null
       }
       set({ autoSaveEnabled: false })
+      console.log('🎛️ [PERSISTENCE] AutoSave disabled in persistence store')
+
+      // Update settings store
+      useSettingsStore.getState().setAutoSave(false)
     },
 
     saveEditor: async () => {
@@ -199,29 +221,52 @@ export const usePersistenceStore = create<PersistenceStore>()(
             tags: metaState.tags, // Only user tags, no background data
             globalBackground: globalBackground,
             isPublic: true,
-            createdBy: 'user'
+            createdBy: 'user',
+            // Extended song metadata
+            album: metaState.songMetadata.album,
+            year: metaState.songMetadata.year,
+            genre: metaState.songMetadata.genre,
+            tempo: metaState.songMetadata.tempo,
+            key: metaState.songMetadata.key,
+            duration: metaState.songMetadata.duration,
+            copyright: metaState.songMetadata.copyright,
+            publisher: metaState.songMetadata.publisher,
+            language: metaState.songMetadata.language,
+            notes: metaState.songMetadata.notes
+          }
+
+          // Apply migration if enabled
+          let finalSongData = songData as Song
+          if (state.migrationEnabled && !state.useLegacyFormat) {
+            const migratedSong = migrateSong(finalSongData)
+            if (validateMigration(finalSongData, migratedSong)) {
+              finalSongData = migratedSong
+              console.log('✅ Song migration applied successfully')
+            } else {
+              console.warn('⚠️ Song migration validation failed, using original data')
+            }
           }
 
           const songStore = useSongStore.getState()
 
           if (metaState.action === 'create') {
             // Create new song
-            const newSong = await songStore.createSong(songData.name!)
-            await songStore.updateSong(newSong.id, songData)
+            const newSong = await songStore.createSong(finalSongData.name!)
+            await songStore.updateSong(newSong.id, finalSongData)
 
             // Update meta store with new song ID
             useEditorMetaStore.getState().setItemId(newSong.id)
             useEditorMetaStore.getState().setAction('edit')
           } else if (metaState.itemId) {
             // Update existing song
-            await songStore.updateSong(metaState.itemId, songData)
+            await songStore.updateSong(metaState.itemId, finalSongData)
           }
         } else {
           // Save as presentation
           const presentationData: Partial<Presentation> = {
             name: metaState.title || 'Untitled Presentation',
-            type: 'custom',
-            speaker: metaState.artist || '',
+            type: metaState.presentationMetadata.type,
+            speaker: metaState.presentationMetadata.speaker || metaState.artist || '',
             tags: metaState.tags, // Only user tags, no background data
             background: globalBackground, // Store global background in presentation
             slides: updatedSlidesState.slides.map((slide, index) => {
@@ -259,7 +304,26 @@ export const usePersistenceStore = create<PersistenceStore>()(
               }
             }),
             isPublic: true,
-            createdBy: 'user'
+            createdBy: 'user',
+            // Extended presentation metadata
+            serviceDate: metaState.presentationMetadata.serviceDate,
+            occasion: metaState.presentationMetadata.occasion,
+            location: metaState.presentationMetadata.location,
+            description: metaState.presentationMetadata.description,
+            scripture: metaState.presentationMetadata.scripture,
+            topic: metaState.presentationMetadata.topic,
+            estimatedDuration: metaState.presentationMetadata.estimatedDuration,
+            audience: metaState.presentationMetadata.audience,
+            language: metaState.presentationMetadata.language,
+            notes: metaState.presentationMetadata.notes
+          }
+
+          // Apply migration if enabled
+          let finalPresentationData = presentationData as Presentation
+          if (state.migrationEnabled && !state.useLegacyFormat) {
+            const migratedPresentation = migratePresentation(finalPresentationData)
+            finalPresentationData = migratedPresentation
+            console.log('✅ Presentation migration applied successfully')
           }
 
           const presentationStore = usePresentationStore.getState()
@@ -267,17 +331,17 @@ export const usePersistenceStore = create<PersistenceStore>()(
           if (metaState.action === 'create') {
             // Create new presentation
             const newPresentation = await presentationStore.createPresentation(
-              presentationData.name!,
+              finalPresentationData.name!,
               'custom'
             )
-            await presentationStore.updatePresentation(newPresentation.id, presentationData)
+            await presentationStore.updatePresentation(newPresentation.id, finalPresentationData)
 
             // Update meta store with new presentation ID
             useEditorMetaStore.getState().setItemId(newPresentation.id)
             useEditorMetaStore.getState().setAction('edit')
           } else if (metaState.itemId) {
             // Update existing presentation
-            await presentationStore.updatePresentation(metaState.itemId, presentationData)
+            await presentationStore.updatePresentation(metaState.itemId, finalPresentationData)
           }
         }
 
@@ -326,6 +390,20 @@ export const usePersistenceStore = create<PersistenceStore>()(
 
           // Load user tags (now clean, no background data mixed in)
           metaStore.setTags(song.tags || [])
+
+          // Load extended song metadata
+          metaStore.updateSongMetadata({
+            album: song.album,
+            year: song.year,
+            genre: song.genre,
+            tempo: song.tempo,
+            key: song.key,
+            duration: song.duration,
+            copyright: song.copyright,
+            publisher: song.publisher,
+            language: song.language,
+            notes: song.notes
+          })
 
           // Update slides store
           const slidesStore = useSlidesStore.getState()
@@ -487,6 +565,29 @@ export const usePersistenceStore = create<PersistenceStore>()(
 
           // Load user tags (now clean, no background data mixed in)
           metaStore.setTags(presentation.tags || [])
+
+          // Load extended presentation metadata
+          metaStore.updatePresentationMetadata({
+            type: presentation.type as
+              | 'scripture'
+              | 'announcement'
+              | 'custom'
+              | 'sermon'
+              | 'teaching'
+              | 'testimony'
+              | 'prayer',
+            speaker: presentation.speaker,
+            serviceDate: presentation.serviceDate,
+            occasion: presentation.occasion,
+            location: presentation.location,
+            description: presentation.description,
+            scripture: presentation.scripture,
+            topic: presentation.topic,
+            estimatedDuration: presentation.estimatedDuration,
+            audience: presentation.audience,
+            language: presentation.language,
+            notes: presentation.notes
+          })
 
           // Load background settings from proper Presentation properties
           const backgroundStore = useBackgroundStore.getState()
@@ -660,16 +761,61 @@ export const usePersistenceStore = create<PersistenceStore>()(
       set({ saveError })
     },
 
+    // Migration management
+    enableMigration: () => set({ migrationEnabled: true }),
+    disableMigration: () => set({ migrationEnabled: false }),
+    setLegacyFormat: (useLegacy: boolean) => set({ useLegacyFormat: useLegacy }),
+
     initialize: () => {
-      // Set up auto-save if enabled
-      const state = get()
-      if (state.autoSaveEnabled) {
-        get().enableAutoSave(state.autoSaveInterval)
+      console.log('🎛️ [PERSISTENCE] Initializing persistence store...')
+
+      // Sync with settings store first
+      const settingsState = useSettingsStore.getState()
+      console.log('🎛️ [PERSISTENCE] Settings state when initializing:', {
+        autoSave: settingsState.app.autoSave,
+        autoSaveInterval: settingsState.app.autoSaveInterval,
+        isLoaded: settingsState.isLoaded
+      })
+
+      // Wait for settings to be loaded if they haven't been loaded yet
+      const waitForSettingsAndSync = () => {
+        const currentSettingsState = useSettingsStore.getState()
+        if (currentSettingsState.isLoaded) {
+          console.log('🎛️ [PERSISTENCE] Settings are loaded, syncing...')
+          set({
+            autoSaveEnabled: currentSettingsState.app.autoSave,
+            autoSaveInterval: currentSettingsState.app.autoSaveInterval
+          })
+
+          // Set up auto-save if enabled
+          const state = get()
+          console.log('🎛️ [PERSISTENCE] After sync - autoSaveEnabled:', state.autoSaveEnabled)
+          if (state.autoSaveEnabled) {
+            console.log(
+              '🎛️ [PERSISTENCE] Enabling auto-save with interval:',
+              state.autoSaveInterval
+            )
+            get().enableAutoSave(state.autoSaveInterval)
+          } else {
+            console.log('🎛️ [PERSISTENCE] Auto-save is disabled, not starting timer')
+          }
+        } else {
+          console.log('🎛️ [PERSISTENCE] Settings not loaded yet, waiting...')
+          // Wait a bit and try again
+          setTimeout(waitForSettingsAndSync, 100)
+        }
       }
+
+      waitForSettingsAndSync()
 
       // Subscribe to changes that should trigger unsaved state
       const unsubscribeMeta = useEditorMetaStore.subscribe(
-        (state) => state.title + state.artist + state.tags.join(','),
+        (state) =>
+          state.title +
+          state.artist +
+          state.tags.join(',') +
+          JSON.stringify(state.songMetadata) +
+          JSON.stringify(state.presentationMetadata),
         () => {
           useEditorMetaStore.getState().markUnsaved()
         }
@@ -735,8 +881,12 @@ export const useSaveStatus = (): {
   saveError?: string
   autoSaveEnabled: boolean
 } => {
-  const { isSaving, lastAutoSave, saveError, autoSaveEnabled } = usePersistenceStore()
-  const { hasUnsavedChanges, lastSaved } = useEditorMetaStore()
+  const isSaving = usePersistenceStore((state) => state.isSaving)
+  const lastAutoSave = usePersistenceStore((state) => state.lastAutoSave)
+  const saveError = usePersistenceStore((state) => state.saveError)
+  const autoSaveEnabled = usePersistenceStore((state) => state.autoSaveEnabled)
+  const hasUnsavedChanges = useEditorMetaStore((state) => state.hasUnsavedChanges)
+  const lastSaved = useEditorMetaStore((state) => state.lastSaved)
 
   return {
     isSaving,

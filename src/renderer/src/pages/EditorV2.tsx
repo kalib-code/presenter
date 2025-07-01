@@ -3,9 +3,15 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
 import { Separator } from '@renderer/components/ui/separator'
-import { TagsInput } from '@renderer/components/ui/tags-input'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger
+} from '@renderer/components/ui/dialog'
 import { useToast } from '@renderer/hooks/use-toast'
-import { Toaster } from '@renderer/components/ui/toaster'
+
 import {
   Save,
   ArrowLeft,
@@ -15,10 +21,10 @@ import {
   Redo,
   SkipBack,
   SkipForward,
-  Image,
   GripVertical,
   Eye,
-  Edit
+  Edit,
+  Settings
 } from 'lucide-react'
 
 // New store-based imports
@@ -33,9 +39,11 @@ import { useBackgroundStore } from '@renderer/store/editor-background'
 import { Canvas } from '@renderer/components/editor/Canvas'
 import { PreviewCanvas } from '@renderer/components/editor/PreviewCanvas'
 import { ElementToolbar } from '@renderer/components/editor/ElementToolbar'
-import { BackgroundPanel } from '@renderer/components/editor/BackgroundPanel'
+
 import { SlideTitle } from '@renderer/components/editor/SlideTitle'
 import { PropertiesPanel } from '@renderer/components/editor/PropertiesPanel'
+import { MetadataPanel } from '@renderer/components/editor/MetadataPanel'
+import { AlignmentSettings } from '@renderer/components/editor/AlignmentSettings'
 
 type EditorMode = 'song' | 'slide'
 type EditorAction = 'create' | 'edit'
@@ -53,14 +61,10 @@ export default function EditorV2(): JSX.Element {
 
   // Store hooks - using specific selectors to prevent unnecessary re-renders
   const title = useEditorMetaStore((state) => state.title)
-  const artist = useEditorMetaStore((state) => state.artist)
-  const tags = useEditorMetaStore((state) => state.tags)
   const hasUnsavedChanges = useEditorMetaStore((state) => state.hasUnsavedChanges)
   const setTitle = useEditorMetaStore((state) => state.setTitle)
-  const setArtist = useEditorMetaStore((state) => state.setArtist)
-  const setTags = useEditorMetaStore((state) => state.setTags)
 
-  const { titleLabel, artistLabel, titlePlaceholder, artistPlaceholder } = useEditorLabels()
+  const { titleLabel, titlePlaceholder } = useEditorLabels()
 
   const slides = useSlidesStore((state) => state.slides)
   const currentSlideIndex = useSlidesStore((state) => state.currentSlideIndex)
@@ -71,6 +75,8 @@ export default function EditorV2(): JSX.Element {
   const moveSlide = useSlidesStore((state) => state.moveSlide)
 
   const elements = useCanvasStore((state) => state.elements)
+  const selectedElementId = useCanvasStore((state) => state.selectedElementId)
+  const deleteSelectedElements = useCanvasStore((state) => state.deleteSelectedElements)
 
   const canUndo = useHistoryStore((state) => state.canUndo)
   const canRedo = useHistoryStore((state) => state.canRedo)
@@ -78,6 +84,11 @@ export default function EditorV2(): JSX.Element {
   const redo = useHistoryStore((state) => state.redo)
 
   const { autoSaveEnabled } = useSaveStatus()
+
+  // Debug autosave status
+  useEffect(() => {
+    console.log('🎛️ [EDITOR] AutoSave status changed:', { autoSaveEnabled })
+  }, [autoSaveEnabled])
 
   // Drag and drop state
   const [draggedSlideIndex, setDraggedSlideIndex] = useState<number | null>(null)
@@ -87,8 +98,6 @@ export default function EditorV2(): JSX.Element {
   const [isPreviewMode, setIsPreviewMode] = useState(false)
 
   // Background store - using direct access to avoid selector issues
-  const toggleBackgroundPanel = useBackgroundStore((state) => state.toggleBackgroundPanel)
-  const isPanelOpen = useBackgroundStore((state) => state.isBackgroundPanelOpen)
 
   // Initialize editor
   useEffect(() => {
@@ -107,7 +116,7 @@ export default function EditorV2(): JSX.Element {
     useBackgroundStore.getState().initialize()
     useSlidesStore.getState().reset() // Clear slides completely
     useHistoryStore.getState().clear() // Clear undo/redo history
-    usePersistenceStore.getState().initialize() // Initialize change detection
+    // Note: Don't reinitialize persistence store here - it should only be initialized once at app startup
 
     // Load existing item if editing
     if (action === 'edit' && itemId) {
@@ -132,12 +141,7 @@ export default function EditorV2(): JSX.Element {
     }
   }, [mode, action, itemId, toast, navigate])
 
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      usePersistenceStore.getState().cleanup()
-    }
-  }, [])
+  // Note: Removed persistence store cleanup as it's now global and should persist across editor instances
 
   // Handle save
   const handleSave = useCallback(async () => {
@@ -170,6 +174,40 @@ export default function EditorV2(): JSX.Element {
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent): void => {
+      // Handle Delete/Backspace key (without modifiers)
+      if (
+        (e.key === 'Delete' || e.key === 'Backspace') &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.shiftKey &&
+        !e.altKey
+      ) {
+        console.log('🗑️ Delete key pressed:', {
+          selectedElementId,
+          targetType: e.target?.constructor.name,
+          isInput: e.target instanceof HTMLInputElement,
+          isTextarea: e.target instanceof HTMLTextAreaElement
+        })
+
+        // Only delete if an element is selected and we're not in a text input
+        if (
+          selectedElementId &&
+          !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)
+        ) {
+          console.log('🗑️ Deleting selected element:', selectedElementId)
+          e.preventDefault()
+          deleteSelectedElements()
+        } else {
+          console.log('🗑️ Delete prevented:', {
+            noSelection: !selectedElementId,
+            inTextInput:
+              e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement
+          })
+        }
+        return
+      }
+
+      // Handle modifier key shortcuts
       if (e.ctrlKey || e.metaKey) {
         switch (e.key) {
           case 's':
@@ -198,7 +236,16 @@ export default function EditorV2(): JSX.Element {
 
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [handleSave, undo, redo, addSlide])
+  }, [
+    handleSave,
+    undo,
+    redo,
+    addSlide,
+    selectedElementId,
+    deleteSelectedElements,
+    isPreviewMode,
+    setIsPreviewMode
+  ])
 
   // Drag and drop handlers - optimized to prevent infinite loops
   const handleDragStart = useCallback((e: React.DragEvent, index: number) => {
@@ -288,7 +335,7 @@ export default function EditorV2(): JSX.Element {
                   <span className="text-green-600">Saved</span>
                 )
               ) : (
-                'Auto-save off'
+                <span>Auto-save off</span>
               )}
             </div>
 
@@ -311,16 +358,6 @@ export default function EditorV2(): JSX.Element {
               )}
             </Button>
 
-            <Button
-              onClick={toggleBackgroundPanel}
-              variant={isPanelOpen ? 'default' : 'outline'}
-              size="sm"
-              className="mr-2"
-            >
-              <Image className="w-4 h-4 mr-2" />
-              Backgrounds
-            </Button>
-
             <Button onClick={handleSave} variant="default" size="sm">
               <Save className="w-4 h-4 mr-2" />
               Save
@@ -328,10 +365,10 @@ export default function EditorV2(): JSX.Element {
           </div>
         </div>
 
-        {/* Content metadata section */}
+        {/* Content title and metadata section */}
         <div className="px-4 pb-4 space-y-3">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1">
+          <div className="flex items-center gap-3">
+            <div className="space-y-1 flex-1 max-w-md">
               <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                 {titleLabel}
               </label>
@@ -342,81 +379,81 @@ export default function EditorV2(): JSX.Element {
                 className="h-9"
               />
             </div>
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                {artistLabel}
-              </label>
-              <Input
-                value={artist}
-                onChange={(e) => setArtist(e.target.value)}
-                placeholder={artistPlaceholder}
-                className="h-9"
-              />
-            </div>
-          </div>
 
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-              Tags
-            </label>
-            <TagsInput
-              tags={tags}
-              onTagsChange={setTags}
-              placeholder="Add tags (press Enter to add)"
-              className="min-h-[36px]"
-            />
+            <div className="flex gap-2">
+              <AlignmentSettings className="mt-6" />
+
+              <Dialog>
+                <DialogTrigger asChild>
+                  <Button variant="outline" size="sm" className="mt-6">
+                    <Settings className="w-4 h-4" />
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+                  <DialogHeader>
+                    <DialogTitle>{mode === 'song' ? 'Song' : 'Presentation'} Metadata</DialogTitle>
+                  </DialogHeader>
+                  <MetadataPanel className="space-y-4" />
+                </DialogContent>
+              </Dialog>
+            </div>
           </div>
         </div>
       </div>
 
       <div className="flex flex-1 overflow-hidden">
         {/* Slide Panel */}
-        <div className="w-80 bg-sidebar border-r border-sidebar-border flex flex-col">
+        <div className="w-72 bg-sidebar border-r border-sidebar-border flex flex-col">
           {/* Slide Controls */}
-          <div className="p-4 border-b border-sidebar-border">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-lg font-semibold">Slides</h3>
-              <Button onClick={() => addSlide()} size="sm" variant="default">
-                <Plus className="w-4 h-4 mr-1" />
+          <div className="p-3 border-b border-sidebar-border">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-semibold flex items-center gap-2">
+                <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                Slides ({slides.length})
+              </h3>
+              <Button onClick={() => addSlide()} size="sm" variant="default" className="h-7 px-2">
+                <Plus className="w-3 h-3 mr-1" />
                 Add
               </Button>
             </div>
 
-            {/* Slide Navigation */}
-            <div className="flex items-center gap-2">
+            {/* Compact Navigation */}
+            <div className="flex items-center justify-between bg-muted/50 rounded-lg p-2">
               <Button
                 onClick={() => setCurrentSlide(Math.max(0, currentSlideIndex - 1))}
                 disabled={currentSlideIndex === 0}
                 variant="ghost"
                 size="sm"
+                className="h-6 w-6 p-0"
               >
-                <SkipBack className="w-4 h-4" />
+                <SkipBack className="w-3 h-3" />
               </Button>
 
-              <span className="text-sm text-muted-foreground px-2">
-                {currentSlideIndex + 1} of {slides.length}
-              </span>
+              <div className="text-xs font-medium px-2 bg-background rounded px-3 py-1">
+                {currentSlideIndex + 1} / {slides.length}
+              </div>
 
               <Button
                 onClick={() => setCurrentSlide(Math.min(slides.length - 1, currentSlideIndex + 1))}
                 disabled={currentSlideIndex === slides.length - 1}
                 variant="ghost"
                 size="sm"
+                className="h-6 w-6 p-0"
               >
-                <SkipForward className="w-4 h-4" />
+                <SkipForward className="w-3 h-3" />
               </Button>
             </div>
           </div>
 
           {/* Slide List */}
-          <div className="flex-1 overflow-y-auto p-2">
+          <div className="flex-1 overflow-y-auto p-2 space-y-1">
             {slides.map((slide, index) => (
               <React.Fragment key={slide.id}>
                 {/* Drop zone indicator */}
                 {dragOverIndex === index &&
                   draggedSlideIndex !== null &&
                   draggedSlideIndex !== index && (
-                    <div className="h-1 bg-primary rounded-full mb-2 animate-pulse" />
+                    <div className="h-0.5 bg-primary rounded-full mb-1 animate-pulse mx-2" />
                   )}
 
                 <div
@@ -426,60 +463,142 @@ export default function EditorV2(): JSX.Element {
                   onDragLeave={handleDragLeave}
                   onDrop={(e) => handleDrop(e, index)}
                   onDragEnd={handleDragEnd}
-                  className={`p-3 mb-2 rounded cursor-pointer transition-all duration-200 ${
+                  className={`group relative p-2 rounded-lg cursor-pointer transition-all duration-200 border ${
                     index === currentSlideIndex
-                      ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-                      : 'bg-sidebar-primary/10 hover:bg-sidebar-accent/50 text-sidebar-foreground'
-                  } ${draggedSlideIndex === index ? 'opacity-50 scale-95' : ''} ${
+                      ? 'bg-primary/10 border-primary/50 shadow-sm'
+                      : 'bg-sidebar-primary/5 hover:bg-sidebar-accent/30 border-transparent hover:border-sidebar-accent/50'
+                  } ${draggedSlideIndex === index ? 'opacity-50 scale-98' : ''} ${
                     dragOverIndex === index && draggedSlideIndex !== index
-                      ? 'border-2 border-primary border-dashed'
-                      : 'border-2 border-transparent'
+                      ? 'border-primary border-dashed bg-primary/5'
+                      : ''
                   }`}
                   onClick={() => setCurrentSlide(index)}
                 >
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <GripVertical className="w-3 h-3 text-muted-foreground/50 cursor-grab active:cursor-grabbing flex-shrink-0" />
-                        <SlideTitle slideIndex={index} className="font-medium text-sm" />
-                      </div>
-                      <div className="text-xs opacity-75 mt-1 ml-5">
-                        {slide.elements?.length || 0} element
-                        {(slide.elements?.length || 0) !== 1 ? 's' : ''}
+                  {/* Current slide indicator */}
+                  {index === currentSlideIndex && (
+                    <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-primary rounded-r-full" />
+                  )}
+
+                  <div className="flex items-start gap-2">
+                    {/* Drag handle */}
+                    <div className="flex flex-col items-center justify-center pt-1">
+                      <GripVertical className="w-3 h-3 text-muted-foreground/40 cursor-grab active:cursor-grabbing" />
+                      <div
+                        className={`text-xs font-medium mt-1 w-6 h-6 rounded flex items-center justify-center ${
+                          index === currentSlideIndex
+                            ? 'bg-primary text-primary-foreground'
+                            : 'bg-muted/60 text-muted-foreground'
+                        }`}
+                      >
+                        {index + 1}
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-1">
-                      <Button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          duplicateSlide(index)
-                        }}
-                        variant="ghost"
-                        size="sm"
-                        className="w-6 h-6 p-0"
-                      >
-                        📋
-                      </Button>
-                      <Button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          if (slides.length > 1) {
-                            deleteSlide(index)
-                          }
-                        }}
-                        disabled={slides.length <= 1}
-                        variant="ghost"
-                        size="sm"
-                        className="w-6 h-6 p-0 hover:text-destructive"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </Button>
+                    {/* Slide preview thumbnail */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between mb-1">
+                        <SlideTitle
+                          slideIndex={index}
+                          className={`font-medium text-xs truncate flex-1 ${
+                            index === currentSlideIndex
+                              ? 'text-foreground'
+                              : 'text-muted-foreground'
+                          }`}
+                        />
+
+                        {/* Quick action buttons - show on hover */}
+                        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              duplicateSlide(index)
+                            }}
+                            variant="ghost"
+                            size="sm"
+                            className="w-5 h-5 p-0 hover:bg-blue-100 dark:hover:bg-blue-900"
+                            title="Duplicate slide"
+                          >
+                            <div className="w-3 h-3 text-xs">📋</div>
+                          </Button>
+                          <Button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              if (slides.length > 1) {
+                                deleteSlide(index)
+                              }
+                            }}
+                            disabled={slides.length <= 1}
+                            variant="ghost"
+                            size="sm"
+                            className="w-5 h-5 p-0 hover:bg-red-100 dark:hover:bg-red-900 hover:text-red-600"
+                            title="Delete slide"
+                          >
+                            <Trash2 className="w-2.5 h-2.5" />
+                          </Button>
+                        </div>
+                      </div>
+
+                      {/* Slide info */}
+                      <div className="flex items-center justify-between text-xs">
+                        <span
+                          className={`${
+                            index === currentSlideIndex
+                              ? 'text-muted-foreground'
+                              : 'text-muted-foreground/70'
+                          }`}
+                        >
+                          {slide.elements?.length || 0} element
+                          {(slide.elements?.length || 0) !== 1 ? 's' : ''}
+                        </span>
+
+                        {/* Status indicators */}
+                        <div className="flex items-center gap-1">
+                          {slide.background && (
+                            <div
+                              className="w-2 h-2 bg-orange-400 rounded-full"
+                              title="Has background"
+                            />
+                          )}
+                          {(slide.elements?.length || 0) > 0 && (
+                            <div
+                              className="w-2 h-2 bg-green-400 rounded-full"
+                              title="Has content"
+                            />
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Mini canvas preview */}
+                      {/* <div className="mt-1.5 w-full h-8 bg-muted/30 rounded border overflow-hidden relative">
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <div className="text-xs text-muted-foreground/50">
+                            {slide.elements?.length ? '📄' : '📋'}
+                          </div>
+                        </div> */}
+                      {/* Could add actual mini preview here later */}
+                      {/* </div> */}
                     </div>
                   </div>
                 </div>
               </React.Fragment>
             ))}
+
+            {/* Add slide hint when empty */}
+            {slides.length === 0 && (
+              <div className="text-center py-8 text-muted-foreground">
+                <div className="text-2xl mb-2">📋</div>
+                <p className="text-xs">No slides yet</p>
+                <Button
+                  onClick={() => addSlide()}
+                  size="sm"
+                  variant="outline"
+                  className="mt-2 h-7 text-xs"
+                >
+                  <Plus className="w-3 h-3 mr-1" />
+                  Add First Slide
+                </Button>
+              </div>
+            )}
           </div>
         </div>
 
@@ -494,7 +613,12 @@ export default function EditorV2(): JSX.Element {
               <div className="relative">
                 {currentSlide && (
                   <div className="mb-4 text-center">
-                    <h2 className="text-xl font-semibold text-foreground">{currentSlide.title}</h2>
+                    <div className="group inline-flex items-center gap-2">
+                      <SlideTitle
+                        slideIndex={currentSlideIndex}
+                        className="text-xl font-semibold text-foreground"
+                      />
+                    </div>
                     {isPreviewMode && (
                       <p className="text-sm text-muted-foreground mt-1">
                         Live Preview - This is exactly how it will appear on the presentation screen
@@ -535,14 +659,9 @@ export default function EditorV2(): JSX.Element {
           </div>
         </div>
 
-        {/* Background Panel */}
-        {isPanelOpen && <BackgroundPanel />}
-
         {/* Properties Panel */}
         <PropertiesPanel />
       </div>
-
-      <Toaster />
     </div>
   )
 }

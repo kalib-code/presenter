@@ -22,6 +22,11 @@ export interface Song extends BaseEntity {
   tags: string[]
   isPublic: boolean
   globalBackground?: Background
+  // Extended metadata
+  copyright?: string
+  publisher?: string
+  language?: string
+  notes?: string
 }
 
 export interface Slide {
@@ -34,6 +39,10 @@ export interface Slide {
   transition?: Transition
   order: number
   notes?: string
+
+  // New optimization fields
+  backgroundOverride?: Partial<Background>
+  useGlobalBackground?: boolean
 }
 
 export interface SlideElement {
@@ -61,6 +70,10 @@ export interface SlideElement {
       }
   style: ElementStyle
   zIndex: number
+
+  // New optimization fields (optional for backward compatibility)
+  stylePreset?: string
+  styleOverrides?: Partial<ElementStyle>
 }
 
 export interface ElementStyle {
@@ -122,7 +135,15 @@ export interface Setlist extends BaseEntity {
 
 export interface SetlistItem {
   id: string
-  type: 'song' | 'presentation' | 'media' | 'announcement' | 'countdown'
+  type:
+    | 'song'
+    | 'presentation'
+    | 'media'
+    | 'announcement'
+    | 'countdown'
+    | 'video'
+    | 'image'
+    | 'audio'
   referenceId: string
   title: string
   duration?: number
@@ -132,18 +153,75 @@ export interface SetlistItem {
   // Countdown-specific properties
   countdownDuration?: number // Duration in seconds for countdown timers
   countdownMessage?: string // Message to display during countdown
+  // Media-specific properties
+  mediaConfig?: {
+    url?: string // File path or URL for media
+    autoplay?: boolean // Whether to auto-play the media
+    loop?: boolean // Whether to loop the media
+    volume?: number // Volume level (0-1)
+    startTime?: number // Start time in seconds
+    endTime?: number // End time in seconds
+    controls?: boolean // Show media controls
+    muted?: boolean // Start muted
+    thumbnail?: string // Thumbnail image for videos
+    mediaType?: 'video' | 'image' | 'audio' // Specific media type
+    aspectRatio?: '16:9' | '4:3' | '1:1' | 'auto' // Aspect ratio for display
+    objectFit?: 'cover' | 'contain' | 'fill' | 'scale-down' // How to fit media
+    // Background audio support for images and videos
+    backgroundAudio?: {
+      url?: string // Audio file path or URL
+      volume?: number // Background audio volume (0-1)
+      loop?: boolean // Whether to loop background audio
+      autoplay?: boolean // Whether to auto-play background audio
+      fadeIn?: number // Fade in duration in seconds
+      fadeOut?: number // Fade out duration in seconds
+    }
+  }
+  // Enhanced countdown customization
+  countdownConfig?: {
+    title?: string // Custom title for the countdown
+    message?: string // Custom message content
+    duration?: number // Duration in seconds
+    styling?: {
+      counterSize?: 'small' | 'medium' | 'large' | 'extra-large' // Size of the countdown numbers
+      counterColor?: string // Color of the countdown numbers
+      titleSize?: 'small' | 'medium' | 'large' // Size of the title text
+      titleColor?: string // Color of the title text
+      messageSize?: 'small' | 'medium' | 'large' // Size of the message text
+      messageColor?: string // Color of the message text
+      textShadow?: boolean // Whether to apply text shadow
+    }
+    background?: {
+      type: 'color' | 'image' | 'video'
+      value: string // Color hex, image URL, or video URL
+      opacity?: number // Background opacity (0-1)
+      size?: 'cover' | 'contain' | 'fill' | 'none' // For images/videos
+      position?: 'center' | 'top' | 'bottom' | 'left' | 'right' // For images/videos
+    }
+  }
 }
 
 // Presentation types
 export interface Presentation extends BaseEntity {
   name: string
-  type: 'scripture' | 'announcement' | 'custom'
+  type: 'scripture' | 'announcement' | 'custom' | 'sermon' | 'teaching' | 'testimony' | 'prayer'
   slides: PresentationSlide[]
   background?: Background
   theme?: Theme
   speaker?: string
   tags: string[]
   isPublic: boolean
+  // Extended metadata
+  serviceDate?: Date
+  occasion?: string
+  location?: string
+  description?: string
+  scripture?: string
+  topic?: string
+  estimatedDuration?: number
+  audience?: string
+  language?: string
+  notes?: string
 }
 
 export interface PresentationSlide {
@@ -286,4 +364,14 @@ export interface DatabaseError {
   operation: DatabaseOperation
   entity: string
   details?: Record<string, unknown>
+}
+
+// Add style preset types
+export interface StylePreset {
+  id: string
+  name: string
+  description?: string
+  style: ElementStyle
+  category: 'text' | 'title' | 'subtitle' | 'custom'
+  isBuiltIn: boolean
 }

@@ -5,6 +5,7 @@ import { Slider } from '@renderer/components/ui/slider'
 import { Image, Video, Trash2, Globe, Monitor, X, Settings, FolderOpen } from 'lucide-react'
 import { useBackgroundStore } from '@renderer/store/editor-background'
 import { MediaBrowser } from './MediaBrowser'
+import { saveFileToMedia } from '@renderer/utils/mediaUtils'
 import type { Media } from '@renderer/types/database'
 
 interface BackgroundPanelProps {
@@ -57,11 +58,13 @@ export const BackgroundPanel: React.FC<BackgroundPanelProps> = ({ className = ''
   const backgroundPosition = useBackgroundStore((state) => state.backgroundPosition)
 
   // Handle media selection from browser
-  const handleMediaSelect = async (file: Media) => {
+  const handleMediaSelect = async (file: Media & { mediaReference?: string }) => {
     try {
       console.log('🎯 Media selected:', file.name, file.type, file.filename)
-      const mediaUrl = await window.electron.ipcRenderer.invoke('get-media-data-url', file.filename)
-      console.log('📸 Media URL generated, length:', mediaUrl ? mediaUrl.length : 0)
+
+      // Use media reference instead of data URL
+      const mediaReference = file.mediaReference || `media://${file.filename}`
+      console.log('📸 Using media reference:', mediaReference)
 
       // Only handle image and video types for backgrounds
       if (file.type === 'image' || file.type === 'video') {
@@ -69,26 +72,18 @@ export const BackgroundPanel: React.FC<BackgroundPanelProps> = ({ className = ''
 
         if (mediaBrowserIsGlobal) {
           console.log('🌍 Setting global background')
-          if (file.type === 'image') {
-            setGlobalBackground(file.type, mediaUrl) // No blob for images
-          } else {
-            setGlobalBackground(file.type, mediaUrl, mediaUrl) // Blob for videos
-          }
+          setGlobalBackground(file.type, mediaReference)
         } else {
           console.log('📄 Setting slide background')
-          if (file.type === 'image') {
-            setSlideBackground(file.type, mediaUrl) // No blob for images
-          } else {
-            setSlideBackground(file.type, mediaUrl, mediaUrl) // Blob for videos
-          }
+          setSlideBackground(file.type, mediaReference)
         }
 
-        console.log('✅ Background set successfully')
+        console.log('✅ Background set successfully with media reference')
       } else {
         console.warn('⚠️ Unsupported file type for background:', file.type)
       }
     } catch (error) {
-      console.error('❌ Failed to load media file:', error)
+      console.error('❌ Failed to set media background:', error)
     }
   }
 
@@ -99,44 +94,56 @@ export const BackgroundPanel: React.FC<BackgroundPanelProps> = ({ className = ''
     setMediaBrowserOpen(true)
   }
 
-  const handleImageUpload = (
+  const handleImageUpload = async (
     event: React.ChangeEvent<HTMLInputElement>,
     isGlobal = false
-  ): void => {
+  ): Promise<void> => {
     const file = event.target.files?.[0]
     if (file && file.type.startsWith('image/')) {
-      const reader = new FileReader()
-      reader.onload = (e) => {
-        const result = e.target?.result as string
+      try {
+        console.log('🖼️ Uploading image file:', file.name)
+
+        // Save file to media folder and get media reference
+        const mediaReference = await saveFileToMedia(file)
+        console.log('📸 Image saved with reference:', mediaReference)
+
         if (isGlobal) {
-          setGlobalBackground('image', result)
+          setGlobalBackground('image', mediaReference)
         } else {
-          setSlideBackground('image', result)
+          setSlideBackground('image', mediaReference)
         }
+
+        console.log('✅ Image background set successfully')
+      } catch (error) {
+        console.error('❌ Failed to upload image:', error)
       }
-      reader.readAsDataURL(file)
     }
     event.target.value = ''
   }
 
-  const handleVideoUpload = (
+  const handleVideoUpload = async (
     event: React.ChangeEvent<HTMLInputElement>,
     isGlobal = false
-  ): void => {
+  ): Promise<void> => {
     const file = event.target.files?.[0]
     if (file && file.type.startsWith('video/')) {
-      const reader = new FileReader()
-      const blobUrl = URL.createObjectURL(file)
+      try {
+        console.log('🎬 Uploading video file:', file.name)
 
-      reader.onload = (e) => {
-        const result = e.target?.result as string
+        // Save file to media folder and get media reference
+        const mediaReference = await saveFileToMedia(file)
+        console.log('📹 Video saved with reference:', mediaReference)
+
         if (isGlobal) {
-          setGlobalBackground('video', result, blobUrl)
+          setGlobalBackground('video', mediaReference)
         } else {
-          setSlideBackground('video', result, blobUrl)
+          setSlideBackground('video', mediaReference)
         }
+
+        console.log('✅ Video background set successfully')
+      } catch (error) {
+        console.error('❌ Failed to upload video:', error)
       }
-      reader.readAsDataURL(file)
     }
     event.target.value = ''
   }

@@ -3,6 +3,61 @@ import { subscribeWithSelector } from 'zustand/middleware'
 
 export type EditorMode = 'song' | 'slide'
 export type EditorAction = 'create' | 'edit'
+export type PresentationType =
+  | 'scripture'
+  | 'announcement'
+  | 'custom'
+  | 'sermon'
+  | 'teaching'
+  | 'testimony'
+  | 'prayer'
+
+// Extended metadata interfaces
+interface SongMetadata {
+  // Extended Song Information
+  album?: string
+  year?: number
+  genre?: string
+
+  // Musical Information
+  tempo?: number
+  key?: string
+  duration?: number
+
+  // Additional Metadata
+  copyright?: string
+  publisher?: string
+  language?: string
+
+  // Performance Notes
+  notes?: string
+}
+
+interface PresentationMetadata {
+  // Presentation specific fields
+  type: PresentationType
+  speaker?: string
+
+  // Event Context
+  serviceDate?: Date
+  occasion?: string
+  location?: string
+
+  // Content Information
+  description?: string
+  scripture?: string
+  topic?: string
+
+  // Duration and Timing
+  estimatedDuration?: number
+
+  // Additional Metadata
+  audience?: string
+  language?: string
+
+  // Preparation Notes
+  notes?: string
+}
 
 interface EditorMetaState {
   // Core editor metadata
@@ -12,6 +67,10 @@ interface EditorMetaState {
   title: string
   artist: string // Used as "artist" for songs, "speaker" for slides
   tags: string[]
+
+  // Extended metadata
+  songMetadata: SongMetadata
+  presentationMetadata: PresentationMetadata
 
   // Loading states
   isLoading: boolean
@@ -31,6 +90,10 @@ interface EditorMetaActions {
   addTag: (tag: string) => void
   removeTag: (tag: string) => void
 
+  // Extended metadata setters
+  updateSongMetadata: (updates: Partial<SongMetadata>) => void
+  updatePresentationMetadata: (updates: Partial<PresentationMetadata>) => void
+
   // State management
   setLoading: (loading: boolean) => void
   setSaving: (saving: boolean) => void
@@ -44,6 +107,34 @@ interface EditorMetaActions {
 
 type EditorMetaStore = EditorMetaState & EditorMetaActions
 
+const initialSongMetadata: SongMetadata = {
+  album: undefined,
+  year: undefined,
+  genre: undefined,
+  tempo: undefined,
+  key: undefined,
+  duration: undefined,
+  copyright: undefined,
+  publisher: undefined,
+  language: undefined,
+  notes: undefined
+}
+
+const initialPresentationMetadata: PresentationMetadata = {
+  type: 'custom',
+  speaker: undefined,
+  serviceDate: undefined,
+  occasion: undefined,
+  location: undefined,
+  description: undefined,
+  scripture: undefined,
+  topic: undefined,
+  estimatedDuration: undefined,
+  audience: undefined,
+  language: undefined,
+  notes: undefined
+}
+
 const initialState: EditorMetaState = {
   mode: 'song',
   action: 'create',
@@ -51,6 +142,8 @@ const initialState: EditorMetaState = {
   title: '',
   artist: '',
   tags: [],
+  songMetadata: initialSongMetadata,
+  presentationMetadata: initialPresentationMetadata,
   isLoading: false,
   isSaving: false,
   lastSaved: undefined,
@@ -103,6 +196,22 @@ export const useEditorMetaStore = create<EditorMetaStore>()(
       get().markUnsaved()
     },
 
+    updateSongMetadata: (updates) => {
+      const state = get()
+      set({
+        songMetadata: { ...state.songMetadata, ...updates }
+      })
+      get().markUnsaved()
+    },
+
+    updatePresentationMetadata: (updates) => {
+      const state = get()
+      set({
+        presentationMetadata: { ...state.presentationMetadata, ...updates }
+      })
+      get().markUnsaved()
+    },
+
     setLoading: (isLoading) => {
       set({ isLoading })
     },
@@ -131,6 +240,8 @@ export const useEditorMetaStore = create<EditorMetaStore>()(
         title: '',
         artist: '',
         tags: [],
+        songMetadata: initialSongMetadata,
+        presentationMetadata: initialPresentationMetadata,
         isLoading: false,
         isSaving: false,
         hasUnsavedChanges: false,
@@ -152,7 +263,9 @@ export const useEditorMeta = () =>
     itemId: state.itemId,
     title: state.title,
     artist: state.artist,
-    tags: state.tags
+    tags: state.tags,
+    songMetadata: state.songMetadata,
+    presentationMetadata: state.presentationMetadata
   }))
 
 export const useEditorStatus = () =>

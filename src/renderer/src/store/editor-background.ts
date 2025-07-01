@@ -33,7 +33,7 @@ interface BackgroundState {
 
 interface BackgroundActions {
   // Slide background management
-  setSlideBackground: (type: 'image' | 'video', source: string, blob?: string) => void
+  setSlideBackground: (type: 'image' | 'video', source: string) => void
   removeSlideBackground: () => void
   setBackgroundOpacity: (opacity: number) => void
   setVideoPlaybackRate: (rate: number) => void
@@ -41,7 +41,7 @@ interface BackgroundActions {
   setVideoMuted: (muted: boolean) => void
 
   // Global background management
-  setGlobalBackground: (type: 'image' | 'video', source: string, blob?: string) => void
+  setGlobalBackground: (type: 'image' | 'video', source: string) => void
   removeGlobalBackground: () => void
   setGlobalBackgroundOpacity: (opacity: number) => void
   setGlobalVideoPlaybackRate: (rate: number) => void
@@ -93,7 +93,11 @@ export const useBackgroundStore = create<BackgroundStore>()(
   subscribeWithSelector((set, get) => ({
     ...initialState,
 
-    setSlideBackground: (type, source, blob) => {
+    setSlideBackground: (type, source) => {
+      console.log('🎨 [BACKGROUND_STORE] Setting slide background:', {
+        type,
+        source: source.substring(0, 50) + '...'
+      })
       const state = get()
       const oldState = {
         type: state.backgroundType,
@@ -102,8 +106,8 @@ export const useBackgroundStore = create<BackgroundStore>()(
         blob: state.backgroundVideoBlob
       }
 
-      // Clean up old blob URL if exists
-      if (state.backgroundVideoBlob && state.backgroundVideoBlob !== blob) {
+      // Clean up old blob URL if exists (legacy cleanup)
+      if (state.backgroundVideoBlob) {
         URL.revokeObjectURL(state.backgroundVideoBlob)
       }
 
@@ -111,8 +115,9 @@ export const useBackgroundStore = create<BackgroundStore>()(
         backgroundType: type,
         backgroundImage: type === 'image' ? source : null,
         backgroundVideo: type === 'video' ? source : null,
-        backgroundVideoBlob: type === 'video' ? blob || null : null
+        backgroundVideoBlob: null // No longer using blob URLs
       }
+      console.log('🎨 [BACKGROUND_STORE] New background state:', newState)
 
       // Update the current slide's background data
       // Import is done dynamically to avoid circular dependency
@@ -126,7 +131,11 @@ export const useBackgroundStore = create<BackgroundStore>()(
             opacity: state.backgroundOpacity,
             playbackRate: state.videoPlaybackRate
           }
-          slidesState.updateSlideBackground(currentIndex, backgroundData)
+          // Update slide background without triggering setCurrentSlide
+          const updatedSlides = slidesState.slides.map((slide, i) =>
+            i === currentIndex ? { ...slide, background: backgroundData } : slide
+          )
+          useSlidesStore.setState({ slides: updatedSlides })
         })
         .catch(console.error)
 
@@ -154,6 +163,7 @@ export const useBackgroundStore = create<BackgroundStore>()(
     },
 
     removeSlideBackground: () => {
+      console.log('🗑️ [BACKGROUND_STORE] Removing slide background')
       const state = get()
       const oldState = {
         type: state.backgroundType,
@@ -161,6 +171,11 @@ export const useBackgroundStore = create<BackgroundStore>()(
         video: state.backgroundVideo,
         blob: state.backgroundVideoBlob
       }
+      console.log('🗑️ [BACKGROUND_STORE] Current state before removal:', {
+        type: state.backgroundType,
+        hasImage: !!state.backgroundImage,
+        hasVideo: !!state.backgroundVideo
+      })
 
       // Clean up blob URL
       if (state.backgroundVideoBlob) {
@@ -173,7 +188,11 @@ export const useBackgroundStore = create<BackgroundStore>()(
         .then(({ useSlidesStore }) => {
           const slidesState = useSlidesStore.getState()
           const currentIndex = slidesState.currentSlideIndex
-          slidesState.updateSlideBackground(currentIndex, undefined)
+          // Update slide background without triggering setCurrentSlide
+          const updatedSlides = slidesState.slides.map((slide, i) =>
+            i === currentIndex ? { ...slide, background: undefined } : slide
+          )
+          useSlidesStore.setState({ slides: updatedSlides })
         })
         .catch(console.error)
 
@@ -238,7 +257,11 @@ export const useBackgroundStore = create<BackgroundStore>()(
       set({ videoMuted: muted })
     },
 
-    setGlobalBackground: (type, source, blob) => {
+    setGlobalBackground: (type, source) => {
+      console.log('🌍 [BACKGROUND_STORE] Setting global background:', {
+        type,
+        source: source.substring(0, 50) + '...'
+      })
       const state = get()
       const oldState = {
         type: state.globalBackgroundType,
@@ -246,9 +269,13 @@ export const useBackgroundStore = create<BackgroundStore>()(
         video: state.globalBackgroundVideo,
         blob: state.globalBackgroundVideoBlob
       }
+      console.log('🌍 [BACKGROUND_STORE] Current global state before update:', {
+        globalBackgroundType: state.globalBackgroundType,
+        hasGlobalImage: !!state.globalBackgroundImage
+      })
 
-      // Clean up old blob URL if exists
-      if (state.globalBackgroundVideoBlob && state.globalBackgroundVideoBlob !== blob) {
+      // Clean up old blob URL if exists (legacy cleanup)
+      if (state.globalBackgroundVideoBlob) {
         URL.revokeObjectURL(state.globalBackgroundVideoBlob)
       }
 
@@ -256,8 +283,9 @@ export const useBackgroundStore = create<BackgroundStore>()(
         globalBackgroundType: type,
         globalBackgroundImage: type === 'image' ? source : null,
         globalBackgroundVideo: type === 'video' ? source : null,
-        globalBackgroundVideoBlob: type === 'video' ? blob || null : null
+        globalBackgroundVideoBlob: null // No longer using blob URLs
       }
+      console.log('🌍 [BACKGROUND_STORE] New global background state:', newState)
 
       // Create history action
       const historyAction = createHistoryAction(
@@ -279,6 +307,16 @@ export const useBackgroundStore = create<BackgroundStore>()(
       )
 
       set(newState)
+      console.log('🌍 [BACKGROUND_STORE] Global background state after set call')
+
+      // Verify the state was actually updated
+      const updatedState = get()
+      console.log('🌍 [BACKGROUND_STORE] Verified global state after update:', {
+        globalBackgroundType: updatedState.globalBackgroundType,
+        globalBackgroundImage: updatedState.globalBackgroundImage?.substring(0, 50) + '...',
+        hasGlobalImage: !!updatedState.globalBackgroundImage
+      })
+
       useHistoryStore.getState().pushAction(historyAction)
     },
 

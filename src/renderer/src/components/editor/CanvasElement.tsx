@@ -1,5 +1,7 @@
-import React, { useCallback } from 'react'
-import { useCanvasStore, type EditorElement } from '@renderer/store/editor-canvas'
+import React, { useState, useEffect, useRef } from 'react'
+import { useCanvasStore } from '@renderer/store/editor-canvas'
+import { resolveMediaUrl, isMediaReference } from '@renderer/utils/mediaUtils'
+import type { EditorElement } from '@renderer/store/editor-canvas'
 
 interface CanvasElementProps {
   element: EditorElement
@@ -16,96 +18,187 @@ export const CanvasElement: React.FC<CanvasElementProps> = ({
   onMouseDown,
   onResizeStart
 }) => {
-  const { selectElement, deleteElement, updateElementContent } = useCanvasStore()
+  const { selectElement, deleteElement, updateElement } = useCanvasStore()
+  const [resolvedContent, setResolvedContent] = useState<string>(element.content)
+  const [isEditing, setIsEditing] = useState(false)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-  const handleClick = useCallback(
-    (e: React.MouseEvent) => {
-      e.stopPropagation()
-      selectElement(element.id)
-    },
-    [element.id, selectElement]
-  )
+  // Resolve media references when element content changes
+  useEffect(() => {
+    const loadContent = async (): Promise<void> => {
+      if (element.type === 'image' || element.type === 'video') {
+        const resolved = await resolveMediaUrl(element.content)
+        setResolvedContent(resolved)
+      } else {
+        setResolvedContent(element.content)
+      }
+    }
 
-  const handleContentChange = useCallback(
-    (value: string) => {
-      updateElementContent(element.id, value)
-    },
-    [element.id, updateElementContent]
-  )
+    loadContent()
+  }, [element.content, element.type])
 
-  const handleDelete = useCallback(() => {
+  const handleClick = (e: React.MouseEvent): void => {
+    e.stopPropagation()
+    selectElement(element.id)
+  }
+
+  const handleDoubleClick = (e: React.MouseEvent): void => {
+    e.stopPropagation()
+    if (element.type === 'text') {
+      setIsEditing(true)
+      // Focus the textarea after state update
+      setTimeout(() => {
+        textareaRef.current?.focus()
+        textareaRef.current?.select()
+      }, 0)
+    }
+  }
+
+  const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>): void => {
+    updateElement(element.id, { content: e.target.value })
+  }
+
+  const handleTextBlur = (): void => {
+    setIsEditing(false)
+  }
+
+  const handleTextKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      setIsEditing(false)
+    }
+    if (e.key === 'Escape') {
+      setIsEditing(false)
+    }
+    // Stop propagation to prevent canvas shortcuts
+    e.stopPropagation()
+  }
+
+  const handleDelete = (e: React.MouseEvent): void => {
+    e.stopPropagation()
     deleteElement(element.id)
-  }, [element.id, deleteElement])
+  }
 
-  const renderElement = (): React.ReactNode => {
+  const handleElementMouseDown = (e: React.MouseEvent): void => {
+    // Allow dragging from within the element content
+    // Only stop propagation if we're in text editing mode
+    if (element.type === 'text' && isEditing) {
+      e.stopPropagation()
+      return
+    }
+
+    // For all other cases, allow the drag to bubble up
+    onMouseDown(e, element.id)
+  }
+
+  const renderElement = (): JSX.Element | null => {
     switch (element.type) {
       case 'text':
         return (
-          <div className="relative w-full h-full">
-            <div
-              className="w-full h-full flex items-center justify-center cursor-text"
-              style={{
-                fontSize: element.style.fontSize,
-                fontFamily: element.style.fontFamily,
-                color: element.style.color,
-                backgroundColor: element.style.backgroundColor,
-                textAlign: element.style.textAlign,
-                fontWeight: element.style.fontWeight,
-                fontStyle: element.style.fontStyle,
-                textShadow: element.style.textShadow,
-                lineHeight: element.style.lineHeight,
-                opacity: element.opacity
-              }}
-              onClick={handleClick}
-            >
+          <div
+            className={`w-full h-full flex items-center justify-center relative ${
+              isEditing ? 'cursor-text' : 'cursor-move'
+            }`}
+            style={{
+              fontSize: element.style.fontSize,
+              fontFamily: element.style.fontFamily,
+              color: element.style.color,
+              backgroundColor: element.style.backgroundColor,
+              textAlign: element.style.textAlign,
+              fontWeight: element.style.fontWeight,
+              fontStyle: element.style.fontStyle,
+              textShadow: element.style.textShadow,
+              lineHeight: element.style.lineHeight,
+              opacity: element.opacity,
+              padding: '8px',
+              wordWrap: 'break-word',
+              overflow: 'hidden'
+            }}
+            onClick={handleClick}
+            onDoubleClick={handleDoubleClick}
+            onMouseDown={handleElementMouseDown}
+          >
+            {isEditing ? (
               <textarea
+                ref={textareaRef}
                 value={element.content}
-                onChange={(e) => handleContentChange(e.target.value)}
-                className="bg-transparent border-none outline-none w-full h-full resize-none"
+                onChange={handleTextChange}
+                onBlur={handleTextBlur}
+                onKeyDown={handleTextKeyDown}
+                className="w-full h-full bg-transparent border-none outline-none resize-none text-center"
                 style={{
                   fontSize: element.style.fontSize,
                   fontFamily: element.style.fontFamily,
                   color: element.style.color,
-                  backgroundColor: 'transparent',
                   fontWeight: element.style.fontWeight,
                   fontStyle: element.style.fontStyle,
                   lineHeight: element.style.lineHeight,
                   textAlign: element.style.textAlign,
-                  textShadow: element.style.textShadow
+                  textShadow: element.style.textShadow,
+                  padding: '0'
                 }}
-                onMouseDown={(e) => e.stopPropagation()}
-                onClick={handleClick}
-                onFocus={() => selectElement(element.id)}
                 placeholder="Type your text here..."
+                onMouseDown={(e) => e.stopPropagation()}
               />
-            </div>
+            ) : (
+              <div
+                className="w-full h-full flex items-center justify-center select-none"
+                style={{
+                  justifyContent:
+                    element.style.textAlign === 'left'
+                      ? 'flex-start'
+                      : element.style.textAlign === 'right'
+                        ? 'flex-end'
+                        : 'center',
+                  whiteSpace: 'pre-line'
+                }}
+              >
+                {element.content || 'Double-click to edit text'}
+              </div>
+            )}
           </div>
         )
 
       case 'image':
         return (
           <img
-            src={element.content}
+            src={resolvedContent}
             alt="Slide element"
             className="w-full h-full object-cover rounded"
             style={{ opacity: element.opacity }}
-            onMouseDown={(e) => e.stopPropagation()}
+            onMouseDown={handleElementMouseDown}
             onClick={handleClick}
             draggable={false}
+            onError={() => {
+              console.error('Failed to load image:', element.content, resolvedContent)
+              console.log('🖼️ Image info:', {
+                originalContent: element.content,
+                resolvedContent: resolvedContent,
+                isMediaReference: isMediaReference(element.content)
+              })
+            }}
           />
         )
 
       case 'video':
         return (
           <video
-            src={element.content}
+            src={resolvedContent}
             className="w-full h-full object-cover rounded"
             style={{ opacity: element.opacity }}
-            onMouseDown={(e) => e.stopPropagation()}
+            onMouseDown={handleElementMouseDown}
             onClick={handleClick}
             controls
             muted
             playsInline
+            onError={() => {
+              console.error('Failed to load video:', element.content, resolvedContent)
+              console.log('🎬 Video info:', {
+                originalContent: element.content,
+                resolvedContent: resolvedContent,
+                isMediaReference: isMediaReference(element.content)
+              })
+            }}
           />
         )
 
@@ -116,7 +209,13 @@ export const CanvasElement: React.FC<CanvasElementProps> = ({
 
   return (
     <div
-      className={`absolute group cursor-move ${
+      className={`absolute group ${
+        element.type === 'text' && !isEditing
+          ? 'cursor-move'
+          : element.type === 'text' && isEditing
+            ? 'cursor-text'
+            : 'cursor-move'
+      } ${
         isSelected
           ? 'border-2 border-dashed border-blue-500'
           : 'border-2 border-dashed border-transparent'
@@ -129,7 +228,6 @@ export const CanvasElement: React.FC<CanvasElementProps> = ({
         zIndex: element.zIndex || 0,
         transform: element.rotation ? `rotate(${element.rotation}deg)` : undefined
       }}
-      onMouseDown={(e) => onMouseDown(e, element.id)}
       data-canvas="true"
     >
       {renderElement()}
@@ -137,7 +235,7 @@ export const CanvasElement: React.FC<CanvasElementProps> = ({
       {/* Delete button */}
       <button
         onClick={handleDelete}
-        className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-xs z-10"
+        className="absolute -top-6 -right-6 w-6 h-6 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-xs z-10"
       >
         ×
       </button>

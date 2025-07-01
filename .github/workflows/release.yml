@@ -1,0 +1,141 @@
+name: Auto Release Notes
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Electron app
+        run: |
+          npm run build
+          npm run build:win
+          npm run build:mac
+          npm run build:linux
+
+      - name: Get latest tag
+        id: latest_tag
+        run: |
+          git fetch --tags
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          echo "latest_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+
+      - name: Generate version
+        id: version
+        run: |
+          if [ -z "${{ steps.latest_tag.outputs.latest_tag }}" ]; then
+            NEW_VERSION="v1.0.0"
+          else
+            LATEST_VERSION="${{ steps.latest_tag.outputs.latest_tag }}"
+            # Extract version numbers
+            VERSION_NUMBERS=$(echo $LATEST_VERSION | sed 's/v//')
+            MAJOR=$(echo $VERSION_NUMBERS | cut -d. -f1)
+            MINOR=$(echo $VERSION_NUMBERS | cut -d. -f2)
+            PATCH=$(echo $VERSION_NUMBERS | cut -d. -f3)
+            
+            # Increment patch version
+            NEW_PATCH=$((PATCH + 1))
+            NEW_VERSION="v${MAJOR}.${MINOR}.${NEW_PATCH}"
+          fi
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Generate release notes
+        id: release_notes
+        run: |
+          if [ -z "${{ steps.latest_tag.outputs.latest_tag }}" ]; then
+            COMMIT_RANGE="HEAD"
+          else
+            COMMIT_RANGE="${{ steps.latest_tag.outputs.latest_tag }}..HEAD"
+          fi
+          
+          # Generate release notes from commits
+          RELEASE_NOTES=$(git log --pretty=format:"* %s (%h)" $COMMIT_RANGE)
+          
+          # Create release notes with header
+          cat > release_notes.md << EOF
+          ## What's Changed
+          
+          $RELEASE_NOTES
+          
+          **Full Changelog**: https://github.com/${{ github.repository }}/compare/${{ steps.latest_tag.outputs.latest_tag }}...${{ steps.version.outputs.new_version }}
+          EOF
+          
+          echo "release_notes<<EOF" >> $GITHUB_OUTPUT
+          cat release_notes.md >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: electron-builds
+          path: |
+            dist/*.exe
+            dist/*.dmg
+            dist/*.AppImage
+            dist/*.deb
+            dist/*.rpm
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.version.outputs.new_version }}
+          release_name: Release ${{ steps.version.outputs.new_version }}
+          body: ${{ steps.release_notes.outputs.release_notes }}
+          draft: false
+          prerelease: false
+
+      - name: Upload Release Assets
+        run: |
+          # Upload all built files to the release
+          for file in dist/*.{exe,dmg,AppImage,deb,rpm}; do
+            if [ -f "$file" ]; then
+              echo "Uploading $file"
+              gh release upload ${{ steps.version.outputs.new_version }} "$file" --clobber
+            fi
+          done
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update release files for auto-updater
+        run: |
+          # Create latest.yml and latest-mac.yml for auto-updater
+          echo "version: ${{ steps.version.outputs.new_version }}" > latest.yml
+          echo "releaseDate: $(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)" >> latest.yml
+          echo "files:" >> latest.yml
+          for file in dist/*.{exe,dmg,AppImage}; do
+            if [ -f "$file" ]; then
+              filename=$(basename "$file")
+              filesize=$(stat -c%s "$file" 2>/dev/null || stat -f%z "$file")
+              echo "  - url: $filename" >> latest.yml
+              echo "    sha512: $(sha512sum "$file" | cut -d' ' -f1)" >> latest.yml
+              echo "    size: $filesize" >> latest.yml
+            fi
+          done
+          
+          # Upload update files
+          gh release upload ${{ steps.version.outputs.new_version }} latest.yml --clobber
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

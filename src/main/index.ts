@@ -1,15 +1,18 @@
-import { app, shell, BrowserWindow, ipcMain, screen } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, screen, dialog } from 'electron'
 import { join } from 'path'
 import { promises as fs } from 'fs'
+import * as fsSync from 'fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
+import { autoUpdater } from 'electron-updater'
 import icon from '../../resources/icon.png?asset'
 import { open } from 'lmdb'
 import { basename, extname } from 'path'
+import path from 'path'
 
 // Import types from the shared types file
-import type { Song, Media, Presentation, Setlist } from './types/database'
+import type { Song, Media, Presentation, Setlist, Settings } from './types/database'
 // TODO: Import these when implementing their IPC handlers
-// import type { Template, Settings } from './types/database'
+// import type { Template } from './types/database'
 
 // Legacy types for backward compatibility (will be removed)
 export type LegacySong = { id: string; name: string }
@@ -30,6 +33,37 @@ export type Audio = {
   duration: number
   size: number
   createdAt: string
+}
+
+// Helper function to get MIME type from file extension
+function getMimeType(ext: string): string {
+  switch (ext.toLowerCase()) {
+    case '.jpg':
+    case '.jpeg':
+      return 'image/jpeg'
+    case '.png':
+      return 'image/png'
+    case '.gif':
+      return 'image/gif'
+    case '.webp':
+      return 'image/webp'
+    case '.mp4':
+      return 'video/mp4'
+    case '.webm':
+      return 'video/webm'
+    case '.mov':
+      return 'video/quicktime'
+    case '.avi':
+      return 'video/x-msvideo'
+    case '.mp3':
+      return 'audio/mpeg'
+    case '.wav':
+      return 'audio/wav'
+    case '.ogg':
+      return 'audio/ogg'
+    default:
+      return 'application/octet-stream'
+  }
 }
 
 // LMDB databases
@@ -58,10 +92,10 @@ const mediaDb = open<Media>({
 //   compression: true
 // })
 
-// const settingsDb = open<Settings>({
-//   path: join(app.getPath('userData'), 'settings.lmdb'),
-//   compression: true
-// })
+const settingsDb = open<Settings>({
+  path: join(app.getPath('userData'), 'settings.lmdb'),
+  compression: true
+})
 
 // Legacy databases (will be migrated)
 const slideDb = open<Slide>({
@@ -371,6 +405,61 @@ async function deletePresentation(id: string): Promise<Presentation[]> {
   return await listPresentations()
 }
 
+// Settings CRUD operations
+async function listSettings(): Promise<Settings[]> {
+  const settings: Settings[] = []
+  for (const { value } of settingsDb.getRange()) {
+    if (value) settings.push(value)
+  }
+  return settings
+}
+
+async function createSetting(
+  data: Omit<Settings, 'createdAt' | 'updatedAt' | 'version'>
+): Promise<Settings[]> {
+  // For settings, the ID is passed in the data since it's the setting key
+  const id = data.id
+  const now = Date.now()
+  const setting: Settings = {
+    ...data,
+    id,
+    createdAt: now,
+    updatedAt: now,
+    version: 1
+  }
+  await settingsDb.put(id, setting)
+  return await listSettings()
+}
+
+async function getSetting(id: string): Promise<Settings | null> {
+  return (await settingsDb.get(id)) || null
+}
+
+async function updateSetting(id: string, data: Partial<Settings>): Promise<Settings[]> {
+  const existing = await settingsDb.get(id)
+  if (!existing) throw new Error('Setting not found')
+
+  const updated: Settings = {
+    ...existing,
+    ...data,
+    id,
+    updatedAt: Date.now(),
+    version: existing.version + 1
+  }
+
+  await settingsDb.put(id, updated)
+  return await listSettings()
+}
+
+async function deleteSetting(id: string): Promise<Settings[]> {
+  if (!id || id.trim() === '') {
+    throw new Error('Cannot delete setting: ID is empty or undefined')
+  }
+
+  await settingsDb.remove(id)
+  return await listSettings()
+}
+
 // Setlist CRUD operations
 async function listSetlists(): Promise<Setlist[]> {
   console.log('📋 [BACKEND] Listing all setlists...')
@@ -515,7 +604,7 @@ async function deleteSlide(id: string): Promise<Slide[]> {
 }
 
 // Image CRUD operations
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+
 async function seedImages(): Promise<void> {
   const keys = Array.from(imageDb.getKeys({ limit: 1 }))
   if (keys.length > 0) return
@@ -626,11 +715,17 @@ async function clearAllDatabases(): Promise<void> {
   }
   console.log('Presentations database cleared')
 
-  // Clear presentations
-  for (const { key } of presentationDb.getRange()) {
-    await presentationDb.remove(key)
+  // Clear setlists
+  for (const { key } of setlistDb.getRange()) {
+    await setlistDb.remove(key)
   }
-  console.log('Presentations database cleared')
+  console.log('Setlists database cleared')
+
+  // Clear settings
+  for (const { key } of settingsDb.getRange()) {
+    await settingsDb.remove(key)
+  }
+  console.log('Settings database cleared')
 
   // Clear slides
   for (const { key } of slideDb.getRange()) {
@@ -673,9 +768,47 @@ async function initializeDatabases(): Promise<void> {
   ])
 }
 
+// Auto-updater configuration
+function setupAutoUpdater(): void {
+  // Configure auto-updater
+  autoUpdater.checkForUpdatesAndNotify()
+
+  // Auto-updater events
+  autoUpdater.on('checking-for-update', () => {
+    console.log('Checking for update...')
+  })
+
+  autoUpdater.on('update-available', (info) => {
+    console.log('Update available:', info)
+  })
+
+  autoUpdater.on('update-not-available', (info) => {
+    console.log('Update not available:', info)
+  })
+
+  autoUpdater.on('error', (err) => {
+    console.log('Error in auto-updater:', err)
+  })
+
+  autoUpdater.on('download-progress', (progressObj) => {
+    let log_message = 'Download speed: ' + progressObj.bytesPerSecond
+    log_message = log_message + ' - Downloaded ' + progressObj.percent + '%'
+    log_message = log_message + ' (' + progressObj.transferred + '/' + progressObj.total + ')'
+    console.log(log_message)
+  })
+
+  autoUpdater.on('update-downloaded', (info) => {
+    console.log('Update downloaded:', info)
+    autoUpdater.quitAndInstall()
+  })
+}
+
+// Main window reference
+let mainWindow: BrowserWindow | null = null
+
 function createWindow(): void {
   // Create the browser window.
-  const mainWindow = new BrowserWindow({
+  mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     show: false,
@@ -693,12 +826,12 @@ function createWindow(): void {
   })
 
   mainWindow.on('ready-to-show', () => {
-    mainWindow.show()
+    mainWindow?.show()
 
     // Auto-open DevTools in development
     if (is.dev) {
       console.log('Development mode: Opening DevTools')
-      mainWindow.webContents.openDevTools()
+      mainWindow?.webContents.openDevTools()
     }
   })
 
@@ -737,25 +870,58 @@ function createWindow(): void {
 
 // Projection window management
 let projectionWindow: BrowserWindow | null = null
+let currentProjectionDisplay: Electron.Display | null = null
+
+// Screen detection and management
+function getAllDisplays(): Electron.Display[] {
+  return screen.getAllDisplays()
+}
+
+function getProjectionDisplay(): Electron.Display {
+  // If no specific display set, try to find external display first
+  const displays = screen.getAllDisplays()
+  const primaryDisplay = screen.getPrimaryDisplay()
+
+  // Prefer external display over primary if available
+  const externalDisplay = displays.find((display) => display.id !== primaryDisplay.id)
+  const targetDisplay = externalDisplay || primaryDisplay
+
+  console.log(
+    '📺 [SCREEN] Available displays:',
+    displays.map((d) => ({
+      id: d.id,
+      bounds: d.bounds,
+      workArea: d.workArea,
+      scaleFactor: d.scaleFactor,
+      isPrimary: d.id === primaryDisplay.id
+    }))
+  )
+
+  console.log('📺 [SCREEN] Selected projection display:', {
+    id: targetDisplay.id,
+    bounds: targetDisplay.bounds,
+    workArea: targetDisplay.workArea,
+    scaleFactor: targetDisplay.scaleFactor,
+    isPrimary: targetDisplay.id === primaryDisplay.id
+  })
+
+  return targetDisplay
+}
 
 function createProjectionWindow(): BrowserWindow {
   console.log('Creating projection window...')
 
-  // Get primary display
-  const primaryDisplay = screen.getPrimaryDisplay()
-  console.log('Using primary display:', {
-    id: primaryDisplay.id,
-    bounds: primaryDisplay.bounds
-  })
+  // Get the best display for projection
+  currentProjectionDisplay = getProjectionDisplay()
+  const { bounds, workArea } = currentProjectionDisplay
 
-  // Create window on primary display, offset from main window
-  const { width, height } = primaryDisplay.workAreaSize
-  const windowWidth = Math.min(1200, width - 100)
-  const windowHeight = Math.min(800, height - 100)
+  // Use full work area for projection window (can be toggled to fullscreen later)
+  const windowWidth = Math.min(1200, workArea.width - 100)
+  const windowHeight = Math.min(800, workArea.height - 100)
 
   projectionWindow = new BrowserWindow({
-    x: 100,
-    y: 100,
+    x: bounds.x + 100,
+    y: bounds.y + 100,
     width: windowWidth,
     height: windowHeight,
     fullscreen: false,
@@ -764,8 +930,10 @@ function createProjectionWindow(): BrowserWindow {
     title: 'Projection Window',
     backgroundColor: '#000000',
     webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
       nodeIntegration: true,
-      contextIsolation: false
+      contextIsolation: false,
+      webSecurity: false // Allow loading local files for media
       // Enable nodeIntegration for direct IPC access in presentation window
     }
   })
@@ -842,6 +1010,17 @@ function stopProjection(): void {
   }
 }
 
+// Custom font management
+const CUSTOM_FONTS_DIR = path.join(app.getPath('userData'), 'custom-fonts')
+
+// Ensure custom fonts directory exists
+if (!fsSync.existsSync(CUSTOM_FONTS_DIR)) {
+  fsSync.mkdirSync(CUSTOM_FONTS_DIR, { recursive: true })
+}
+
+// Supported font file extensions
+const SUPPORTED_FONT_EXTENSIONS = ['.ttf', '.otf', '.woff', '.woff2', '.eot']
+
 // This method will be called when Electron has finished initialization
 app.whenReady().then(() => {
   // Set app user model id for windows
@@ -857,8 +1036,71 @@ app.whenReady().then(() => {
   // Initialize databases
   initializeDatabases()
 
+  // Setup auto-updater
+  setupAutoUpdater()
+
   // IPC test
   ipcMain.handle('ping', () => 'pong')
+
+  // Auto-updater IPC handlers
+  ipcMain.handle('check-for-updates', async () => {
+    return await autoUpdater.checkForUpdatesAndNotify()
+  })
+
+  ipcMain.handle('quit-and-install', () => {
+    autoUpdater.quitAndInstall()
+  })
+
+  // IPC handlers - Screen Detection
+  ipcMain.handle('get-displays', () => {
+    return getAllDisplays()
+  })
+
+  ipcMain.handle('get-projection-display', () => {
+    return currentProjectionDisplay || getProjectionDisplay()
+  })
+
+  ipcMain.handle('set-projection-display', (_event, displayId: number) => {
+    const displays = getAllDisplays()
+    const targetDisplay = displays.find((d) => d.id === displayId)
+    if (targetDisplay) {
+      currentProjectionDisplay = targetDisplay
+      console.log('📺 [SCREEN] Switched projection display to:', {
+        id: targetDisplay.id,
+        bounds: targetDisplay.bounds,
+        workArea: targetDisplay.workArea
+      })
+
+      // Recreate projection window on new display if it exists
+      if (projectionWindow && !projectionWindow.isDestroyed()) {
+        const wasVisible = projectionWindow.isVisible()
+        projectionWindow.close()
+        projectionWindow = createProjectionWindow()
+        if (wasVisible) {
+          projectionWindow.show()
+        }
+      }
+
+      return targetDisplay
+    }
+    return null
+  })
+
+  // Monitor display changes
+  screen.on('display-added', () => {
+    console.log('📺 [SCREEN] Display added, notifying renderer')
+    mainWindow?.webContents.send('displays-changed', getAllDisplays())
+  })
+
+  screen.on('display-removed', () => {
+    console.log('📺 [SCREEN] Display removed, notifying renderer')
+    mainWindow?.webContents.send('displays-changed', getAllDisplays())
+  })
+
+  screen.on('display-metrics-changed', () => {
+    console.log('📺 [SCREEN] Display metrics changed, notifying renderer')
+    mainWindow?.webContents.send('displays-changed', getAllDisplays())
+  })
 
   // IPC handlers - Songs
   ipcMain.handle('list-songs', async () => {
@@ -964,6 +1206,8 @@ app.whenReady().then(() => {
             const ext = extname(file).toLowerCase()
 
             return {
+              id: file, // Use filename as ID for now
+              name: file, // Use filename as display name
               filename: file,
               path: filePath,
               url: getMediaUrl(file),
@@ -973,7 +1217,14 @@ app.whenReady().then(() => {
                 : ['.mp4', '.mov', '.avi'].includes(ext)
                   ? 'video'
                   : 'audio',
-              createdAt: stats.birthtimeMs
+              mimeType: getMimeType(ext),
+              tags: [],
+              isPublic: true,
+              checksum: '', // TODO: Generate actual checksum
+              createdAt: stats.birthtimeMs,
+              updatedAt: stats.mtimeMs,
+              createdBy: 'system',
+              version: 1
             }
           })
       )
@@ -999,16 +1250,41 @@ app.whenReady().then(() => {
     }
   })
 
-  // Get media file as data URL for display in browser
-  ipcMain.handle('get-media-data-url', async (_event, filename: string) => {
+  // Get media file URL (more efficient than data URL)
+  ipcMain.handle('get-media-file-url', async (_event, filename: string) => {
+    console.log('🔍 [MAIN] get-media-file-url requested for:', filename)
     try {
       const filePath = join(getMediaDirectory(), filename)
 
       // Check if file exists
       try {
         await fs.access(filePath)
+        console.log('✅ [MAIN] Media file found:', filePath)
+        // Return file:// URL for efficient access
+        return `file://${filePath}`
       } catch {
-        console.error('Media file not found:', filePath)
+        console.error('❌ [MAIN] Media file not found:', filePath)
+        return null
+      }
+    } catch (error) {
+      console.error('❌ [MAIN] Failed to get media file URL for:', filename, error)
+      return null
+    }
+  })
+
+  // Get media file as data URL for display in browser (fallback)
+  ipcMain.handle('get-media-data-url', async (_event, filename: string) => {
+    console.log('🔍 [MAIN] get-media-data-url requested for:', filename)
+    try {
+      const filePath = join(getMediaDirectory(), filename)
+      console.log('🔍 [MAIN] Looking for media file at:', filePath)
+
+      // Check if file exists
+      try {
+        await fs.access(filePath)
+        console.log('✅ [MAIN] Media file found:', filePath)
+      } catch {
+        console.error('❌ [MAIN] Media file not found:', filePath)
         return null
       }
 
@@ -1053,11 +1329,165 @@ app.whenReady().then(() => {
       const base64Data = fileBuffer.toString('base64')
       const dataUrl = `data:${mimeType};base64,${base64Data}`
 
-      console.log('Generated data URL for:', filename, 'size:', dataUrl.length, 'MIME:', mimeType)
+      console.log(
+        '✅ [MAIN] Generated data URL for:',
+        filename,
+        'size:',
+        dataUrl.length,
+        'MIME:',
+        mimeType
+      )
       return dataUrl
     } catch (error) {
-      console.error('Failed to get media data URL for:', filename, error)
+      console.error('❌ [MAIN] Failed to get media data URL for:', filename, error)
       return null
+    }
+  })
+
+  // Get media file path for direct file access
+  ipcMain.handle('get-media-file-path', async (_event, filename: string) => {
+    console.log('🔍 [MAIN] get-media-file-path requested for:', filename)
+    try {
+      const filePath = join(getMediaDirectory(), filename)
+      console.log('🔍 [MAIN] Media file path:', filePath)
+
+      // Check if file exists
+      try {
+        await fs.access(filePath)
+        console.log('✅ [MAIN] Media file exists:', filePath)
+        return filePath
+      } catch {
+        console.error('❌ [MAIN] Media file not found:', filePath)
+        return null
+      }
+    } catch (error) {
+      console.error('❌ [MAIN] Failed to get media file path for:', filename, error)
+      return null
+    }
+  })
+
+  // Find media file by checksum (for base64 to file URL conversion)
+  ipcMain.handle('find-media-by-checksum', async (_event, checksum: string) => {
+    console.log(
+      '🔍 [MAIN] find-media-by-checksum requested for:',
+      checksum.substring(0, 16) + '...'
+    )
+    try {
+      const mediaDir = getMediaDirectory()
+
+      // Ensure media directory exists
+      try {
+        await fs.access(mediaDir)
+      } catch {
+        console.log('📁 [MAIN] Media directory does not exist:', mediaDir)
+        return null
+      }
+
+      // Read all files in media directory
+      const files = await fs.readdir(mediaDir)
+      console.log('📂 [MAIN] Checking', files.length, 'files in media directory')
+
+      // Check each file's checksum
+      for (const filename of files) {
+        try {
+          const filePath = join(mediaDir, filename)
+          const stats = await fs.stat(filePath)
+
+          // Skip directories
+          if (stats.isDirectory()) continue
+
+          // Read file and generate checksum
+          const fileBuffer = await fs.readFile(filePath)
+          const crypto = await import('crypto')
+          const hash = crypto.createHash('sha256')
+          hash.update(fileBuffer)
+          const fileChecksum = hash.digest('hex')
+
+          // Check if checksums match
+          if (fileChecksum === checksum) {
+            console.log('✅ [MAIN] Found matching file by checksum:', filename)
+            return filename
+          }
+        } catch (error) {
+          console.warn('⚠️ [MAIN] Failed to check file:', filename, error)
+          continue
+        }
+      }
+
+      console.log('❌ [MAIN] No matching file found for checksum')
+      return null
+    } catch (error) {
+      console.error('❌ [MAIN] Failed to find media by checksum:', error)
+      return null
+    }
+  })
+
+  // Save file to media folder and return filename
+  ipcMain.handle(
+    'save-media-file',
+    async (
+      _event,
+      fileData: {
+        filename: string
+        buffer: number[]
+        mimeType: string
+        size: number
+      }
+    ) => {
+      console.log('💾 [MAIN] save-media-file requested for:', fileData.filename)
+      try {
+        await ensureMediaDirectory()
+
+        // Convert number array back to buffer
+        const buffer = Buffer.from(fileData.buffer)
+
+        // Generate unique filename if needed (check for conflicts)
+        let finalFilename = fileData.filename
+        let counter = 1
+
+        while (true) {
+          const targetPath = join(getMediaDirectory(), finalFilename)
+          try {
+            await fs.access(targetPath)
+            // File exists, generate new name
+            const ext = extname(fileData.filename)
+            const baseName = basename(fileData.filename, ext)
+            finalFilename = `${baseName}_${counter}${ext}`
+            counter++
+          } catch {
+            // File doesn't exist, we can use this name
+            break
+          }
+        }
+
+        const finalPath = join(getMediaDirectory(), finalFilename)
+
+        // Write file to media directory
+        await fs.writeFile(finalPath, buffer)
+
+        console.log('✅ [MAIN] File saved to media folder:', finalFilename)
+
+        return {
+          filename: finalFilename,
+          path: finalPath,
+          url: getMediaUrl(finalFilename),
+          size: fileData.size
+        }
+      } catch (error) {
+        console.error('❌ [MAIN] Failed to save media file:', error)
+        throw error
+      }
+    }
+  )
+
+  // Check if media file exists
+  ipcMain.handle('media-file-exists', async (_event, filename: string) => {
+    try {
+      const filePath = join(getMediaDirectory(), filename)
+      await fs.access(filePath)
+      return true
+    } catch {
+      return false
     }
   })
 
@@ -1083,6 +1513,30 @@ app.whenReady().then(() => {
 
   ipcMain.handle('delete-presentation', async (_event, id: string) => {
     return await deletePresentation(id)
+  })
+
+  // IPC handlers - Settings
+  ipcMain.handle('list-settings', async () => {
+    return await listSettings()
+  })
+
+  ipcMain.handle(
+    'create-setting',
+    async (_event, data: Omit<Settings, 'createdAt' | 'updatedAt' | 'version'>) => {
+      return await createSetting(data)
+    }
+  )
+
+  ipcMain.handle('get-setting', async (_event, id: string) => {
+    return await getSetting(id)
+  })
+
+  ipcMain.handle('update-setting', async (_event, id: string, data: Partial<Settings>) => {
+    return await updateSetting(id, data)
+  })
+
+  ipcMain.handle('delete-setting', async (_event, id: string) => {
+    return await deleteSetting(id)
   })
 
   // IPC handlers - Setlists
@@ -1271,6 +1725,266 @@ app.whenReady().then(() => {
 
   ipcMain.on('stop-projection', () => {
     stopProjection()
+  })
+
+  // System font enumeration (optional advanced feature)
+  ipcMain.handle('get-system-fonts', async () => {
+    try {
+      // For now, return a basic list of common system fonts
+      // This can be enhanced with font-list package if needed
+      const systemFonts = [
+        // macOS fonts
+        'San Francisco',
+        'SF Pro Display',
+        'SF Pro Text',
+        'Helvetica Neue',
+        'Lucida Grande',
+        'Apple Garamond',
+        'Baskerville',
+
+        // Windows fonts
+        'Segoe UI',
+        'Segoe UI Historic',
+        'Segoe UI Emoji',
+        'Calibri',
+        'Cambria',
+        'Consolas',
+        'Tahoma',
+
+        // Linux fonts
+        'Ubuntu',
+        'Cantarell',
+        'DejaVu Sans',
+        'Liberation Sans',
+        'Noto Sans',
+        'Roboto',
+
+        // Cross-platform
+        'Arial',
+        'Times New Roman',
+        'Courier New',
+        'Verdana',
+        'Georgia',
+        'Impact',
+        'Trebuchet MS'
+      ]
+
+      return systemFonts
+    } catch (error) {
+      console.error('Failed to get system fonts:', error)
+      return []
+    }
+  })
+
+  // Custom font IPC handlers
+  ipcMain.handle('upload-custom-font', async () => {
+    try {
+      const result = await dialog.showOpenDialog({
+        title: 'Select Font Files',
+        filters: [
+          {
+            name: 'Font Files',
+            extensions: ['ttf', 'otf', 'woff', 'woff2', 'eot']
+          }
+        ],
+        properties: ['openFile', 'multiSelections']
+      })
+
+      if (result.canceled || !result.filePaths.length) {
+        return { success: false, message: 'No files selected' }
+      }
+
+      const uploadedFonts: Array<{
+        id: string
+        name: string
+        fileName: string
+        originalName: string
+        filePath: string
+        fileSize: number
+        uploadDate: string
+        type: string
+      }> = []
+
+      for (let i = 0; i < result.filePaths.length; i++) {
+        const filePath = result.filePaths[i]
+        try {
+          const fileName = path.basename(filePath)
+          const fileExt = path.extname(fileName).toLowerCase()
+
+          // Validate file extension
+          if (!SUPPORTED_FONT_EXTENSIONS.includes(fileExt)) {
+            console.warn(`Skipping unsupported font file: ${fileName}`)
+            continue
+          }
+
+          // Generate unique filename to avoid conflicts
+          // Use timestamp + index to ensure uniqueness even for simultaneous uploads
+          const timestamp = Date.now() + i
+          const uniqueFileName = `${timestamp}_${fileName}`
+          const destPath = path.join(CUSTOM_FONTS_DIR, uniqueFileName)
+
+          // Copy font file to custom fonts directory
+          fsSync.copyFileSync(filePath, destPath)
+
+          // Extract font name from filename (remove extension and timestamp)
+          const fontName = fileName.replace(fileExt, '').replace(/[-_]/g, ' ')
+
+          const fontInfo = {
+            id: timestamp.toString(),
+            name: fontName,
+            fileName: uniqueFileName,
+            originalName: fileName,
+            filePath: destPath,
+            fileSize: fsSync.statSync(destPath).size,
+            uploadDate: new Date().toISOString(),
+            type: 'custom'
+          }
+
+          uploadedFonts.push(fontInfo)
+          console.log(`✅ Font uploaded: ${fontName}`)
+        } catch (error) {
+          console.error(`❌ Failed to upload font ${path.basename(filePath)}:`, error)
+        }
+      }
+
+      return {
+        success: true,
+        fonts: uploadedFonts,
+        message: `Successfully uploaded ${uploadedFonts.length} font(s)`
+      }
+    } catch (error) {
+      console.error('Font upload error:', error)
+      return { success: false, message: 'Failed to upload fonts' }
+    }
+  })
+
+  ipcMain.handle('get-custom-fonts', async () => {
+    try {
+      if (!fsSync.existsSync(CUSTOM_FONTS_DIR)) {
+        return []
+      }
+
+      const fontFiles = fsSync.readdirSync(CUSTOM_FONTS_DIR)
+      const customFonts: Array<{
+        id: string
+        name: string
+        fileName: string
+        originalName: string
+        filePath: string
+        fileSize: number
+        uploadDate: string
+        type: string
+      }> = []
+
+      for (const fileName of fontFiles) {
+        const filePath = path.join(CUSTOM_FONTS_DIR, fileName)
+        const fileExt = path.extname(fileName).toLowerCase()
+
+        if (SUPPORTED_FONT_EXTENSIONS.includes(fileExt)) {
+          try {
+            const stats = fsSync.statSync(filePath)
+
+            // Extract timestamp and original name from filename
+            const parts = fileName.split('_')
+            const timestamp = parts[0]
+            const originalName = parts.slice(1).join('_')
+            const fontName = originalName.replace(fileExt, '').replace(/[-_]/g, ' ')
+
+            const fontInfo = {
+              id: timestamp,
+              name: fontName,
+              fileName: fileName,
+              originalName: originalName,
+              filePath: filePath,
+              fileSize: stats.size,
+              uploadDate: stats.birthtime.toISOString(),
+              type: 'custom'
+            }
+
+            customFonts.push(fontInfo)
+          } catch (error) {
+            console.error(`Error reading font file ${fileName}:`, error)
+          }
+        }
+      }
+
+      return customFonts.sort((a, b) => a.name.localeCompare(b.name))
+    } catch (error) {
+      console.error('Failed to get custom fonts:', error)
+      return []
+    }
+  })
+
+  ipcMain.handle('delete-custom-font', async (_, fontId: string) => {
+    try {
+      // Get custom fonts directly
+      if (!fsSync.existsSync(CUSTOM_FONTS_DIR)) {
+        return { success: false, message: 'Font not found' }
+      }
+
+      const fontFiles = fsSync.readdirSync(CUSTOM_FONTS_DIR)
+      let foundFont: { id: string; fileName: string; filePath: string } | null = null
+
+      for (const fileName of fontFiles) {
+        const parts = fileName.split('_')
+        const timestamp = parts[0]
+        if (timestamp === fontId) {
+          foundFont = {
+            id: timestamp,
+            fileName: fileName,
+            filePath: path.join(CUSTOM_FONTS_DIR, fileName)
+          }
+          break
+        }
+      }
+
+      if (!foundFont) {
+        return { success: false, message: 'Font not found' }
+      }
+
+      // Delete the font file
+      if (fsSync.existsSync(foundFont.filePath)) {
+        fsSync.unlinkSync(foundFont.filePath)
+      }
+
+      return { success: true, message: `Font deleted successfully` }
+    } catch (error) {
+      console.error('Failed to delete custom font:', error)
+      return { success: false, message: 'Failed to delete font' }
+    }
+  })
+
+  ipcMain.handle('get-font-url', async (_, fontId: string) => {
+    try {
+      // Get custom fonts directly
+      if (!fsSync.existsSync(CUSTOM_FONTS_DIR)) {
+        return null
+      }
+
+      const fontFiles = fsSync.readdirSync(CUSTOM_FONTS_DIR)
+      let foundFont: { filePath: string } | null = null
+
+      for (const fileName of fontFiles) {
+        const parts = fileName.split('_')
+        const timestamp = parts[0]
+        if (timestamp === fontId) {
+          foundFont = {
+            filePath: path.join(CUSTOM_FONTS_DIR, fileName)
+          }
+          break
+        }
+      }
+
+      if (!foundFont || !fsSync.existsSync(foundFont.filePath)) {
+        return null
+      }
+
+      // Return file:// URL for local font file
+      return `file://${foundFont.filePath}`
+    } catch (error) {
+      console.error('Failed to get font URL:', error)
+      return null
+    }
   })
 
   // Create main window
