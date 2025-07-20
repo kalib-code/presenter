@@ -1,7 +1,11 @@
 import { useEffect, useState } from 'react'
 import { SlideRenderer } from '@renderer/components/editor/SlideRenderer'
 import { BackgroundRenderer } from '@renderer/components/editor/BackgroundRenderer'
-import { resolutionManager, getCurrentProjectionResolution, getCurrentTextScale } from '@renderer/utils/resolutionManager'
+import {
+  resolutionManager,
+  getCurrentProjectionResolution,
+  getCurrentTextScale
+} from '@renderer/utils/resolutionManager'
 import { scaleTextSizeEnhanced } from '@renderer/utils/screenScaling'
 import { Resolution } from '@renderer/types/resolution'
 
@@ -145,7 +149,7 @@ export default function Presentation(): JSX.Element {
     } catch (error) {
       console.warn('📺 [PRESENTATION] Failed to calculate optimal text size:', error)
     }
-    
+
     // Fallback based on window dimensions
     const scale = Math.min(windowDimensions.width / 1920, windowDimensions.height / 1080)
     return `${Math.round(baseSize * scale)}px`
@@ -157,10 +161,10 @@ export default function Presentation(): JSX.Element {
       try {
         await resolutionManager.initialize()
         const resolution = getCurrentProjectionResolution()
-        
+
         setCurrentResolution(resolution)
         setIsResolutionReady(true)
-        
+
         console.log('📺 [PRESENTATION] Resolution initialized:', {
           resolution: resolution ? `${resolution.width}x${resolution.height}` : 'none',
           category: resolution?.category,
@@ -239,12 +243,101 @@ export default function Presentation(): JSX.Element {
       })
     }
 
+    // Media control handlers for controlling video/audio elements
+    const handleMediaControl = (
+      _event: unknown,
+      data: { action: string; value?: any; mediaId?: string }
+    ): void => {
+      console.log('🎵 [PRESENTATION] Received media control command:', data)
+
+      // Find all media elements (video and audio) in the presentation
+      const mediaElements = document.querySelectorAll('video, audio') as NodeListOf<
+        HTMLVideoElement | HTMLAudioElement
+      >
+
+      mediaElements.forEach((mediaElement) => {
+        try {
+          switch (data.action) {
+            case 'play':
+              console.log('🎵 [PRESENTATION] Playing media element')
+              mediaElement.play()
+              break
+            case 'pause':
+              console.log('⏸️ [PRESENTATION] Pausing media element')
+              mediaElement.pause()
+              break
+            case 'stop':
+              console.log('⏹️ [PRESENTATION] Stopping media element')
+              mediaElement.pause()
+              mediaElement.currentTime = 0
+              break
+            case 'setVolume':
+              if (typeof data.value === 'number') {
+                console.log('🔊 [PRESENTATION] Setting volume to:', data.value)
+                mediaElement.volume = Math.max(0, Math.min(1, data.value))
+              }
+              break
+            case 'setMuted':
+              if (typeof data.value === 'boolean') {
+                console.log('🔇 [PRESENTATION] Setting muted to:', data.value)
+                mediaElement.muted = data.value
+              }
+              break
+            case 'seek':
+              if (typeof data.value === 'number') {
+                console.log('⏪ [PRESENTATION] Seeking to:', data.value)
+                mediaElement.currentTime = data.value
+              }
+              break
+          }
+        } catch (error) {
+          console.error('🚨 [PRESENTATION] Error controlling media element:', error)
+        }
+      })
+    }
+
+    const handleMediaPlay = (_event: unknown, mediaId?: string): void => {
+      console.log('🎵 [PRESENTATION] Received media play command', mediaId)
+      handleMediaControl(_event, { action: 'play', mediaId })
+    }
+
+    const handleMediaPause = (_event: unknown, mediaId?: string): void => {
+      console.log('⏸️ [PRESENTATION] Received media pause command', mediaId)
+      handleMediaControl(_event, { action: 'pause', mediaId })
+    }
+
+    const handleMediaStop = (_event: unknown, mediaId?: string): void => {
+      console.log('⏹️ [PRESENTATION] Received media stop command', mediaId)
+      handleMediaControl(_event, { action: 'stop', mediaId })
+    }
+
+    const handleMediaVolume = (
+      _event: unknown,
+      data: { volume: number; mediaId?: string }
+    ): void => {
+      console.log('🔊 [PRESENTATION] Received media volume command', data)
+      handleMediaControl(_event, { action: 'setVolume', value: data.volume, mediaId: data.mediaId })
+    }
+
+    const handleMediaMute = (_event: unknown, data: { muted: boolean; mediaId?: string }): void => {
+      console.log('🔇 [PRESENTATION] Received media mute command', data)
+      handleMediaControl(_event, { action: 'setMuted', value: data.muted, mediaId: data.mediaId })
+    }
+
     // Register IPC listeners only if ipcRenderer is available
     if (ipcRenderer) {
       ipcRenderer.on('projection-update', handleProjectionUpdate)
       ipcRenderer.on('projection-blank', handleBlankToggle)
       ipcRenderer.on('projection-logo', handleLogoToggle)
       ipcRenderer.on('projection-stop', handleStopProjection)
+
+      // Media control listeners
+      ipcRenderer.on('media-control', handleMediaControl)
+      ipcRenderer.on('media-control-play', handleMediaPlay)
+      ipcRenderer.on('media-control-pause', handleMediaPause)
+      ipcRenderer.on('media-control-stop', handleMediaStop)
+      ipcRenderer.on('media-control-volume', handleMediaVolume)
+      ipcRenderer.on('media-control-mute', handleMediaMute)
     }
 
     return () => {
@@ -254,6 +347,14 @@ export default function Presentation(): JSX.Element {
         ipcRenderer.removeAllListeners('projection-blank')
         ipcRenderer.removeAllListeners('projection-logo')
         ipcRenderer.removeAllListeners('projection-stop')
+
+        // Cleanup media control listeners
+        ipcRenderer.removeAllListeners('media-control')
+        ipcRenderer.removeAllListeners('media-control-play')
+        ipcRenderer.removeAllListeners('media-control-pause')
+        ipcRenderer.removeAllListeners('media-control-stop')
+        ipcRenderer.removeAllListeners('media-control-volume')
+        ipcRenderer.removeAllListeners('media-control-mute')
       }
     }
   }, [])
@@ -282,10 +383,14 @@ export default function Presentation(): JSX.Element {
 
     return (
       <div className="w-full h-screen relative overflow-hidden bg-black">
-        <BackgroundRenderer 
-          background={background} 
+        <BackgroundRenderer
+          background={background}
           useProjectionQuality={true}
-          key={background ? `${background.type}-${background.value}-${JSON.stringify(background)}` : 'no-background'}
+          key={
+            background
+              ? `${background.type}-${background.value}-${JSON.stringify(background)}`
+              : 'no-background'
+          }
         />
         {/* No text elements - just background */}
       </div>
@@ -351,11 +456,15 @@ export default function Presentation(): JSX.Element {
       console.log('📺 [PRESENTATION] Rendering countdown with CountdownDisplay')
       return (
         <div className="w-full h-screen flex items-center justify-center bg-black">
-          <BackgroundRenderer 
-          background={background} 
-          useProjectionQuality={true}
-          key={background ? `${background.type}-${background.value}-${JSON.stringify(background)}` : 'no-background'}
-        />
+          <BackgroundRenderer
+            background={background}
+            useProjectionQuality={true}
+            key={
+              background
+                ? `${background.type}-${background.value}-${JSON.stringify(background)}`
+                : 'no-background'
+            }
+          />
           {!presentationState.isBlank && (
             <div className="relative z-10 w-full h-full">
               <CountdownDisplay content={currentData.content} slideData={currentData.slideData} />
@@ -409,11 +518,14 @@ export default function Presentation(): JSX.Element {
 
     return (
       <div className="w-full h-screen flex items-center justify-center bg-black">
-        {console.log('📺 [PRESENTATION] Rendering BackgroundRenderer with:', background)}
-        <BackgroundRenderer 
-          background={background} 
+        <BackgroundRenderer
+          background={background}
           useProjectionQuality={true}
-          key={background ? `${background.type}-${background.value}-${JSON.stringify(background)}` : 'no-background'}
+          key={
+            background
+              ? `${background.type}-${background.value}-${JSON.stringify(background)}`
+              : 'no-background'
+          }
         />
 
         {/* Only render text content if not in blank mode - with resolution-aware sizing */}
@@ -421,18 +533,18 @@ export default function Presentation(): JSX.Element {
           <div className="relative z-10 text-center max-w-4xl mx-auto px-8">
             {currentData.type === 'announcement' ? (
               <div className="bg-black bg-opacity-30 rounded-2xl p-16">
-                <h1 
+                <h1
                   className="font-bold mb-8 text-white"
-                  style={{ 
+                  style={{
                     fontSize: getOptimalTextSize(72),
                     textShadow: '2px 2px 4px rgba(0,0,0,0.8)'
                   }}
                 >
                   Announcement
                 </h1>
-                <div 
+                <div
                   className="leading-relaxed text-white"
-                  style={{ 
+                  style={{
                     fontSize: getOptimalTextSize(48),
                     textShadow: '2px 2px 4px rgba(0,0,0,0.6)',
                     lineHeight: 1.4
@@ -442,9 +554,9 @@ export default function Presentation(): JSX.Element {
                 </div>
               </div>
             ) : (
-              <div 
+              <div
                 className="leading-relaxed text-white font-bold whitespace-pre-line"
-                style={{ 
+                style={{
                   fontSize: getOptimalTextSize(60),
                   textShadow: '2px 2px 4px rgba(0,0,0,0.8)',
                   lineHeight: 1.3
@@ -463,16 +575,10 @@ export default function Presentation(): JSX.Element {
   return (
     <div className="w-full h-screen bg-black flex items-center justify-center">
       <div className="text-center text-white">
-        <h1 
-          className="font-bold mb-8 opacity-80"
-          style={{ fontSize: getOptimalTextSize(72) }}
-        >
+        <h1 className="font-bold mb-8 opacity-80" style={{ fontSize: getOptimalTextSize(72) }}>
           Projection Ready
         </h1>
-        <p 
-          className="opacity-60"
-          style={{ fontSize: getOptimalTextSize(32) }}
-        >
+        <p className="opacity-60" style={{ fontSize: getOptimalTextSize(32) }}>
           Waiting for content...
         </p>
       </div>
@@ -586,7 +692,7 @@ function CountdownDisplay({
     } catch (error) {
       console.warn('📺 [COUNTDOWN] Failed to calculate counter size:', error)
     }
-    
+
     return `${baseSize}px`
   }
 
@@ -615,7 +721,7 @@ function CountdownDisplay({
     } catch (error) {
       console.warn('📺 [COUNTDOWN] Failed to calculate title size:', error)
     }
-    
+
     return `${baseSize}px`
   }
 
@@ -644,7 +750,7 @@ function CountdownDisplay({
     } catch (error) {
       console.warn('📺 [COUNTDOWN] Failed to calculate message size:', error)
     }
-    
+
     return `${baseSize}px`
   }
 

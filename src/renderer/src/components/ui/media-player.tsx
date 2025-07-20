@@ -21,6 +21,8 @@ interface MediaPlayerProps {
   className?: string
   onEnded?: () => void
   onTimeUpdate?: (currentTime: number, duration: number) => void
+  compact?: boolean // New prop for inline slide controls
+  showTitle?: boolean // Control title display
 }
 
 export function MediaPlayer({
@@ -28,13 +30,27 @@ export function MediaPlayer({
   autoplay = false,
   className = '',
   onEnded,
-  onTimeUpdate
+  onTimeUpdate,
+  compact = false,
+  showTitle = true
 }: MediaPlayerProps) {
+  // Guard against undefined or invalid items
+  if (!item || !item.type) {
+    return (
+      <div className={`flex items-center justify-center p-4 ${className}`}>
+        <p className="text-muted-foreground text-sm">Invalid media item</p>
+      </div>
+    )
+  }
   const videoRef = useRef<HTMLVideoElement>(null)
   const audioRef = useRef<HTMLAudioElement>(null)
   const backgroundAudioRef = useRef<HTMLAudioElement>(null)
   const [isPlaying, setIsPlaying] = useState(false)
-  const [isMuted, setIsMuted] = useState(item.mediaConfig?.muted || false)
+  // Auto-mute video if background audio is present
+  const hasBackgroundAudio = Boolean(item.mediaConfig?.backgroundAudio?.url)
+  const [isMuted, setIsMuted] = useState(
+    item.mediaConfig?.muted || (item.type === 'video' && hasBackgroundAudio)
+  )
   const [volume, setVolume] = useState(item.mediaConfig?.volume || 1)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
@@ -62,9 +78,9 @@ export function MediaPlayer({
       if (!mediaConfig?.url) return
 
       // Skip resolution if URLs haven't changed (prevent unnecessary re-resolution)
-      const currentMainUrl = mediaConfig.url
-      const currentBgUrl = mediaConfig.backgroundAudio?.url
-      
+      const currentMainUrl = mediaConfig?.url
+      const currentBgUrl = mediaConfig?.backgroundAudio?.url
+
       console.log('🎬 [MEDIA_PLAYER] Resolving media URLs for item:', item.title)
       setIsResolvingUrls(true)
 
@@ -111,15 +127,15 @@ export function MediaPlayer({
     media.src = resolvedMediaUrl
     media.volume = volume
     media.muted = isMuted
-    media.loop = mediaConfig.loop || false
+    media.loop = mediaConfig?.loop || false
 
-    if (mediaConfig.startTime) {
+    if (mediaConfig?.startTime) {
       media.currentTime = mediaConfig.startTime
     }
 
     const handleLoadedMetadata = () => {
       setDuration(media.duration)
-      if (autoplay || mediaConfig.autoplay) {
+      if (autoplay || mediaConfig?.autoplay) {
         media.play()
         setIsPlaying(true)
       }
@@ -131,7 +147,7 @@ export function MediaPlayer({
       onTimeUpdate?.(current, media.duration)
 
       // Auto-stop at end time if specified
-      if (mediaConfig.endTime && current >= mediaConfig.endTime) {
+      if (mediaConfig?.endTime && current >= mediaConfig.endTime) {
         media.pause()
         setIsPlaying(false)
         onEnded?.()
@@ -211,7 +227,7 @@ export function MediaPlayer({
             // Fade in effect with proper cleanup
             backgroundAudio.volume = 0
             await backgroundAudio.play()
-            
+
             const fadeStep = backgroundAudioVolume / (backgroundConfig.fadeIn * 10)
             fadeInterval = setInterval(() => {
               // Check if component is still mounted during fade
@@ -249,18 +265,18 @@ export function MediaPlayer({
     return () => {
       // Mark component as unmounted to prevent async operations
       isComponentMounted = false
-      
+
       // Clean up fade interval if it's running
       if (fadeInterval) {
         clearInterval(fadeInterval)
         fadeInterval = null
       }
-      
+
       // Remove event listeners
       backgroundAudio.removeEventListener('play', handleBackgroundAudioPlay)
       backgroundAudio.removeEventListener('pause', handleBackgroundAudioPause)
       backgroundAudio.removeEventListener('ended', handleBackgroundAudioEnded)
-      
+
       // Stop and clean up background audio
       try {
         if (!backgroundAudio.paused) {
@@ -419,11 +435,13 @@ export function MediaPlayer({
               aspectRatio: mediaConfig?.aspectRatio === 'auto' ? 'auto' : mediaConfig?.aspectRatio
             }}
             onLoad={() => console.log('🖼️ [MEDIA_PLAYER] Image loaded successfully:', item.title)}
-            onError={(e) => console.error('🖼️ [MEDIA_PLAYER] Image failed to load:', {
-              title: item.title,
-              resolvedUrl: resolvedMediaUrl,
-              error: e.nativeEvent
-            })}
+            onError={(e) =>
+              console.error('🖼️ [MEDIA_PLAYER] Image failed to load:', {
+                title: item.title,
+                resolvedUrl: resolvedMediaUrl,
+                error: e.nativeEvent
+              })
+            }
           />
         )}
 
@@ -432,7 +450,9 @@ export function MediaPlayer({
 
         {/* Image Controls (including background audio) */}
         {mediaConfig?.backgroundAudio?.url && (
-          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4">
+          <div
+            className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent ${compact ? 'p-2' : 'p-4'}`}
+          >
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Button
@@ -447,7 +467,7 @@ export function MediaPlayer({
                     <Play className="w-4 h-4" />
                   )}
                 </Button>
-                <span className="text-white text-sm">Background Audio</span>
+                {!compact && <span className="text-white text-sm">Background Audio</span>}
               </div>
 
               <div className="flex items-center gap-2">
@@ -469,16 +489,20 @@ export function MediaPlayer({
                   onValueChange={handleBackgroundAudioVolumeChange}
                   max={1}
                   step={0.1}
-                  className="w-20"
+                  className={compact ? 'w-16' : 'w-20'}
                 />
               </div>
             </div>
           </div>
         )}
 
-        <div className="absolute bottom-4 left-4 bg-black/50 text-white px-3 py-1 rounded">
-          {item.title}
-        </div>
+        {showTitle && (
+          <div
+            className={`absolute bottom-4 left-4 bg-black/50 text-white ${compact ? 'px-2 py-1 text-xs' : 'px-3 py-1'} rounded`}
+          >
+            {item.title}
+          </div>
+        )}
       </div>
     )
   }
@@ -502,18 +526,26 @@ export function MediaPlayer({
             playsInline
             onLoadStart={() => console.log('🎬 [MEDIA_PLAYER] Video load started:', item.title)}
             onCanPlay={() => console.log('🎬 [MEDIA_PLAYER] Video can play:', item.title)}
-            onError={(e) => console.error('🎬 [MEDIA_PLAYER] Video failed to load:', {
-              title: item.title,
-              resolvedUrl: resolvedMediaUrl,
-              error: e.nativeEvent
-            })}
+            onError={(e) =>
+              console.error('🎬 [MEDIA_PLAYER] Video failed to load:', {
+                title: item.title,
+                resolvedUrl: resolvedMediaUrl,
+                error: e.nativeEvent
+              })
+            }
           />
           {/* Background Audio Element for Video */}
-          {mediaConfig?.backgroundAudio?.url && <audio ref={backgroundAudioRef} />}
+          {mediaConfig?.backgroundAudio?.url && (
+            <audio
+              ref={backgroundAudioRef}
+              data-audio-type="background"
+              data-audio-id={`bg-${item.id}`}
+            />
+          )}
         </>
       ) : (
         <div className="flex items-center justify-center min-h-[200px] bg-gradient-to-br from-gray-800 to-gray-900">
-          <audio ref={audioRef} />
+          <audio ref={audioRef} data-audio-type="main" data-audio-id={`main-${item.id}`} />
           <div className="text-center text-white">
             <Volume2 className="w-16 h-16 mx-auto mb-4 opacity-50" />
             <h3 className="text-xl font-semibold mb-2">{item.title}</h3>
@@ -530,9 +562,11 @@ export function MediaPlayer({
           }`}
         >
           {/* Main Controls */}
-          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4">
+          <div
+            className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent ${compact ? 'p-2' : 'p-4'}`}
+          >
             {/* Progress Bar */}
-            <div className="mb-4">
+            <div className={compact ? 'mb-2' : 'mb-4'}>
               <Slider
                 value={[currentTime]}
                 onValueChange={handleSeek}
@@ -540,7 +574,9 @@ export function MediaPlayer({
                 step={1}
                 className="w-full"
               />
-              <div className="flex justify-between text-xs text-white/70 mt-1">
+              <div
+                className={`flex justify-between text-xs text-white/70 ${compact ? 'mt-0.5' : 'mt-1'}`}
+              >
                 <span>{formatTime(currentTime)}</span>
                 <span>{formatTime(duration)}</span>
               </div>
@@ -548,93 +584,111 @@ export function MediaPlayer({
 
             {/* Control Buttons */}
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={skipBack}
-                  className="text-white hover:bg-white/20"
-                >
-                  <SkipBack className="w-4 h-4" />
-                </Button>
-
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={togglePlayPause}
-                  className="text-white hover:bg-white/20"
-                >
-                  {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
-                </Button>
-
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={skipForward}
-                  className="text-white hover:bg-white/20"
-                >
-                  <SkipForward className="w-4 h-4" />
-                </Button>
-
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={restart}
-                  className="text-white hover:bg-white/20"
-                >
-                  <RotateCcw className="w-4 h-4" />
-                </Button>
-              </div>
-
-              <div className="flex items-center gap-2">
-                {/* Volume Control */}
-                <div className="flex items-center gap-2">
+              <div className={`flex items-center ${compact ? 'gap-1' : 'gap-2'}`}>
+                {!compact && (
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={toggleMute}
+                    onClick={skipBack}
                     className="text-white hover:bg-white/20"
                   >
-                    {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+                    <SkipBack className="w-4 h-4" />
                   </Button>
-                  <Slider
-                    value={[volume]}
-                    onValueChange={handleVolumeChange}
-                    max={1}
-                    step={0.1}
-                    className="w-20"
-                  />
-                </div>
+                )}
 
-                {/* Background Audio Controls */}
-                {mediaConfig?.backgroundAudio?.url && (
-                  <div className="flex items-center gap-2 px-2 border-l border-white/20">
+                <Button
+                  variant="ghost"
+                  size={compact ? 'sm' : 'sm'}
+                  onClick={togglePlayPause}
+                  className="text-white hover:bg-white/20"
+                >
+                  {isPlaying ? (
+                    <Pause className={compact ? 'w-4 h-4' : 'w-5 h-5'} />
+                  ) : (
+                    <Play className={compact ? 'w-4 h-4' : 'w-5 h-5'} />
+                  )}
+                </Button>
+
+                {!compact && (
+                  <>
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={toggleBackgroundAudio}
+                      onClick={skipForward}
                       className="text-white hover:bg-white/20"
-                      title="Background Audio"
                     >
-                      {backgroundAudioPlaying ? (
-                        <Pause className="w-3 h-3" />
-                      ) : (
-                        <Play className="w-3 h-3" />
-                      )}
+                      <SkipForward className="w-4 h-4" />
+                    </Button>
+
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={restart}
+                      className="text-white hover:bg-white/20"
+                    >
+                      <RotateCcw className="w-4 h-4" />
+                    </Button>
+                  </>
+                )}
+
+                {/* Show audio source indicator when video is muted */}
+                {item.type === 'video' && hasBackgroundAudio && isMuted && (
+                  <div className="flex items-center gap-1 px-2 py-1 bg-blue-500/20 rounded text-xs text-blue-200">
+                    <Volume2 className="w-3 h-3" />
+                    <span>Audio Track</span>
+                  </div>
+                )}
+              </div>
+
+              <div className={`flex items-center ${compact ? 'gap-1' : 'gap-2'}`}>
+                {/* Primary Audio Control - Background Audio takes priority when available */}
+                {hasBackgroundAudio ? (
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        const backgroundAudio = backgroundAudioRef.current
+                        if (backgroundAudio) {
+                          backgroundAudio.muted = !backgroundAudio.muted
+                        }
+                      }}
+                      className="text-white hover:bg-white/20"
+                      title="Main Audio (Background Track)"
+                    >
+                      <Volume2 className="w-4 h-4" />
                     </Button>
                     <Slider
                       value={[backgroundAudioVolume]}
                       onValueChange={handleBackgroundAudioVolumeChange}
                       max={1}
                       step={0.1}
-                      className="w-16"
+                      className={compact ? 'w-16' : 'w-20'}
                     />
-                    <span className="text-xs text-white/70">BG</span>
+                    {!compact && <span className="text-xs text-white/70">Audio</span>}
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={toggleMute}
+                      className="text-white hover:bg-white/20"
+                    >
+                      {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+                    </Button>
+                    <Slider
+                      value={[volume]}
+                      onValueChange={handleVolumeChange}
+                      max={1}
+                      step={0.1}
+                      className={compact ? 'w-16' : 'w-20'}
+                    />
                   </div>
                 )}
 
                 {/* Fullscreen (Video only) */}
-                {item.type === 'video' && (
+                {item.type === 'video' && !compact && (
                   <Button
                     variant="ghost"
                     size="sm"
@@ -653,9 +707,13 @@ export function MediaPlayer({
           </div>
 
           {/* Title Overlay */}
-          <div className="absolute top-4 left-4 bg-black/50 text-white px-3 py-1 rounded">
-            {item.title}
-          </div>
+          {showTitle && (
+            <div
+              className={`absolute top-2 left-2 bg-black/50 text-white ${compact ? 'px-2 py-1 text-xs' : 'px-3 py-1'} rounded`}
+            >
+              {item.title}
+            </div>
+          )}
         </div>
       )}
     </div>

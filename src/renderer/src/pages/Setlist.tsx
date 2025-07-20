@@ -74,6 +74,11 @@ import { CountdownConfig } from '@renderer/components/ui/countdown-config'
 import { TimeInput } from '@renderer/components/ui/time-input'
 import { InlineEditableText, InlineEditableNumber } from '@renderer/components/ui/inline-editable'
 import { MediaSelector } from '@renderer/components/ui/media-selector'
+import { ViewToggle, type ViewMode } from '@renderer/components/ui/view-toggle'
+import { SetlistCard } from '@renderer/components/ui/setlist-card'
+import { SetlistBrowser } from '@renderer/components/ui/setlist-browser'
+import { ItemDetailsPanel } from '@renderer/components/ui/item-details-panel'
+import { ItemPreviewPanel } from '@renderer/components/ui/item-preview-panel'
 import {
   parseTimeToSeconds,
   formatTimeFromSeconds,
@@ -268,6 +273,8 @@ export default function Setlist(): JSX.Element {
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedSetlist, setSelectedSetlist] = useState<Setlist | null>(null)
   const [viewMode, setViewMode] = useState<'list' | 'detail'>('list')
+  const [listViewMode, setListViewMode] = useState<ViewMode>('list')
+  const [selectedDetailItem, setSelectedDetailItem] = useState<SetlistItem | null>(null)
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [isAddItemModalOpen, setIsAddItemModalOpen] = useState(false)
@@ -376,13 +383,63 @@ export default function Setlist(): JSX.Element {
   const handleViewSetlist = (setlist: Setlist): void => {
     setSelectedSetlist(setlist)
     setViewMode('detail')
+    // Auto-select first item if available
+    if (setlist.items.length > 0) {
+      const sortedItems = setlist.items.sort((a, b) => a.order - b.order)
+      setSelectedDetailItem(sortedItems[0])
+    } else {
+      setSelectedDetailItem(null)
+    }
     console.log('🔍 Selected setlist for detail view:', setlist.name, setlist.id)
   }
 
   const handleBackToList = (): void => {
     setSelectedSetlist(null)
+    setSelectedDetailItem(null)
     setViewMode('list')
     console.log('⬅️ Returned to list view')
+  }
+
+  const handleEditSetlistFromCard = (setlist: Setlist): void => {
+    setSelectedSetlist(setlist)
+    setNewSetlistName(setlist.name)
+    setNewSetlistDescription(setlist.description || '')
+    setIsEditModalOpen(true)
+  }
+
+  const handleItemSelect = (item: SetlistItem): void => {
+    setSelectedDetailItem(item)
+  }
+
+  const handleReorderItems = async (items: SetlistItem[]): Promise<void> => {
+    if (!selectedSetlist) return
+    await reorderItems(selectedSetlist.id, items)
+
+    // Get the fresh state directly from the store
+    const freshSetlists = useSetlistStore.getState().setlists
+    const updatedSetlist = freshSetlists.find((s) => s.id === selectedSetlist.id)
+    if (updatedSetlist) {
+      setSelectedSetlist(updatedSetlist)
+      // Update selected item if it exists in the reordered list
+      if (selectedDetailItem) {
+        const updatedItem = updatedSetlist.items.find(item => item.id === selectedDetailItem.id)
+        if (updatedItem) {
+          setSelectedDetailItem(updatedItem)
+        }
+      }
+    }
+  }
+
+  const getNextItem = (): SetlistItem | null => {
+    if (!selectedSetlist || !selectedDetailItem) return null
+    const currentIndex = selectedSetlist.items
+      .sort((a, b) => a.order - b.order)
+      .findIndex(item => item.id === selectedDetailItem.id)
+    
+    if (currentIndex === -1 || currentIndex === selectedSetlist.items.length - 1) return null
+    
+    const sortedItems = selectedSetlist.items.sort((a, b) => a.order - b.order)
+    return sortedItems[currentIndex + 1] || null
   }
 
   const handleAddItem = async (
@@ -808,48 +865,32 @@ export default function Setlist(): JSX.Element {
     <>
       {/* MAIN CONTENT */}
       {viewMode === 'detail' && selectedSetlist ? (
-        <div className="p-6 max-w-7xl mx-auto">
-          {/* Navigation */}
-          <div className="mb-6">
-            <Button variant="ghost" onClick={handleBackToList} className="mb-4">
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Back to Setlists
-            </Button>
-          </div>
-
+        <div className="h-screen flex flex-col">
           {/* Header */}
-          <div className="mb-8">
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
-                <h1 className="text-4xl font-bold mb-2">{selectedSetlist.name}</h1>
-                {selectedSetlist.description && (
-                  <p className="text-lg text-muted-foreground max-w-2xl">
-                    {selectedSetlist.description}
-                  </p>
-                )}
+          <div className="flex-shrink-0 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+            <div className="flex items-center justify-between p-4">
+              <div className="flex items-center gap-4">
+                <Button variant="ghost" onClick={handleBackToList} size="sm">
+                  <ArrowLeft className="w-4 h-4 mr-2" />
+                  Back to Setlists
+                </Button>
+                <div>
+                  <h1 className="text-xl font-bold">{selectedSetlist.name}</h1>
+                  {selectedSetlist.description && (
+                    <p className="text-sm text-muted-foreground">{selectedSetlist.description}</p>
+                  )}
+                </div>
               </div>
 
-              <div className="flex items-center gap-2 ml-6">
-                <Button variant="outline" onClick={handleOpenAddItemModal}>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" onClick={handleOpenAddItemModal}>
                   <Plus className="w-4 h-4 mr-2" />
                   Add Item
                 </Button>
-                <Button
-                  variant={isSelectMode ? 'default' : 'outline'}
-                  onClick={handleToggleSelectMode}
-                >
-                  {isSelectMode ? (
-                    <CheckSquare className="w-4 h-4 mr-2" />
-                  ) : (
-                    <Square className="w-4 h-4 mr-2" />
-                  )}
-                  {isSelectMode ? 'Exit Select' : 'Select Items'}
-                </Button>
-                <Button onClick={() => startPresentation(selectedSetlist)}>
+                <Button size="sm" onClick={() => startPresentation(selectedSetlist)}>
                   <Play className="w-4 h-4 mr-2" />
-                  Start Presentation
+                  Present
                 </Button>
-
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="ghost" size="sm">
@@ -885,125 +926,32 @@ export default function Setlist(): JSX.Element {
             </div>
           </div>
 
-          {/* Stats */}
-          <div className="grid grid-cols-3 gap-4 mb-8">
-            <div className="bg-card p-4 rounded-lg border">
-              <div className="flex items-center gap-2">
-                <Users className="w-4 h-4 text-muted-foreground" />
-                <span className="text-sm text-muted-foreground">Items</span>
-              </div>
-              <div className="text-2xl font-bold">{selectedSetlist.items.length}</div>
-            </div>
-            <div className="bg-card p-4 rounded-lg border">
-              <div className="flex items-center gap-2">
-                <Clock className="w-4 h-4 text-muted-foreground" />
-                <span className="text-sm text-muted-foreground">Total Duration</span>
-              </div>
-              <div className="text-2xl font-bold font-mono">
-                {formatDuration(getTotalDuration(selectedSetlist.items))}
-              </div>
-            </div>
-            <div className="bg-card p-4 rounded-lg border">
-              <div className="flex items-center gap-2">
-                <Music className="w-4 h-4 text-muted-foreground" />
-                <span className="text-sm text-muted-foreground">Songs</span>
-              </div>
-              <div className="text-2xl font-bold">
-                {selectedSetlist.items.filter((item) => item.type === 'song').length}
-              </div>
-            </div>
-          </div>
-
-          {/* Items List */}
-          <div className="space-y-4">
-            <div className="flex items-center justify-between border-b pb-4">
-              <h2 className="text-xl font-semibold">Items</h2>
-              <div className="text-sm text-muted-foreground">
-                {isSelectMode
-                  ? 'Select items for bulk operations'
-                  : 'Drag and drop to reorder • Click to edit inline'}
-              </div>
+          {/* Two Panel Layout */}
+          <div className="flex-1 flex overflow-hidden">
+            {/* Left Panel - Setlist Browser */}
+            <div className="w-96 border-r bg-muted/30">
+              <SetlistBrowser
+                setlist={selectedSetlist}
+                selectedItem={selectedDetailItem}
+                onItemSelect={handleItemSelect}
+                onAddItem={handleOpenAddItemModal}
+                onReorder={handleReorderItems}
+                className="h-full"
+              />
             </div>
 
-            {/* Bulk Actions Bar */}
-            {isSelectMode && (
-              <div className="flex items-center justify-between p-3 bg-muted rounded-lg border">
-                <div className="flex items-center gap-4">
-                  <span className="text-sm font-medium">{selectedItemIds.size} selected</span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleSelectAll}
-                    disabled={selectedItemIds.size === selectedSetlist.items.length}
-                  >
-                    Select All
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleDeselectAll}
-                    disabled={selectedItemIds.size === 0}
-                  >
-                    Deselect All
-                  </Button>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    onClick={handleBulkDelete}
-                    disabled={selectedItemIds.size === 0}
-                  >
-                    <Trash className="w-4 h-4 mr-2" />
-                    Delete ({selectedItemIds.size})
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {selectedSetlist.items.length === 0 ? (
-              <div className="border rounded-lg border-dashed">
-                <div className="text-center py-12">
-                  <Music className="w-12 h-12 mx-auto mb-4 text-muted-foreground opacity-50" />
-                  <p className="text-muted-foreground mb-4">No items in this setlist yet.</p>
-                  <Button onClick={handleOpenAddItemModal}>
-                    <Plus className="w-4 h-4 mr-2" />
-                    Add Your First Item
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <DndContext
-                sensors={sensors}
-                collisionDetection={closestCenter}
-                onDragEnd={handleDragEnd}
-              >
-                <SortableContext
-                  items={selectedSetlist.items.map((item) => item.id)}
-                  strategy={verticalListSortingStrategy}
-                >
-                  <div className="space-y-2">
-                    {selectedSetlist.items
-                      .sort((a, b) => a.order - b.order)
-                      .map((item) => (
-                        <SortableItem
-                          key={item.id}
-                          item={item}
-                          setlist={selectedSetlist}
-                          onEdit={handleOpenEditItemModal}
-                          onDelete={handleRemoveItem}
-                          onUpdateDuration={handleUpdateItemDuration}
-                          onUpdateNotes={handleUpdateItemNotes}
-                          onUpdateTitle={handleUpdateItemTitle}
-                          isSelectMode={isSelectMode}
-                          isSelected={selectedItemIds.has(item.id)}
-                          onToggleSelect={handleToggleSelectItem}
-                        />
-                      ))}
-                  </div>
-                </SortableContext>
-              </DndContext>
-            )}
+            {/* Right Panel - Item Details */}
+            <div className="flex-1">
+              <ItemDetailsPanel
+                item={selectedDetailItem}
+                onEdit={handleOpenEditItemModal}
+                onDelete={handleRemoveItem}
+                onUpdateTitle={handleUpdateItemTitle}
+                onUpdateDuration={handleUpdateItemDuration}
+                onUpdateNotes={handleUpdateItemNotes}
+                className="h-full"
+              />
+            </div>
           </div>
         </div>
       ) : (
@@ -1061,140 +1009,154 @@ export default function Setlist(): JSX.Element {
             </Dialog>
           </div>
 
-          {/* Search */}
-          <div className="relative mb-6">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
-            <Input
-              placeholder="Search setlists..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
-            />
+          {/* Search and View Toggle */}
+          <div className="flex items-center gap-4 mb-6">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+              <Input
+                placeholder="Search setlists..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+            <ViewToggle view={listViewMode} onViewChange={setListViewMode} />
           </div>
 
-          {/* Setlist Table */}
-          <div className="border rounded-lg overflow-hidden">
-            <table className="w-full">
-              <thead className="bg-muted/50">
-                <tr className="border-b">
-                  <th className="text-left p-4 font-medium">Name</th>
-                  <th className="text-left p-4 font-medium">Description</th>
-                  <th className="text-center p-4 font-medium">Items</th>
-                  <th className="text-center p-4 font-medium">Duration</th>
-                  <th className="text-center p-4 font-medium">Created</th>
-                  <th className="text-center p-4 font-medium">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredSetlists.map((setlist) => (
-                  <tr key={setlist.id} className="border-b hover:bg-muted/30 transition-colors">
-                    <td className="p-4">
-                      <div className="font-semibold">{setlist.name}</div>
-                      {setlist.items.length > 0 && (
-                        <div className="text-xs text-muted-foreground mt-1 flex items-center gap-2">
-                          {setlist.items.slice(0, 3).map((item, index) => (
-                            <span key={item.id} className="flex items-center gap-1">
-                              {getItemIcon(item)}
-                              <span className="truncate max-w-[100px]">{item.title}</span>
-                              {index < Math.min(setlist.items.length, 3) - 1 && <span>•</span>}
-                            </span>
-                          ))}
-                          {setlist.items.length > 3 && (
-                            <span className="text-muted-foreground">
-                              +{setlist.items.length - 3} more
-                            </span>
-                          )}
-                        </div>
-                      )}
-                    </td>
-                    <td className="p-4">
-                      <div className="text-sm text-muted-foreground max-w-[200px] truncate">
-                        {setlist.description || '—'}
-                      </div>
-                    </td>
-                    <td className="p-4 text-center">
-                      <div className="flex items-center justify-center">
-                        <Users className="w-4 h-4 mr-1 text-muted-foreground" />
-                        <span className="font-medium">{setlist.items.length}</span>
-                      </div>
-                    </td>
-                    <td className="p-4 text-center">
-                      <div className="flex items-center justify-center">
-                        <Clock className="w-4 h-4 mr-1 text-muted-foreground" />
-                        <span className="font-mono text-sm">
-                          {formatDuration(getTotalDuration(setlist.items))}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="p-4 text-center">
-                      <div className="text-sm text-muted-foreground">
-                        {new Date(setlist.createdAt).toLocaleDateString()}
-                      </div>
-                    </td>
-                    <td className="p-4">
-                      <div className="flex items-center justify-center gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleViewSetlist(setlist)}
-                          className="h-8"
-                        >
-                          <Eye className="w-3 h-3" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          onClick={() => startPresentation(setlist)}
-                          className="h-8"
-                        >
-                          <Play className="w-3 h-3" />
-                        </Button>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                              <MoreVertical className="w-3 h-3" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => handleViewSetlist(setlist)}>
-                              <Eye className="w-4 h-4 mr-2" />
-                              View Details
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => startPresentation(setlist)}>
-                              <Play className="w-4 h-4 mr-2" />
-                              Start Presentation
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              onClick={() => {
-                                setSelectedSetlist(setlist)
-                                setNewSetlistName(setlist.name)
-                                setNewSetlistDescription(setlist.description || '')
-                                setIsEditModalOpen(true)
-                              }}
-                            >
-                              <Edit className="w-4 h-4 mr-2" />
-                              Edit
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleDuplicateSetlist(setlist)}>
-                              <Copy className="w-4 h-4 mr-2" />
-                              Duplicate
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => handleDeleteSetlist(setlist)}
-                              className="text-red-600"
-                            >
-                              <Trash2 className="w-4 h-4 mr-2" />
-                              Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                    </td>
+          {/* Setlist Grid or Table */}
+          {listViewMode === 'grid' ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {filteredSetlists.map((setlist) => (
+                <SetlistCard
+                  key={setlist.id}
+                  setlist={setlist}
+                  onView={handleViewSetlist}
+                  onEdit={handleEditSetlistFromCard}
+                  onDuplicate={handleDuplicateSetlist}
+                  onDelete={handleDeleteSetlist}
+                  onPresent={startPresentation}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="border rounded-lg overflow-hidden">
+              <table className="w-full">
+                <thead className="bg-muted/50">
+                  <tr className="border-b">
+                    <th className="text-left p-4 font-medium">Name</th>
+                    <th className="text-left p-4 font-medium">Description</th>
+                    <th className="text-center p-4 font-medium">Items</th>
+                    <th className="text-center p-4 font-medium">Duration</th>
+                    <th className="text-center p-4 font-medium">Created</th>
+                    <th className="text-center p-4 font-medium">Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {filteredSetlists.map((setlist) => (
+                    <tr key={setlist.id} className="border-b hover:bg-muted/30 transition-colors">
+                      <td className="p-4">
+                        <div className="font-semibold">{setlist.name}</div>
+                        {setlist.items.length > 0 && (
+                          <div className="text-xs text-muted-foreground mt-1 flex items-center gap-2">
+                            {setlist.items.slice(0, 3).map((item, index) => (
+                              <span key={item.id} className="flex items-center gap-1">
+                                {getItemIcon(item)}
+                                <span className="truncate max-w-[100px]">{item.title}</span>
+                                {index < Math.min(setlist.items.length, 3) - 1 && <span>•</span>}
+                              </span>
+                            ))}
+                            {setlist.items.length > 3 && (
+                              <span className="text-muted-foreground">
+                                +{setlist.items.length - 3} more
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                      <td className="p-4">
+                        <div className="text-sm text-muted-foreground max-w-[200px] truncate">
+                          {setlist.description || '—'}
+                        </div>
+                      </td>
+                      <td className="p-4 text-center">
+                        <div className="flex items-center justify-center">
+                          <Users className="w-4 h-4 mr-1 text-muted-foreground" />
+                          <span className="font-medium">{setlist.items.length}</span>
+                        </div>
+                      </td>
+                      <td className="p-4 text-center">
+                        <div className="flex items-center justify-center">
+                          <Clock className="w-4 h-4 mr-1 text-muted-foreground" />
+                          <span className="font-mono text-sm">
+                            {formatDuration(getTotalDuration(setlist.items))}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="p-4 text-center">
+                        <div className="text-sm text-muted-foreground">
+                          {new Date(setlist.createdAt).toLocaleDateString()}
+                        </div>
+                      </td>
+                      <td className="p-4">
+                        <div className="flex items-center justify-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleViewSetlist(setlist)}
+                            className="h-8"
+                          >
+                            <Eye className="w-3 h-3" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            onClick={() => startPresentation(setlist)}
+                            className="h-8"
+                          >
+                            <Play className="w-3 h-3" />
+                          </Button>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                <MoreVertical className="w-3 h-3" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => handleViewSetlist(setlist)}>
+                                <Eye className="w-4 h-4 mr-2" />
+                                View Details
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => startPresentation(setlist)}>
+                                <Play className="w-4 h-4 mr-2" />
+                                Start Presentation
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                onClick={() => handleEditSetlistFromCard(setlist)}
+                              >
+                                <Edit className="w-4 h-4 mr-2" />
+                                Edit
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleDuplicateSetlist(setlist)}>
+                                <Copy className="w-4 h-4 mr-2" />
+                                Duplicate
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => handleDeleteSetlist(setlist)}
+                                className="text-red-600"
+                              >
+                                <Trash2 className="w-4 h-4 mr-2" />
+                                Delete
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
 
           {filteredSetlists.length === 0 && (
             <div className="border rounded-lg">

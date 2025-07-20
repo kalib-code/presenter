@@ -1,367 +1,420 @@
+/**
+ * Media Store
+ *
+ * Zustand store for managing media playback state, audio controls,
+ * and audio registry for the application.
+ */
+
 import { create } from 'zustand'
-import { db } from '@renderer/lib/database'
-import type { Media } from '@renderer/types/database'
+import { devtools } from 'zustand/middleware'
+import {
+  GlobalAudioState,
+  MediaState,
+  AudioRegistryEntry,
+  GlobalAudioControls
+} from '@renderer/types/media-config'
 
-// Slide store (legacy - will be migrated to presentations)
-interface SlideStore {
-  slides: LegacySlide[]
-  loading: boolean
-  error: string | null
-  fetchSlides: () => Promise<void>
-  createSlide: (title: string, content: string) => Promise<void>
-  deleteSlide: (id: string) => Promise<void>
+/**
+ * Media store state interface
+ */
+export interface MediaStoreState {
+  // Audio state
+  globalAudioState: GlobalAudioState
+  mediaState: MediaState
+  hasUserInteracted: boolean
+
+  // Audio registry
+  audioRegistry: Map<string, AudioRegistryEntry>
+  primaryAudioId: string | null
+  activeAudioRef: HTMLAudioElement | null
+
+  // Actions
+  setGlobalAudioState: (updates: Partial<GlobalAudioState>) => void
+  setMediaState: (updates: Partial<MediaState>) => void
+  setHasUserInteracted: (value: boolean) => void
+  setPrimaryAudioId: (id: string | null) => void
+  setActiveAudioRef: (ref: HTMLAudioElement | null) => void
+
+  // Audio registry management
+  registerAudio: (
+    audioElement: HTMLAudioElement,
+    id: string,
+    type?: 'main' | 'background',
+    name?: string
+  ) => void
+  unregisterAudio: (id: string) => void
+  getAudioElement: (id: string) => HTMLAudioElement | null
+  clearAudioRegistry: () => void
+
+  // Audio control methods
+  play: () => void
+  pause: () => void
+  stop: () => void
+  setVolume: (volume: number) => void
+  setMuted: (muted: boolean) => void
+  seek: (time: number) => void
+
+  // Helper methods
+  findActiveAudio: () => HTMLAudioElement | null
+  findPrimaryAudio: () => HTMLAudioElement | null
+  stopAllAudio: () => void
+  getAudioControls: () => GlobalAudioControls
 }
 
-interface LegacySlide {
-  id: string
-  title: string
-  content: string
-  createdAt: string
+/**
+ * Initial global audio state
+ */
+const initialGlobalAudioState: GlobalAudioState = {
+  isPlaying: false,
+  currentTime: 0,
+  duration: 0,
+  volume: 1,
+  muted: false,
+  currentTrack: null
 }
 
-export const useSlideStore = create<SlideStore>((set) => ({
-  slides: [],
-  loading: false,
-  error: null,
-
-  fetchSlides: async () => {
-    try {
-      set({ loading: true, error: null })
-      const slides: LegacySlide[] = await window.electron.invoke('list-slides')
-      set({ slides, loading: false })
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to fetch slides'
-      set({ error: errorMessage, loading: false })
-      console.error('Error fetching slides:', error)
-    }
-  },
-
-  createSlide: async (title: string, content: string) => {
-    try {
-      set({ loading: true, error: null })
-      const slides: LegacySlide[] = await window.electron.invoke('create-slide', title, content)
-      set({ slides, loading: false })
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to create slide'
-      set({ error: errorMessage, loading: false })
-      console.error('Error creating slide:', error)
-    }
-  },
-
-  deleteSlide: async (id: string) => {
-    try {
-      set({ loading: true, error: null })
-      const slides: LegacySlide[] = await window.electron.invoke('delete-slide', id)
-      set({ slides, loading: false })
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to delete slide'
-      set({ error: errorMessage, loading: false })
-      console.error('Error deleting slide:', error)
-    }
-  }
-}))
-
-// Media store using new database layer
-interface MediaStore {
-  media: Media[]
-  loading: boolean
-  error: string | null
-
-  // CRUD operations
-  fetchMedia: () => Promise<void>
-  createMedia: (data: Omit<Media, 'id' | 'createdAt' | 'updatedAt' | 'version'>) => Promise<Media>
-  updateMedia: (id: string, data: Partial<Media>) => Promise<Media>
-  deleteMedia: (id: string) => Promise<void>
-  getMedia: (id: string) => Promise<Media | null>
-
-  // Type-specific operations
-  getImages: () => Promise<Media[]>
-  getVideos: () => Promise<Media[]>
-  getAudio: () => Promise<Media[]>
-  getByType: (type: Media['type']) => Promise<Media[]>
-
-  // Search and filter
-  searchMedia: (query: string) => Promise<Media[]>
-  getMediaByTag: (tag: string) => Promise<Media[]>
-
-  // UI state
-  setLoading: (loading: boolean) => void
-  setError: (error: string | null) => void
-  clearError: () => void
+/**
+ * Initial media state
+ */
+const initialMediaState: MediaState = {
+  isPlaying: false,
+  currentTime: 0,
+  duration: 0,
+  volume: 1,
+  muted: false
 }
 
-export const useMediaStore = create<MediaStore>((set, get) => ({
-  media: [],
-  loading: false,
-  error: null,
+/**
+ * Media store implementation
+ */
+export const useMediaStore = create<MediaStoreState>()(
+  devtools(
+    (set, get) => ({
+      // Initial state
+      globalAudioState: initialGlobalAudioState,
+      mediaState: initialMediaState,
+      hasUserInteracted: false,
+      audioRegistry: new Map(),
+      primaryAudioId: null,
+      activeAudioRef: null,
 
-  fetchMedia: async () => {
-    try {
-      set({ loading: true, error: null })
-      const result = await db.media.list()
-      set({ media: result.data, loading: false })
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to fetch media'
-      set({ error: errorMessage, loading: false })
-      console.error('Error fetching media:', error)
+      // Basic setters
+      setGlobalAudioState: (updates) =>
+        set(
+          (state) => ({
+            globalAudioState: { ...state.globalAudioState, ...updates }
+          }),
+          false,
+          'setGlobalAudioState'
+        ),
+
+      setMediaState: (updates) =>
+        set(
+          (state) => ({
+            mediaState: { ...state.mediaState, ...updates }
+          }),
+          false,
+          'setMediaState'
+        ),
+
+      setHasUserInteracted: (value) =>
+        set({ hasUserInteracted: value }, false, 'setHasUserInteracted'),
+
+      setPrimaryAudioId: (id) => set({ primaryAudioId: id }, false, 'setPrimaryAudioId'),
+
+      setActiveAudioRef: (ref) => set({ activeAudioRef: ref }, false, 'setActiveAudioRef'),
+
+      // Audio registry management
+      registerAudio: (audioElement, id, type = 'main', name) => {
+        const { audioRegistry, primaryAudioId, setGlobalAudioState } = get()
+        const newRegistry = new Map(audioRegistry)
+
+        const entry: AudioRegistryEntry = {
+          id,
+          element: audioElement,
+          type,
+          name: name || `${type} audio`,
+          isPrimary: type === 'main' && !primaryAudioId
+        }
+
+        newRegistry.set(id, entry)
+
+        console.log(`🎵 [MEDIA_STORE] Registering audio: ${id} (${type})`)
+
+        // Add event listeners to sync state automatically
+        const updateGlobalState = (): void => {
+          if (audioElement) {
+            const isPlaying = !audioElement.paused && !audioElement.ended
+            console.log(`🎵 [MEDIA_STORE] Audio state changed for ${id}:`, {
+              isPlaying,
+              currentTime: audioElement.currentTime,
+              duration: audioElement.duration,
+              volume: audioElement.volume,
+              muted: audioElement.muted
+            })
+
+            setGlobalAudioState({
+              isPlaying,
+              currentTime: audioElement.currentTime || 0,
+              duration: audioElement.duration || 0,
+              volume: audioElement.volume || 0.5,
+              muted: audioElement.muted || false,
+              currentTrack: entry.name
+            })
+          }
+        }
+
+        // Add event listeners
+        audioElement.addEventListener('play', updateGlobalState)
+        audioElement.addEventListener('pause', updateGlobalState)
+        audioElement.addEventListener('ended', updateGlobalState)
+        audioElement.addEventListener('timeupdate', updateGlobalState)
+        audioElement.addEventListener('loadedmetadata', updateGlobalState)
+        audioElement.addEventListener('volumechange', updateGlobalState)
+        audioElement.addEventListener('durationchange', updateGlobalState)
+
+        // Store cleanup function
+        const cleanup = (): void => {
+          audioElement.removeEventListener('play', updateGlobalState)
+          audioElement.removeEventListener('pause', updateGlobalState)
+          audioElement.removeEventListener('ended', updateGlobalState)
+          audioElement.removeEventListener('timeupdate', updateGlobalState)
+          audioElement.removeEventListener('loadedmetadata', updateGlobalState)
+          audioElement.removeEventListener('volumechange', updateGlobalState)
+          audioElement.removeEventListener('durationchange', updateGlobalState)
+        }
+
+        // Store cleanup function with the entry
+        entry.cleanup = cleanup
+
+        set(
+          (state) => ({
+            audioRegistry: newRegistry,
+            primaryAudioId: entry.isPrimary ? id : state.primaryAudioId,
+            activeAudioRef: entry.isPrimary ? audioElement : state.activeAudioRef
+          }),
+          false,
+          'registerAudio'
+        )
+      },
+
+      unregisterAudio: (id) => {
+        const { audioRegistry, primaryAudioId, activeAudioRef } = get()
+        const newRegistry = new Map(audioRegistry)
+        const entry = newRegistry.get(id)
+
+        if (entry) {
+          // Clean up event listeners
+          if (entry.cleanup) {
+            entry.cleanup()
+          }
+
+          newRegistry.delete(id)
+          console.log(`🎵 [MEDIA_STORE] Unregistering audio: ${id}`)
+
+          set(
+            (state) => ({
+              audioRegistry: newRegistry,
+              primaryAudioId: primaryAudioId === id ? null : state.primaryAudioId,
+              activeAudioRef: activeAudioRef === entry.element ? null : state.activeAudioRef
+            }),
+            false,
+            'unregisterAudio'
+          )
+        }
+      },
+
+      getAudioElement: (id) => {
+        const { audioRegistry } = get()
+        return audioRegistry.get(id)?.element || null
+      },
+
+      clearAudioRegistry: () =>
+        set(
+          {
+            audioRegistry: new Map(),
+            primaryAudioId: null,
+            activeAudioRef: null
+          },
+          false,
+          'clearAudioRegistry'
+        ),
+
+      // Audio control methods
+      play: () => {
+        const { findActiveAudio, setGlobalAudioState } = get()
+        const audio = findActiveAudio()
+
+        if (audio) {
+          console.log('🎵 [MEDIA_STORE] Playing audio')
+          audio
+            .play()
+            .then(() => {
+              setGlobalAudioState({ isPlaying: true })
+            })
+            .catch(console.error)
+        } else {
+          console.log('🎵 [MEDIA_STORE] No audio to play, sending IPC command')
+          window.electron?.ipcRenderer.send('audio-control', { action: 'play' })
+          setGlobalAudioState({ isPlaying: true })
+        }
+      },
+
+      pause: () => {
+        const { findActiveAudio, setGlobalAudioState } = get()
+        const audio = findActiveAudio()
+
+        if (audio) {
+          console.log('🎵 [MEDIA_STORE] Pausing audio')
+          audio.pause()
+          setGlobalAudioState({ isPlaying: false })
+        } else {
+          console.log('🎵 [MEDIA_STORE] No audio to pause, sending IPC command')
+          window.electron?.ipcRenderer.send('audio-control', { action: 'pause' })
+          setGlobalAudioState({ isPlaying: false })
+        }
+      },
+
+      stop: () => {
+        const { audioRegistry, setGlobalAudioState, setActiveAudioRef, setPrimaryAudioId } = get()
+
+        console.log('🎵 [MEDIA_STORE] Stopping all audio')
+
+        // Stop all registered audio
+        audioRegistry.forEach((entry) => {
+          entry.element.pause()
+          entry.element.currentTime = 0
+        })
+
+        // Clear active references
+        setActiveAudioRef(null)
+        setPrimaryAudioId(null)
+
+        // Reset global audio state completely
+        setGlobalAudioState({
+          isPlaying: false,
+          currentTime: 0,
+          duration: 0,
+          volume: 0.5,
+          muted: false,
+          currentTrack: null
+        })
+
+        // Send IPC command for external audio
+        window.electron?.ipcRenderer.send('audio-control', { action: 'stop' })
+      },
+
+      setVolume: (volume) => {
+        const { findActiveAudio, setGlobalAudioState } = get()
+        const audio = findActiveAudio()
+
+        if (audio) {
+          audio.volume = volume
+          console.log('🎵 [MEDIA_STORE] Set volume to', volume)
+        }
+
+        setGlobalAudioState({ volume })
+        window.electron?.ipcRenderer.send('audio-control', { action: 'setVolume', value: volume })
+      },
+
+      setMuted: (muted) => {
+        const { findActiveAudio, setGlobalAudioState } = get()
+        const audio = findActiveAudio()
+
+        if (audio) {
+          audio.muted = muted
+          console.log('🎵 [MEDIA_STORE] Set muted to', muted)
+        }
+
+        setGlobalAudioState({ muted })
+        window.electron?.ipcRenderer.send('audio-control', { action: 'setMuted', value: muted })
+      },
+
+      seek: (time) => {
+        const { findActiveAudio, setGlobalAudioState } = get()
+        const audio = findActiveAudio()
+
+        if (audio) {
+          audio.currentTime = time
+          console.log('🎵 [MEDIA_STORE] Seek to', time)
+        }
+
+        setGlobalAudioState({ currentTime: time })
+        window.electron?.ipcRenderer.send('audio-control', { action: 'seek', value: time })
+      },
+
+      // Helper methods
+      findActiveAudio: () => {
+        const { activeAudioRef, primaryAudioId, audioRegistry } = get()
+
+        // Try active ref first
+        if (activeAudioRef && !activeAudioRef.paused) {
+          return activeAudioRef
+        }
+
+        // Try primary audio
+        if (primaryAudioId) {
+          const primaryEntry = audioRegistry.get(primaryAudioId)
+          if (primaryEntry && primaryEntry.element.readyState >= 2) {
+            return primaryEntry.element
+          }
+        }
+
+        // Find any main audio that's ready
+        for (const entry of audioRegistry.values()) {
+          if (entry.type === 'main' && entry.element.readyState >= 2) {
+            return entry.element
+          }
+        }
+
+        // Find any background audio that's ready
+        for (const entry of audioRegistry.values()) {
+          if (entry.type === 'background' && entry.element.readyState >= 2) {
+            return entry.element
+          }
+        }
+
+        return null
+      },
+
+      findPrimaryAudio: () => {
+        const { primaryAudioId, audioRegistry } = get()
+        if (primaryAudioId) {
+          return audioRegistry.get(primaryAudioId)?.element || null
+        }
+        return null
+      },
+
+      stopAllAudio: () => {
+        const { audioRegistry } = get()
+        audioRegistry.forEach((entry) => {
+          entry.element.pause()
+          entry.element.currentTime = 0
+        })
+        console.log('🎵 [MEDIA_STORE] Stopped all audio elements')
+      },
+
+      getAudioControls: (): GlobalAudioControls => {
+        const store = get()
+        return {
+          registerAudio: store.registerAudio,
+          unregisterAudio: store.unregisterAudio,
+          play: store.play,
+          pause: store.pause,
+          stop: store.stop,
+          setVolume: store.setVolume,
+          setMuted: store.setMuted,
+          seek: store.seek
+        }
+      }
+    }),
+    {
+      name: 'media-store',
+      serialize: {
+        options: {
+          map: true
+        }
+      }
     }
-  },
-
-  createMedia: async (data: Omit<Media, 'id' | 'createdAt' | 'updatedAt' | 'version'>) => {
-    try {
-      set({ loading: true, error: null })
-      const media = await db.media.create(data)
-
-      // Update the local state
-      const currentMedia = get().media
-      set({
-        media: [...currentMedia, media],
-        loading: false
-      })
-
-      return media
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to create media'
-      set({ error: errorMessage, loading: false })
-      console.error('Error creating media:', error)
-      throw error
-    }
-  },
-
-  updateMedia: async (id: string, data: Partial<Media>) => {
-    try {
-      set({ loading: true, error: null })
-      const updatedMedia = await db.media.update(id, data)
-
-      // Update the local state
-      const currentMedia = get().media
-      const updatedMediaList = currentMedia.map((item) => (item.id === id ? updatedMedia : item))
-      set({
-        media: updatedMediaList,
-        loading: false
-      })
-
-      return updatedMedia
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to update media'
-      set({ error: errorMessage, loading: false })
-      console.error('Error updating media:', error)
-      throw error
-    }
-  },
-
-  deleteMedia: async (id: string) => {
-    try {
-      set({ loading: true, error: null })
-      await db.media.delete(id)
-
-      // Update the local state
-      const currentMedia = get().media
-      const filteredMedia = currentMedia.filter((item) => item.id !== id)
-      set({
-        media: filteredMedia,
-        loading: false
-      })
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to delete media'
-      set({ error: errorMessage, loading: false })
-      console.error('Error deleting media:', error)
-      throw error
-    }
-  },
-
-  getMedia: async (id: string) => {
-    try {
-      set({ error: null })
-      return await db.media.get(id)
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to get media'
-      set({ error: errorMessage })
-      console.error('Error getting media:', error)
-      return null
-    }
-  },
-
-  getImages: async () => {
-    try {
-      set({ error: null })
-      return await db.media.getImages()
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to get images'
-      set({ error: errorMessage })
-      console.error('Error getting images:', error)
-      return []
-    }
-  },
-
-  getVideos: async () => {
-    try {
-      set({ error: null })
-      return await db.media.getVideos()
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to get videos'
-      set({ error: errorMessage })
-      console.error('Error getting videos:', error)
-      return []
-    }
-  },
-
-  getAudio: async () => {
-    try {
-      set({ error: null })
-      return await db.media.getAudio()
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to get audio'
-      set({ error: errorMessage })
-      console.error('Error getting audio:', error)
-      return []
-    }
-  },
-
-  getByType: async (type: Media['type']) => {
-    try {
-      set({ error: null })
-      return await db.media.getByType(type)
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : `Failed to get ${type} media`
-      set({ error: errorMessage })
-      console.error(`Error getting ${type} media:`, error)
-      return []
-    }
-  },
-
-  searchMedia: async (query: string) => {
-    try {
-      set({ error: null })
-      const result = await db.media.search(query)
-      return result.data
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to search media'
-      set({ error: errorMessage })
-      console.error('Error searching media:', error)
-      return []
-    }
-  },
-
-  getMediaByTag: async (tag: string) => {
-    try {
-      set({ error: null })
-      const allMedia = await db.media.list()
-      return allMedia.data.filter((item) => item.tags.includes(tag))
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to get media by tag'
-      set({ error: errorMessage })
-      console.error('Error getting media by tag:', error)
-      return []
-    }
-  },
-
-  setLoading: (loading: boolean) => set({ loading }),
-  setError: (error: string | null) => set({ error }),
-  clearError: () => set({ error: null })
-}))
-
-// Legacy stores for backward compatibility (will be removed)
-interface LegacyImageStore {
-  images: LegacyImage[]
-  fetchImages: () => Promise<void>
-  deleteImage: (id: string) => Promise<void>
-}
-
-interface LegacyImage {
-  id: string
-  name: string
-  filePath: string
-  size: number
-  createdAt: string
-}
-
-export const useImageStore = create<LegacyImageStore>((set) => ({
-  images: [],
-  fetchImages: async () => {
-    try {
-      const images: LegacyImage[] = await window.electron.invoke('list-images')
-      set({ images })
-    } catch (error) {
-      console.error('Error fetching images:', error)
-    }
-  },
-  deleteImage: async (id: string) => {
-    try {
-      const images: LegacyImage[] = await window.electron.invoke('delete-image', id)
-      set({ images })
-    } catch (error) {
-      console.error('Error deleting image:', error)
-    }
-  }
-}))
-
-interface LegacyVideoStore {
-  videos: LegacyVideo[]
-  fetchVideos: () => Promise<void>
-  deleteVideo: (id: string) => Promise<void>
-}
-
-interface LegacyVideo {
-  id: string
-  name: string
-  filePath: string
-  duration: number
-  size: number
-  createdAt: string
-}
-
-export const useVideoStore = create<LegacyVideoStore>((set) => ({
-  videos: [],
-  fetchVideos: async () => {
-    try {
-      const videos: LegacyVideo[] = await window.electron.invoke('list-videos')
-      set({ videos })
-    } catch (error) {
-      console.error('Error fetching videos:', error)
-    }
-  },
-  deleteVideo: async (id: string) => {
-    try {
-      const videos: LegacyVideo[] = await window.electron.invoke('delete-video', id)
-      set({ videos })
-    } catch (error) {
-      console.error('Error deleting video:', error)
-    }
-  }
-}))
-
-interface LegacyAudioStore {
-  audio: LegacyAudio[]
-  fetchAudio: () => Promise<void>
-  deleteAudio: (id: string) => Promise<void>
-}
-
-interface LegacyAudio {
-  id: string
-  name: string
-  filePath: string
-  duration: number
-  size: number
-  createdAt: string
-}
-
-export const useAudioStore = create<LegacyAudioStore>((set) => ({
-  audio: [],
-  fetchAudio: async () => {
-    try {
-      const audio: LegacyAudio[] = await window.electron.invoke('list-audio')
-      set({ audio })
-    } catch (error) {
-      console.error('Error fetching audio:', error)
-    }
-  },
-  deleteAudio: async (id: string) => {
-    try {
-      const audio: LegacyAudio[] = await window.electron.invoke('delete-audio', id)
-      set({ audio })
-    } catch (error) {
-      console.error('Error deleting audio:', error)
-    }
-  }
-}))
+  )
+)

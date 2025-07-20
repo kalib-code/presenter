@@ -2,7 +2,6 @@ import * as React from 'react'
 import {
   Command,
   Presentation,
-  Settings,
   ListMusic,
   FolderOpen,
   Music,
@@ -11,12 +10,10 @@ import {
   Headphones,
   FileText
 } from 'lucide-react'
-import { NavUser } from '@renderer/components/nav-user'
 import { Link, useLocation } from 'react-router-dom'
 import {
   Sidebar,
   SidebarContent,
-  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarHeader,

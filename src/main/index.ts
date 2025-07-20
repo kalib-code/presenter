@@ -1727,6 +1727,58 @@ app.whenReady().then(() => {
     stopProjection()
   })
 
+  // Media control IPC handlers for controlling projected video/audio content
+  ipcMain.on('media-control', (_event, data: { action: string; value?: any; mediaId?: string }) => {
+    if (projectionWindow && !projectionWindow.isDestroyed()) {
+      console.log('🎵 [MAIN] Sending media control command:', data.action, data.value)
+      projectionWindow.webContents.send('media-control', data)
+    }
+  })
+
+  // Individual media control handlers for better granularity
+  ipcMain.on('media-play', (_event, mediaId?: string) => {
+    if (projectionWindow && !projectionWindow.isDestroyed()) {
+      console.log('🎵 [MAIN] Sending media play command', mediaId ? `for media: ${mediaId}` : '')
+      projectionWindow.webContents.send('media-control-play', mediaId)
+    }
+  })
+
+  ipcMain.on('media-pause', (_event, mediaId?: string) => {
+    if (projectionWindow && !projectionWindow.isDestroyed()) {
+      console.log('⏸️ [MAIN] Sending media pause command', mediaId ? `for media: ${mediaId}` : '')
+      projectionWindow.webContents.send('media-control-pause', mediaId)
+    }
+  })
+
+  ipcMain.on('media-stop', (_event, mediaId?: string) => {
+    if (projectionWindow && !projectionWindow.isDestroyed()) {
+      console.log('⏹️ [MAIN] Sending media stop command', mediaId ? `for media: ${mediaId}` : '')
+      projectionWindow.webContents.send('media-control-stop', mediaId)
+    }
+  })
+
+  ipcMain.on('media-volume', (_event, volume: number, mediaId?: string) => {
+    if (projectionWindow && !projectionWindow.isDestroyed()) {
+      console.log(
+        '🔊 [MAIN] Sending media volume command:',
+        volume,
+        mediaId ? `for media: ${mediaId}` : ''
+      )
+      projectionWindow.webContents.send('media-control-volume', { volume, mediaId })
+    }
+  })
+
+  ipcMain.on('media-mute', (_event, muted: boolean, mediaId?: string) => {
+    if (projectionWindow && !projectionWindow.isDestroyed()) {
+      console.log(
+        '🔇 [MAIN] Sending media mute command:',
+        muted,
+        mediaId ? `for media: ${mediaId}` : ''
+      )
+      projectionWindow.webContents.send('media-control-mute', { muted, mediaId })
+    }
+  })
+
   // System font enumeration (optional advanced feature)
   ipcMain.handle('get-system-fonts', async () => {
     try {

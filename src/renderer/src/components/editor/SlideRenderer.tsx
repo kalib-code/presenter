@@ -1,9 +1,24 @@
 import React, { useState, useEffect } from 'react'
-import { ScalingConfig, scaleTextSize, scaleTextSizeEnhanced, screenManager } from '@renderer/utils/screenScaling'
+import {
+  ScalingConfig,
+  scaleTextSize,
+  scaleTextSizeEnhanced,
+  screenManager
+} from '@renderer/utils/screenScaling'
 import { resolveMediaUrl, isMediaReference } from '@renderer/utils/mediaUtils'
-import { CANVAS_WIDTH, CANVAS_HEIGHT, BASE_CANVAS_WIDTH, BASE_CANVAS_HEIGHT, getCanvasDimensionsForResolution, getProjectionCanvasDimensions } from '@renderer/constants/canvas'
+import {
+  CANVAS_WIDTH,
+  CANVAS_HEIGHT,
+  BASE_CANVAS_WIDTH,
+  BASE_CANVAS_HEIGHT,
+  getCanvasDimensionsForResolution,
+  getProjectionCanvasDimensions
+} from '@renderer/constants/canvas'
 import { BackgroundRenderer } from './BackgroundRenderer'
-import { resolutionManager, getCurrentProjectionResolution } from '@renderer/utils/resolutionManager'
+import {
+  resolutionManager,
+  getCurrentProjectionResolution
+} from '@renderer/utils/resolutionManager'
 import { Resolution } from '@renderer/types/resolution'
 
 // Helper function to generate placeholder for missing media
@@ -140,7 +155,17 @@ const MediaElement: React.FC<{
   index: number
   mediaConfig?: SlideRendererProps['mediaConfig']
   globalAudioControls?: any
-}> = ({ element, scaledLeft, scaledTop, scaledWidth, scaledHeight, isPreview, index, mediaConfig, globalAudioControls }) => {
+}> = ({
+  element,
+  scaledLeft,
+  scaledTop,
+  scaledWidth,
+  scaledHeight,
+  isPreview,
+  index,
+  mediaConfig,
+  globalAudioControls
+}) => {
   const [resolvedUrl, setResolvedUrl] = useState<string>(element.content)
   const [isPlaceholder, setIsPlaceholder] = useState<boolean>(false)
   const [resolvedBackgroundAudioUrl, setResolvedBackgroundAudioUrl] = useState<string>('')
@@ -195,8 +220,14 @@ const MediaElement: React.FC<{
   // Handle background audio URL resolution for video and image elements
   useEffect(() => {
     const loadBackgroundAudio = async (): Promise<void> => {
-      if ((element.type === 'video' || element.type === 'image') && mediaConfig?.backgroundAudio?.url) {
-        console.log(`🎵 [SLIDE_RENDERER] Resolving background audio URL for ${element.type}:`, mediaConfig.backgroundAudio.url)
+      if (
+        (element.type === 'video' || element.type === 'image') &&
+        mediaConfig?.backgroundAudio?.url
+      ) {
+        console.log(
+          `🎵 [SLIDE_RENDERER] Resolving background audio URL for ${element.type}:`,
+          mediaConfig.backgroundAudio.url
+        )
         try {
           if (isMediaReference(mediaConfig.backgroundAudio.url)) {
             const resolved = await resolveMediaUrl(mediaConfig.backgroundAudio.url)
@@ -209,7 +240,10 @@ const MediaElement: React.FC<{
             setResolvedBackgroundAudioUrl(mediaConfig.backgroundAudio.url)
           }
         } catch (error) {
-          console.error(`🎵 [SLIDE_RENDERER] Failed to resolve background audio URL for ${element.type}:`, error)
+          console.error(
+            `🎵 [SLIDE_RENDERER] Failed to resolve background audio URL for ${element.type}:`,
+            error
+          )
         }
       }
     }
@@ -221,8 +255,8 @@ const MediaElement: React.FC<{
   useEffect(() => {
     const backgroundAudio = backgroundAudioRef.current
     if (
-      (element.type === 'video' || element.type === 'image') && 
-      backgroundAudio && 
+      (element.type === 'video' || element.type === 'image') &&
+      backgroundAudio &&
       resolvedBackgroundAudioUrl &&
       !isPreview // Only handle in live mode, not preview
     ) {
@@ -231,17 +265,19 @@ const MediaElement: React.FC<{
         volume: mediaConfig?.backgroundAudio?.volume,
         loop: mediaConfig?.backgroundAudio?.loop
       })
-      
+
       backgroundAudio.src = resolvedBackgroundAudioUrl
       backgroundAudio.volume = mediaConfig?.backgroundAudio?.volume || 0.5
       backgroundAudio.loop = mediaConfig?.backgroundAudio?.loop || false
-      
+
       // Register with global audio controls in live presentation mode
       if (globalAudioControls) {
-        console.log(`🎵 [SLIDE_RENDERER] Registering background audio with global controls for ${element.type}`)
+        console.log(
+          `🎵 [SLIDE_RENDERER] Registering background audio with global controls for ${element.type}`
+        )
         globalAudioControls.registerAudio(backgroundAudio, `Live: ${element.type} Background Audio`)
       }
-      
+
       // Send audio state to main window via IPC
       const sendAudioStateUpdate = () => {
         if (window.electron?.ipcRenderer) {
@@ -257,46 +293,60 @@ const MediaElement: React.FC<{
           console.log(`🎵 [SLIDE_RENDERER] Sent audio state to main window:`, audioState)
         }
       }
-      
+
       // Set up audio event listeners for state sync
       const handlePlay = () => {
         setBackgroundAudioPlaying(true)
         sendAudioStateUpdate()
-        console.log(`🎵 [SLIDE_RENDERER] Background audio started playing for ${element.type} in live mode`)
+        console.log(
+          `🎵 [SLIDE_RENDERER] Background audio started playing for ${element.type} in live mode`
+        )
       }
-      
+
       const handlePause = () => {
         setBackgroundAudioPlaying(false)
         sendAudioStateUpdate()
         console.log(`🎵 [SLIDE_RENDERER] Background audio paused for ${element.type}`)
       }
-      
+
       const handleTimeUpdate = () => {
         sendAudioStateUpdate()
       }
-      
+
       backgroundAudio.addEventListener('play', handlePlay)
       backgroundAudio.addEventListener('pause', handlePause)
       backgroundAudio.addEventListener('timeupdate', handleTimeUpdate)
-      
+
       // Auto-play background audio in live presentation mode
-      console.log(`🎵 [SLIDE_RENDERER] Starting background audio for ${element.type} in live presentation`)
-      
+      console.log(
+        `🎵 [SLIDE_RENDERER] Starting background audio for ${element.type} in live presentation`
+      )
+
       // Check if audio element is still in the DOM before playing
       if (backgroundAudioRef.current && backgroundAudioRef.current.isConnected) {
-        backgroundAudio.play().then(() => {
-          handlePlay()
-        }).catch((error) => {
-          if (error.name === 'AbortError') {
-            console.log(`🎵 [SLIDE_RENDERER] Background audio autoplay aborted for ${element.type} (component unmounted)`)
-          } else {
-            console.error(`🎵 [SLIDE_RENDERER] Background audio autoplay failed for ${element.type} in live mode:`, error)
-          }
-        })
+        backgroundAudio
+          .play()
+          .then(() => {
+            handlePlay()
+          })
+          .catch((error) => {
+            if (error.name === 'AbortError') {
+              console.log(
+                `🎵 [SLIDE_RENDERER] Background audio autoplay aborted for ${element.type} (component unmounted)`
+              )
+            } else {
+              console.error(
+                `🎵 [SLIDE_RENDERER] Background audio autoplay failed for ${element.type} in live mode:`,
+                error
+              )
+            }
+          })
       } else {
-        console.log(`🎵 [SLIDE_RENDERER] Background audio element not available for ${element.type}`)
+        console.log(
+          `🎵 [SLIDE_RENDERER] Background audio element not available for ${element.type}`
+        )
       }
-      
+
       // Cleanup function
       return () => {
         backgroundAudio.removeEventListener('play', handlePlay)
@@ -304,7 +354,13 @@ const MediaElement: React.FC<{
         backgroundAudio.removeEventListener('timeupdate', handleTimeUpdate)
       }
     }
-  }, [resolvedBackgroundAudioUrl, element.type, isPreview, mediaConfig?.backgroundAudio?.volume, mediaConfig?.backgroundAudio?.loop])
+  }, [
+    resolvedBackgroundAudioUrl,
+    element.type,
+    isPreview,
+    mediaConfig?.backgroundAudio?.volume,
+    mediaConfig?.backgroundAudio?.loop
+  ])
 
   // Listen for audio control commands from main window (only in live mode)
   useEffect(() => {
@@ -312,9 +368,9 @@ const MediaElement: React.FC<{
       const handleAudioControl = (event: any, command: any) => {
         const audio = backgroundAudioRef.current
         if (!audio) return
-        
+
         console.log(`🎵 [SLIDE_RENDERER] Received audio control command:`, command)
-        
+
         switch (command.action) {
           case 'play':
             audio.play().catch(console.error)
@@ -337,9 +393,9 @@ const MediaElement: React.FC<{
             break
         }
       }
-      
+
       window.electron.ipcRenderer.on('audio-control', handleAudioControl)
-      
+
       return () => {
         window.electron?.ipcRenderer.removeListener('audio-control', handleAudioControl)
       }
@@ -389,10 +445,10 @@ const MediaElement: React.FC<{
             }
           }}
         />
-        
+
         {/* Background Audio Element for Image */}
         {element.type === 'image' && mediaConfig?.backgroundAudio?.url && (
-          <audio 
+          <audio
             ref={backgroundAudioRef}
             onPlay={() => {
               setBackgroundAudioPlaying(true)
@@ -403,19 +459,22 @@ const MediaElement: React.FC<{
               console.log('🎵 [SLIDE_RENDERER] Background audio paused for image')
             }}
             onError={(e) => {
-              console.error('🎵 [SLIDE_RENDERER] Background audio failed to load for image:', e.nativeEvent)
+              console.error(
+                '🎵 [SLIDE_RENDERER] Background audio failed to load for image:',
+                e.nativeEvent
+              )
             }}
           />
         )}
-        
+
         {/* Background Audio Indicator (only in preview mode) */}
         {element.type === 'image' && mediaConfig?.backgroundAudio?.url && isPreview && (
-          <div 
+          <div
             className="absolute top-1 right-1 bg-black/80 text-white text-xs px-2 py-1 rounded"
-            style={{ 
+            style={{
               left: scaledLeft + scaledWidth - 80,
               top: scaledTop + 4,
-              zIndex: (element.zIndex || 10) + 1 
+              zIndex: (element.zIndex || 10) + 1
             }}
           >
             🎵 {backgroundAudioPlaying ? 'Playing' : 'Ready'}
@@ -462,7 +521,9 @@ const MediaElement: React.FC<{
           onLoadStart={(): void =>
             console.log('🎬 [SLIDE_RENDERER] Video load started:', element.content)
           }
-          onCanPlay={(): void => console.log('🎬 [SLIDE_RENDERER] Video can play:', element.content)}
+          onCanPlay={(): void =>
+            console.log('🎬 [SLIDE_RENDERER] Video can play:', element.content)
+          }
           onError={(e): void => {
             console.error('🎬 [SLIDE_RENDERER] Video failed to load:', {
               originalContent: element.content,
@@ -474,10 +535,10 @@ const MediaElement: React.FC<{
         >
           <source src={resolvedUrl} type="video/mp4" />
         </video>
-        
+
         {/* Background Audio Element for Video */}
         {element.type === 'video' && mediaConfig?.backgroundAudio?.url && (
-          <audio 
+          <audio
             ref={backgroundAudioRef}
             onPlay={() => {
               setBackgroundAudioPlaying(true)
@@ -492,15 +553,15 @@ const MediaElement: React.FC<{
             }}
           />
         )}
-        
+
         {/* Background Audio Indicator (only in preview mode) */}
         {element.type === 'video' && mediaConfig?.backgroundAudio?.url && isPreview && (
-          <div 
+          <div
             className="absolute top-1 right-1 bg-black/80 text-white text-xs px-2 py-1 rounded"
-            style={{ 
+            style={{
               left: scaledLeft + scaledWidth - 80,
               top: scaledTop + 4,
-              zIndex: (element.zIndex || 10) + 1 
+              zIndex: (element.zIndex || 10) + 1
             }}
           >
             🎵 {backgroundAudioPlaying ? 'Playing' : 'Ready'}
@@ -533,17 +594,17 @@ export const SlideRenderer: React.FC<SlideRendererProps> = ({
 
   // Get current projection resolution for enhanced scaling
   const currentResolution = useProjectionScaling ? getCurrentProjectionResolution() : null
-  
+
   // Determine canvas dimensions based on resolution and context
-  let canvasWidth = CANVAS_WIDTH   // Legacy fallback
-  let canvasHeight = CANVAS_HEIGHT  // Legacy fallback
-  
+  let canvasWidth = CANVAS_WIDTH // Legacy fallback
+  let canvasHeight = CANVAS_HEIGHT // Legacy fallback
+
   if (useProjectionScaling && currentResolution) {
     // Use resolution-aware canvas dimensions for projection
     const projectionCanvas = getProjectionCanvasDimensions(containerWidth, containerHeight)
     canvasWidth = projectionCanvas.width
     canvasHeight = projectionCanvas.height
-    
+
     console.log('🎨 [SLIDE_RENDERER] Using projection canvas dimensions:', {
       resolution: `${currentResolution.width}x${currentResolution.height}`,
       category: currentResolution.category,
@@ -633,17 +694,17 @@ export const SlideRenderer: React.FC<SlideRendererProps> = ({
 
             // Use enhanced resolution-aware text scaling
             let scaledFontSize = (style.fontSize || 48) * scale
-            
+
             if (useProjectionScaling && currentResolution) {
               // Use enhanced multi-resolution text scaling
               const context = isPreview ? 'preview' : 'projection'
               scaledFontSize = scaleTextSizeEnhanced(
-                style.fontSize || 48, 
-                currentResolution, 
+                style.fontSize || 48,
+                currentResolution,
                 1, // DPI will be handled by resolution manager
                 context
               )
-              
+
               console.log('🔤 [SLIDE_RENDERER] Enhanced text scaling:', {
                 originalSize: style.fontSize || 48,
                 scaledSize: scaledFontSize,
@@ -710,7 +771,9 @@ export const SlideRenderer: React.FC<SlideRendererProps> = ({
       {/* Show canvas dimensions for preview mode with enhanced info */}
       {isPreview && (
         <div className="absolute bottom-2 right-2 text-xs text-slate-400 bg-slate-800/80 px-2 py-1 rounded">
-          <div>{canvasWidth} × {canvasHeight} (scaled {(scale * 100).toFixed(0)}%)</div>
+          <div>
+            {canvasWidth} × {canvasHeight} (scaled {(scale * 100).toFixed(0)}%)
+          </div>
           {currentResolution && (
             <div className="text-[10px] opacity-75">
               Target: {currentResolution.commonName} ({currentResolution.category})
