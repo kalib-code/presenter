@@ -60,6 +60,14 @@ export const MediaBrowser: React.FC<MediaBrowserProps> = React.memo(
           filteredCount: filtered.length,
           filteredTypes: filtered.map(f => f.type)
         })
+      } else {
+        // When showing 'all', exclude audio files from main media selection
+        // Audio should only be selectable as background audio for images
+        filtered = filtered.filter((file) => file.type !== 'audio')
+        console.log('🎯 [MEDIA_BROWSER] Showing all media except audio:', {
+          filteredCount: filtered.length,
+          filteredTypes: [...new Set(filtered.map(f => f.type))]
+        })
       }
 
       // Filter by search query

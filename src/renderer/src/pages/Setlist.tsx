@@ -1300,47 +1300,15 @@ export default function Setlist(): JSX.Element {
                     <Button
                       variant="ghost"
                       className="w-full justify-start h-auto p-2.5"
-                      onClick={() => handleOpenMediaSelector('video')}
+                      onClick={() => handleOpenMediaSelector('any')}
                     >
                       <div className="flex items-center gap-2.5">
-                        <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-red-500 to-red-600 flex items-center justify-center">
+                        <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
                           <Video className="w-3.5 h-3.5 text-white" />
                         </div>
                         <div className="text-left">
-                          <div className="font-medium text-sm">Video</div>
-                          <div className="text-xs text-muted-foreground">Add from library</div>
-                        </div>
-                      </div>
-                    </Button>
-
-                    <Button
-                      variant="ghost"
-                      className="w-full justify-start h-auto p-2.5"
-                      onClick={() => handleOpenMediaSelector('image')}
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-yellow-500 to-orange-600 flex items-center justify-center">
-                          <Image className="w-3.5 h-3.5 text-white" />
-                        </div>
-                        <div className="text-left">
-                          <div className="font-medium text-sm">Image</div>
-                          <div className="text-xs text-muted-foreground">Add from library</div>
-                        </div>
-                      </div>
-                    </Button>
-
-                    <Button
-                      variant="ghost"
-                      className="w-full justify-start h-auto p-2.5"
-                      onClick={() => handleOpenMediaSelector('audio')}
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center">
-                          <Volume2 className="w-3.5 h-3.5 text-white" />
-                        </div>
-                        <div className="text-left">
-                          <div className="font-medium text-sm">Audio</div>
-                          <div className="text-xs text-muted-foreground">Add from library</div>
+                          <div className="font-medium text-sm">Media</div>
+                          <div className="text-xs text-muted-foreground">Add video or image</div>
                         </div>
                       </div>
                     </Button>

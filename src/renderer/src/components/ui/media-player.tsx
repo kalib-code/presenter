@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import type { SetlistItem } from '@renderer/types/database'
 import { resolveMediaUrl } from '@renderer/utils/mediaUtils'
+import { useMediaStore } from '@renderer/store/media'
 
 interface MediaPlayerProps {
   item: SetlistItem
@@ -48,9 +49,6 @@ export function MediaPlayer({
   const [isPlaying, setIsPlaying] = useState(false)
   // Auto-mute video if background audio is present
   const hasBackgroundAudio = Boolean(item.mediaConfig?.backgroundAudio?.url)
-  const [isMuted, setIsMuted] = useState(
-    item.mediaConfig?.muted || (item.type === 'video' && hasBackgroundAudio)
-  )
   const [volume, setVolume] = useState(item.mediaConfig?.volume || 1)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
@@ -69,8 +67,81 @@ export function MediaPlayer({
     item.mediaConfig?.backgroundAudio?.volume || 0.5
   )
 
-  const mediaRef = item.type === 'video' ? videoRef : audioRef
+  // Determine the actual media type from either item.type or mediaConfig.mediaType
+  const actualMediaType = item.mediaConfig?.mediaType || item.type
+  const isVideoType = actualMediaType === 'video'
+  const isAudioType = actualMediaType === 'audio'
+  const isImageType = actualMediaType === 'image'
+  
+  console.log('🎬 [MEDIA_PLAYER] Media type determination:', {
+    itemType: item.type,
+    mediaConfigType: item.mediaConfig?.mediaType,
+    actualMediaType,
+    isVideoType,
+    isAudioType,
+    isImageType
+  })
+  
+  // Set muted state based on media type and background audio
+  const [isMuted, setIsMuted] = useState(
+    item.mediaConfig?.muted || (isVideoType && hasBackgroundAudio)
+  )
+  
+  const mediaRef = isVideoType ? videoRef : audioRef
   const mediaConfig = item.mediaConfig
+  
+  // Get media store functions for registration
+  const { registerAudio, unregisterAudio } = useMediaStore()
+
+  // Track if media is registered to avoid duplicate registrations
+  const [isMediaRegistered, setIsMediaRegistered] = useState(false)
+  
+  // Register the media element with the global media store after it's ready
+  useEffect(() => {
+    const media = mediaRef.current
+    if (!media || !resolvedMediaUrl || isMediaRegistered) return
+    
+    const mediaId = `media-${item.id}-${actualMediaType}`
+    const mediaName = item.title || `${actualMediaType} Media`
+    
+    // Wait for media to be ready before registering
+    const registerWhenReady = () => {
+      console.log('🎬 [MEDIA_PLAYER] Media ready, registering element:', {
+        id: mediaId,
+        name: mediaName,
+        type: actualMediaType,
+        readyState: media.readyState
+      })
+      
+      registerAudio(media, mediaId, 'main', mediaName)
+      setIsMediaRegistered(true)
+      
+      // Also set as active audio for immediate control
+      useMediaStore.getState().setActiveAudioRef(media)
+    }
+    
+    // Check if already ready
+    if (media.readyState >= 1) {
+      registerWhenReady()
+    } else {
+      // Wait for loadedmetadata event
+      media.addEventListener('loadedmetadata', registerWhenReady)
+      
+      // Cleanup event listener
+      return () => {
+        media.removeEventListener('loadedmetadata', registerWhenReady)
+      }
+    }
+    
+    // Cleanup on unmount
+    return () => {
+      if (isMediaRegistered) {
+        console.log('🎬 [MEDIA_PLAYER] Unregistering media element:', mediaId)
+        unregisterAudio(mediaId)
+        setIsMediaRegistered(false)
+      }
+    }
+  }, [resolvedMediaUrl, actualMediaType, item.id, item.title, registerAudio, unregisterAudio, isMediaRegistered])
 
   // URL resolution effect - optimized to reduce burst requests
   useEffect(() => {
@@ -134,10 +205,37 @@ export function MediaPlayer({
     }
 
     const handleLoadedMetadata = () => {
+      console.log('🎬 [MEDIA_PLAYER] Media metadata loaded:', {
+        type: actualMediaType,
+        duration: media.duration,
+        autoplay: autoplay || mediaConfig?.autoplay,
+        src: media.src
+      })
       setDuration(media.duration)
       if (autoplay || mediaConfig?.autoplay) {
+        console.log('🎬 [MEDIA_PLAYER] Attempting to autoplay media...')
         media.play()
-        setIsPlaying(true)
+          .then(() => {
+            console.log('✅ [MEDIA_PLAYER] Autoplay successful')
+            setIsPlaying(true)
+          })
+          .catch((error) => {
+            console.error('❌ [MEDIA_PLAYER] Autoplay failed:', error)
+            // Try unmuted play for audio elements
+            if (isAudioType && media.muted) {
+              console.log('🔊 [MEDIA_PLAYER] Retrying audio play unmuted...')
+              media.muted = false
+              setIsMuted(false)
+              media.play()
+                .then(() => {
+                  console.log('✅ [MEDIA_PLAYER] Unmuted audio play successful')
+                  setIsPlaying(true)
+                })
+                .catch((err) => {
+                  console.error('❌ [MEDIA_PLAYER] Unmuted audio play also failed:', err)
+                })
+            }
+          })
       }
     }
 
@@ -184,15 +282,50 @@ export function MediaPlayer({
     onEnded,
     onTimeUpdate,
     mediaRef,
-    item.type
+    actualMediaType,
+    isAudioType
   ])
 
+  // Track if background audio is registered
+  const [isBgAudioRegistered, setIsBgAudioRegistered] = useState(false)
+  
   // Background audio effect
   useEffect(() => {
     const backgroundAudio = backgroundAudioRef.current
     const backgroundConfig = mediaConfig?.backgroundAudio
 
-    if (!backgroundAudio || !backgroundConfig?.url || !resolvedBackgroundAudioUrl) return
+    if (!backgroundAudio || !backgroundConfig?.url || !resolvedBackgroundAudioUrl || isBgAudioRegistered) return
+    
+    const bgAudioId = `bg-audio-${item.id}`
+    const bgAudioName = `Background Audio for ${item.title || 'Media'}`
+    
+    // Wait for background audio to be ready before registering
+    const registerBgWhenReady = () => {
+      console.log('🎵 [MEDIA_PLAYER] Background audio ready, registering:', {
+        id: bgAudioId,
+        name: bgAudioName,
+        readyState: backgroundAudio.readyState
+      })
+      
+      registerAudio(backgroundAudio, bgAudioId, 'background', bgAudioName)
+      setIsBgAudioRegistered(true)
+    }
+    
+    // Check if already ready
+    if (backgroundAudio.readyState >= 1) {
+      registerBgWhenReady()
+    } else {
+      // Wait for loadedmetadata event
+      backgroundAudio.addEventListener('loadedmetadata', registerBgWhenReady)
+      
+      // Store cleanup for this specific listener
+      const cleanupListener = () => {
+        backgroundAudio.removeEventListener('loadedmetadata', registerBgWhenReady)
+      }
+      
+      // Return cleanup for the event listener
+      return cleanupListener
+    }
 
     console.log('🎬 [MEDIA_PLAYER] Setting background audio source:', {
       resolvedUrl: resolvedBackgroundAudioUrl
@@ -276,6 +409,14 @@ export function MediaPlayer({
       backgroundAudio.removeEventListener('play', handleBackgroundAudioPlay)
       backgroundAudio.removeEventListener('pause', handleBackgroundAudioPause)
       backgroundAudio.removeEventListener('ended', handleBackgroundAudioEnded)
+      
+      // Unregister background audio from media store if it was registered
+      if (isBgAudioRegistered) {
+        const bgAudioId = `bg-audio-${item.id}`
+        console.log('🎵 [MEDIA_PLAYER] Unregistering background audio:', bgAudioId)
+        unregisterAudio(bgAudioId)
+        setIsBgAudioRegistered(false)
+      }
 
       // Stop and clean up background audio
       try {
@@ -288,7 +429,7 @@ export function MediaPlayer({
         console.log('🎬 [MEDIA_PLAYER] Background audio cleanup completed')
       }
     }
-  }, [resolvedBackgroundAudioUrl, mediaConfig?.backgroundAudio, backgroundAudioVolume, autoplay])
+  }, [resolvedBackgroundAudioUrl, mediaConfig?.backgroundAudio, backgroundAudioVolume, autoplay, item.id, item.title, registerAudio, unregisterAudio, isBgAudioRegistered])
 
   const togglePlayPause = () => {
     const media = mediaRef.current
@@ -413,12 +554,12 @@ export function MediaPlayer({
   }
 
   const handleMouseMove = () => {
-    if (item.type === 'video') {
+    if (isVideoType) {
       showControlsTemporarily()
     }
   }
 
-  if (item.type === 'image') {
+  if (isImageType) {
     return (
       <div className={`relative ${className}`}>
         {isResolvingUrls ? (
@@ -513,7 +654,7 @@ export function MediaPlayer({
         <div className="w-full h-full flex items-center justify-center">
           <div className="text-white">Loading media...</div>
         </div>
-      ) : item.type === 'video' ? (
+      ) : isVideoType ? (
         <>
           <video
             ref={videoRef}
@@ -545,7 +686,20 @@ export function MediaPlayer({
         </>
       ) : (
         <div className="flex items-center justify-center min-h-[200px] bg-gradient-to-br from-gray-800 to-gray-900">
-          <audio ref={audioRef} data-audio-type="main" data-audio-id={`main-${item.id}`} />
+          <audio 
+            ref={audioRef} 
+            data-audio-type="main" 
+            data-audio-id={`main-${item.id}`}
+            onLoadStart={() => console.log('🎵 [MEDIA_PLAYER] Audio load started:', item.title)}
+            onCanPlay={() => console.log('🎵 [MEDIA_PLAYER] Audio can play:', item.title)}
+            onError={(e) =>
+              console.error('🎵 [MEDIA_PLAYER] Audio failed to load:', {
+                title: item.title,
+                resolvedUrl: resolvedMediaUrl,
+                error: e.nativeEvent
+              })
+            }
+          />
           <div className="text-center text-white">
             <Volume2 className="w-16 h-16 mx-auto mb-4 opacity-50" />
             <h3 className="text-xl font-semibold mb-2">{item.title}</h3>
@@ -558,7 +712,7 @@ export function MediaPlayer({
       {mediaConfig?.controls !== false && (
         <div
           className={`absolute inset-0 transition-opacity duration-300 ${
-            item.type === 'video' && !showControls ? 'opacity-0' : 'opacity-100'
+            isVideoType && !showControls ? 'opacity-0' : 'opacity-100'
           }`}
         >
           {/* Main Controls */}
@@ -632,7 +786,7 @@ export function MediaPlayer({
                 )}
 
                 {/* Show audio source indicator when video is muted */}
-                {item.type === 'video' && hasBackgroundAudio && isMuted && (
+                {isVideoType && hasBackgroundAudio && isMuted && (
                   <div className="flex items-center gap-1 px-2 py-1 bg-blue-500/20 rounded text-xs text-blue-200">
                     <Volume2 className="w-3 h-3" />
                     <span>Audio Track</span>
@@ -688,7 +842,7 @@ export function MediaPlayer({
                 )}
 
                 {/* Fullscreen (Video only) */}
-                {item.type === 'video' && !compact && (
+                {isVideoType && !compact && (
                   <Button
                     variant="ghost"
                     size="sm"

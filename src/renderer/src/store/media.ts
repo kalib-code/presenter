@@ -246,13 +246,34 @@ export const useMediaStore = create<MediaStoreState>()(
         const audio = findActiveAudio()
 
         if (audio) {
-          console.log('🎵 [MEDIA_STORE] Playing audio')
+          console.log('🎵 [MEDIA_STORE] Playing audio:', {
+            src: audio.src,
+            readyState: audio.readyState,
+            paused: audio.paused,
+            duration: audio.duration
+          })
           audio
             .play()
             .then(() => {
+              console.log('✅ [MEDIA_STORE] Audio play successful')
               setGlobalAudioState({ isPlaying: true })
             })
-            .catch(console.error)
+            .catch((error) => {
+              console.error('❌ [MEDIA_STORE] Audio play failed:', error)
+              // Try unmuted if it was muted
+              if (audio.muted) {
+                console.log('🔊 [MEDIA_STORE] Retrying unmuted...')
+                audio.muted = false
+                audio.play()
+                  .then(() => {
+                    console.log('✅ [MEDIA_STORE] Unmuted play successful')
+                    setGlobalAudioState({ isPlaying: true, muted: false })
+                  })
+                  .catch((err) => {
+                    console.error('❌ [MEDIA_STORE] Unmuted play also failed:', err)
+                  })
+              }
+            })
         } else {
           console.log('🎵 [MEDIA_STORE] No audio to play, sending IPC command')
           window.electron?.ipcRenderer.send('audio-control', { action: 'play' })
@@ -265,9 +286,14 @@ export const useMediaStore = create<MediaStoreState>()(
         const audio = findActiveAudio()
 
         if (audio) {
-          console.log('🎵 [MEDIA_STORE] Pausing audio')
+          console.log('🎵 [MEDIA_STORE] Pausing audio:', {
+            src: audio.src,
+            currentTime: audio.currentTime,
+            paused: audio.paused
+          })
           audio.pause()
           setGlobalAudioState({ isPlaying: false })
+          console.log('✅ [MEDIA_STORE] Audio paused')
         } else {
           console.log('🎵 [MEDIA_STORE] No audio to pause, sending IPC command')
           window.electron?.ipcRenderer.send('audio-control', { action: 'pause' })
@@ -347,33 +373,46 @@ export const useMediaStore = create<MediaStoreState>()(
       findActiveAudio: () => {
         const { activeAudioRef, primaryAudioId, audioRegistry } = get()
 
-        // Try active ref first
-        if (activeAudioRef && !activeAudioRef.paused) {
+        // Try active ref first (even if paused - we want to control it)
+        if (activeAudioRef) {
+          console.log('🎵 [MEDIA_STORE] Using active audio ref')
           return activeAudioRef
         }
 
         // Try primary audio
         if (primaryAudioId) {
           const primaryEntry = audioRegistry.get(primaryAudioId)
-          if (primaryEntry && primaryEntry.element.readyState >= 2) {
+          if (primaryEntry && primaryEntry.element.readyState >= 1) { // Lowered from 2 to 1 (HAVE_METADATA)
+            console.log('🎵 [MEDIA_STORE] Using primary audio:', primaryAudioId)
             return primaryEntry.element
           }
         }
 
-        // Find any main audio that's ready
+        // Find any main audio that has at least metadata
         for (const entry of audioRegistry.values()) {
-          if (entry.type === 'main' && entry.element.readyState >= 2) {
+          if (entry.type === 'main' && entry.element.readyState >= 1) { // Lowered from 2 to 1
+            console.log('🎵 [MEDIA_STORE] Using main audio:', entry.id)
             return entry.element
           }
         }
 
-        // Find any background audio that's ready
+        // Find any background audio that has at least metadata
         for (const entry of audioRegistry.values()) {
-          if (entry.type === 'background' && entry.element.readyState >= 2) {
+          if (entry.type === 'background' && entry.element.readyState >= 1) { // Lowered from 2 to 1
+            console.log('🎵 [MEDIA_STORE] Using background audio:', entry.id)
+            return entry.element
+          }
+        }
+        
+        // Last resort - find ANY registered audio
+        for (const entry of audioRegistry.values()) {
+          if (entry.element) {
+            console.log('🎵 [MEDIA_STORE] Using any available audio:', entry.id)
             return entry.element
           }
         }
 
+        console.log('🎵 [MEDIA_STORE] No audio element found')
         return null
       },
 

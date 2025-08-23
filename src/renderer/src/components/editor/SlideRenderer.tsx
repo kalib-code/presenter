@@ -20,6 +20,7 @@ import {
   getCurrentProjectionResolution
 } from '@renderer/utils/resolutionManager'
 import { Resolution } from '@renderer/types/resolution'
+import { MediaPlayer } from '@renderer/components/ui/media-player'
 
 // Helper function to generate placeholder for missing media
 const generatePlaceholderForElement = (content: string): string => {
@@ -128,7 +129,7 @@ interface SlideRendererProps {
     controls?: boolean
     muted?: boolean
     thumbnail?: string
-    mediaType?: 'video' | 'image' | 'audio'
+    mediaType?: 'video' | 'image'
     aspectRatio?: '16:9' | '4:3' | '1:1' | 'auto'
     objectFit?: 'cover' | 'contain' | 'fill' | 'scale-down'
     backgroundAudio?: {
@@ -506,13 +507,45 @@ const MediaElement: React.FC<{
       )
     }
 
-    // Regular video rendering for actual video files
+    // For items with full media config, use MediaPlayer
+    if (mediaConfig?.url && mediaConfig?.mediaType) {
+      // Create a SetlistItem-like object for MediaPlayer
+      const mediaItem = {
+        id: element.id || `media-${index}`,
+        type: mediaConfig.mediaType || 'video',
+        title: element.content || 'Media',
+        mediaConfig: {
+          ...mediaConfig,
+          url: element.content || mediaConfig.url || ''
+        }
+      }
+      
+      return (
+        <div 
+          className="absolute"
+          style={{
+            ...commonStyles,
+            overflow: 'hidden'
+          }}
+        >
+          <MediaPlayer
+            item={mediaItem as any}
+            autoplay={!isPreview && (mediaConfig?.autoplay ?? true)}
+            className="w-full h-full"
+            compact={true}
+            showTitle={false}
+          />
+        </div>
+      )
+    }
+    
+    // Regular video rendering for simple video elements without media config
     return (
       <div className="relative">
         <video
           key={element.id || `video-element-${index}`}
           src={resolvedUrl}
-          autoPlay
+          autoPlay={!isPreview}
           loop
           muted
           playsInline

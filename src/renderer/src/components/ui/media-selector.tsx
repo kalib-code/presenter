@@ -96,13 +96,15 @@ export function MediaSelector({
   }, [selectedMedia?.filename, selectedMedia?.type])
 
   const getMediaBrowserType = (): 'image' | 'video' | 'audio' | 'all' => {
+    // Only allow video and image selection, no standalone audio
     switch (mediaType) {
       case 'video':
         return 'video'
       case 'image':
         return 'image'
-      case 'audio':
-        return 'audio'
+      case 'any':
+        // When 'any', show both video and image but not audio
+        return 'all' // Will filter audio files in MediaBrowser if needed
       default:
         return 'all'
     }
@@ -111,6 +113,12 @@ export function MediaSelector({
   const handleMediaSelect = (media: Media) => {
     try {
       console.log('🎯 [MEDIA_SELECTOR] Media selected:', media)
+      
+      // Auto-detect media type from file extension if not already set
+      if (media.type === 'audio') {
+        console.warn('⚠️ [MEDIA_SELECTOR] Audio files are not supported as standalone media')
+        return
+      }
       
       // Validate media object
       if (!media) {
@@ -393,7 +401,7 @@ export function MediaSelector({
       <Dialog open={isOpen} onOpenChange={handleClose}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Add Media to Setlist</DialogTitle>
+            <DialogTitle>Add Media</DialogTitle>
           </DialogHeader>
 
           <div className="space-y-6">
